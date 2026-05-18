@@ -24,7 +24,6 @@ export function telegramLoginPage(req: Request, res: Response): void {
   const authUrl = new URL('https://oauth.telegram.org/auth');
   authUrl.searchParams.set('bot_id', botId);
   authUrl.searchParams.set('origin', origin);
-  authUrl.searchParams.set('embed', '1');
   authUrl.searchParams.set('request_access', 'write');
   authUrl.searchParams.set('return_to', callbackUrl);
 
@@ -61,24 +60,44 @@ export function telegramCallback(req: Request, res: Response): void {
     }
   }
 
-  // Формат 3: данных нет в query → Telegram положил tgAuthResult во fragment (#).
-  // Отдаём JS-страницу: она читает fragment, декодирует и редиректит на aurascanner://.
+  // Формат 3: данных нет в query → возможно, tgAuthResult в fragment или
+  // oauth.telegram.org вернул пустой callback. Отдаём JS-страницу для диагностики и редиректа.
   if (!id || !hash || !auth_date) {
+    logger.warn('[telegramCallback] No params in query. search=%s', req.url);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>Авторизация Telegram</title></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Авторизация Telegram</title>
+  <style>
+    body{font-family:sans-serif;background:#0f1923;color:#fff;
+         display:flex;flex-direction:column;align-items:center;
+         justify-content:center;min-height:100vh;margin:0;padding:24px;text-align:center}
+    pre{background:rgba(255,255,255,.08);padding:12px;border-radius:8px;
+        font-size:11px;text-align:left;max-width:100%;word-break:break-all;white-space:pre-wrap}
+  </style>
+</head>
 <body>
+<p id="status">Обработка данных Telegram...</p>
+<pre id="debug"></pre>
 <script>
 (function () {
-  function parse(str) { return new URLSearchParams(str); }
+  var dbg = document.getElementById('debug');
+  var st  = document.getElementById('status');
 
-  var fromQuery = parse(location.search.slice(1)).get('tgAuthResult');
-  var fromHash  = parse(location.hash.slice(1)).get('tgAuthResult');
-  var raw = fromQuery || fromHash;
+  dbg.textContent = 'search: ' + location.search + '\\nhash: ' + location.hash;
+
+  function getParam(str, key) {
+    return new URLSearchParams(str).get(key);
+  }
+
+  var raw = getParam(location.search.slice(1), 'tgAuthResult')
+         || getParam(location.hash.slice(1),   'tgAuthResult');
 
   if (!raw) {
-    document.body.innerText = 'Данные авторизации не получены от Telegram.';
+    st.textContent = 'Данные не найдены. Попробуйте ещё раз.';
     return;
   }
 
@@ -86,6 +105,8 @@ export function telegramCallback(req: Request, res: Response): void {
     var b64 = raw.replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4) b64 += '=';
     var d = JSON.parse(atob(b64));
+
+    dbg.textContent += '\\nparsed id: ' + d.id;
 
     var p = new URLSearchParams();
     p.set('id',        String(d.id));
@@ -95,9 +116,13 @@ export function telegramCallback(req: Request, res: Response): void {
     if (d.last_name)  p.set('last_name',  d.last_name);
     if (d.username)   p.set('username',   d.username);
 
-    window.location.replace('aurascanner://oauth2redirect?' + p.toString());
+    var uri = 'aurascanner://oauth2redirect?' + p.toString();
+    dbg.textContent += '\\nredirecting to: ' + uri.substring(0, 60) + '...';
+    st.textContent = 'Возврат в приложение...';
+    setTimeout(function () { window.location.replace(uri); }, 300);
   } catch (e) {
-    document.body.innerText = 'Ошибка разбора данных Telegram: ' + e.message;
+    st.textContent = 'Ошибка: ' + e.message;
+    dbg.textContent += '\\nraw (50): ' + raw.substring(0, 50);
   }
 })();
 </script>
