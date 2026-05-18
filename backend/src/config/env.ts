@@ -21,8 +21,7 @@ export const env = {
 };
 
 function validateEnv(): void {
-  console.log('MONGODB_URI value:', JSON.stringify(process.env.MONGODB_URI));
-  const required = ['MONGODB_URI', 'JWT_SECRET'];
+const required = ['MONGODB_URI', 'JWT_SECRET'];
   const missing = required.filter(k => !process.env[k]);
   if (missing.length > 0) {
     throw new Error(`Missing required env vars: ${missing.join(', ')}`);
