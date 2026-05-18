@@ -115,12 +115,38 @@ export async function googleCallback(req: Request, res: Response): Promise<void>
     });
 
     logger.info(`[googleCallback] Success: email=${user.email}`);
-    res.redirect(302, `${CALLBACK_SCHEME}://oauth2redirect?${params.toString()}`);
+    const deepLink = `${CALLBACK_SCHEME}://oauth2redirect?${params.toString()}`;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(buildDeepLinkPage(deepLink));
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Ошибка авторизации Google';
     logger.error('[googleCallback] Error:', { err });
-    res.redirect(302, `${CALLBACK_SCHEME}://oauth2redirect?error=${encodeURIComponent(message)}`);
+    const deepLink = `${CALLBACK_SCHEME}://oauth2redirect?error=${encodeURIComponent(message)}`;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(buildDeepLinkPage(deepLink, message));
   }
+}
+
+function buildDeepLinkPage(deepLink: string, errorMsg?: string): string {
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${errorMsg ? 'Ошибка' : 'Возврат в приложение'}</title>
+  <style>
+    body{font-family:sans-serif;display:flex;flex-direction:column;align-items:center;
+         justify-content:center;height:100vh;margin:0;background:#f5f5f5;color:#333;}
+    p{text-align:center;padding:0 24px;}
+  </style>
+</head>
+<body>
+  <p>${errorMsg ? `Ошибка: ${errorMsg}` : 'Авторизация выполнена. Возврат в приложение…'}</p>
+  <script>
+    window.location.href = ${JSON.stringify(deepLink)};
+  </script>
+</body>
+</html>`;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
