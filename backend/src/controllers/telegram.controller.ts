@@ -32,20 +32,22 @@ export function telegramLoginPage(req: Request, res: Response): void {
 }
 
 // GET /auth/telegram/callback
-// Telegram вызывает этот URL после авторизации пользователя.
-// Поддерживает два формата:
-//   1. Login Widget (?id=...&hash=...&auth_date=...)
-//   2. oauth.telegram.org (?tgAuthResult=BASE64_JSON)
+// Поддерживает три формата ответа от Telegram:
+//   1. Login Widget:       ?id=...&hash=...&auth_date=...
+//   2. oauth.telegram.org: ?tgAuthResult=BASE64_JSON  (query)
+//   3. oauth.telegram.org: #tgAuthResult=BASE64_JSON  (fragment — сервер не видит,
+//      поэтому отдаём JS-страницу, которая читает fragment и делает редирект)
 export function telegramCallback(req: Request, res: Response): void {
   let { id, hash, auth_date, first_name, last_name, username, photo_url } =
     req.query as Record<string, string | undefined>;
 
-  // Формат oauth.telegram.org: все данные упакованы в base64-JSON
+  // Формат 2: tgAuthResult как query-параметр
   const tgAuthResult = req.query['tgAuthResult'] as string | undefined;
   if (tgAuthResult) {
     try {
+      const b64 = tgAuthResult.replace(/-/g, '+').replace(/_/g, '/');
       const decoded = JSON.parse(
-        Buffer.from(tgAuthResult, 'base64url').toString('utf-8'),
+        Buffer.from(b64, 'base64').toString('utf-8'),
       ) as Record<string, unknown>;
       id         = decoded['id']?.toString();
       hash       = decoded['hash'] as string | undefined;
@@ -55,14 +57,52 @@ export function telegramCallback(req: Request, res: Response): void {
       username   = decoded['username']   as string | undefined;
       photo_url  = decoded['photo_url']  as string | undefined;
     } catch {
-      logger.warn('[telegramCallback] Failed to decode tgAuthResult');
-      res.status(400).send('<h3>Ошибка декодирования данных Telegram</h3>');
-      return;
+      logger.warn('[telegramCallback] Failed to decode tgAuthResult query param');
     }
   }
 
+  // Формат 3: данных нет в query → Telegram положил tgAuthResult во fragment (#).
+  // Отдаём JS-страницу: она читает fragment, декодирует и редиректит на aurascanner://.
   if (!id || !hash || !auth_date) {
-    res.status(400).send('<h3>Недостаточно данных от Telegram</h3>');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Авторизация Telegram</title></head>
+<body>
+<script>
+(function () {
+  function parse(str) { return new URLSearchParams(str); }
+
+  var fromQuery = parse(location.search.slice(1)).get('tgAuthResult');
+  var fromHash  = parse(location.hash.slice(1)).get('tgAuthResult');
+  var raw = fromQuery || fromHash;
+
+  if (!raw) {
+    document.body.innerText = 'Данные авторизации не получены от Telegram.';
+    return;
+  }
+
+  try {
+    var b64 = raw.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    var d = JSON.parse(atob(b64));
+
+    var p = new URLSearchParams();
+    p.set('id',        String(d.id));
+    p.set('hash',      d.hash);
+    p.set('auth_date', String(d.auth_date));
+    if (d.first_name) p.set('first_name', d.first_name);
+    if (d.last_name)  p.set('last_name',  d.last_name);
+    if (d.username)   p.set('username',   d.username);
+
+    window.location.replace('aurascanner://oauth2redirect?' + p.toString());
+  } catch (e) {
+    document.body.innerText = 'Ошибка разбора данных Telegram: ' + e.message;
+  }
+})();
+</script>
+</body>
+</html>`);
     return;
   }
 
