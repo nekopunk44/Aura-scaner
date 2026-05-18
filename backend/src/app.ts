@@ -12,8 +12,17 @@ import documentsRoutes from './routes/documents.routes';
 
 const app = express();
 
-// Security headers
-app.use(helmet());
+// Security headers — разрешаем скрипт Telegram Login Widget
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", 'https://telegram.org'],
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"],
+    },
+  },
+}));
 
 // CORS — мобильный клиент не отправляет Origin, поэтому разрешаем всё,
 // но явно ограничиваем методы и заголовки
