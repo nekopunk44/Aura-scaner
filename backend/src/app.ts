@@ -12,6 +12,9 @@ import documentsRoutes from './routes/documents.routes';
 
 const app = express();
 
+// Trust Railway / reverse-proxy forwarded headers so req.protocol = 'https'
+app.set('trust proxy', 1);
+
 // Security headers — разрешаем скрипт Telegram Login Widget
 app.use(helmet({
   contentSecurityPolicy: {

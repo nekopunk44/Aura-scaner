@@ -17,7 +17,7 @@ export function telegramLoginPage(_req: Request, res: Response): void {
     return;
   }
 
-  const callbackUrl = `${env.nodeEnv === 'production' ? 'https' : 'http'}://${_req.headers.host}/api/auth/telegram/callback`;
+  const callbackUrl = `${_req.protocol}://${_req.headers.host}/api/auth/telegram/callback`;
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(`<!DOCTYPE html>

@@ -85,7 +85,7 @@ export async function googleCallback(req: Request, res: Response): Promise<void>
     return;
   }
 
-  const redirectUri = `${env.nodeEnv === 'production' ? 'https' : 'http'}://${req.headers.host}/api/auth/google/callback`;
+  const redirectUri = `${req.protocol}://${req.headers.host}/api/auth/google/callback`;
 
   try {
     const { idToken } = await exchangeGoogleCode(code, redirectUri);
