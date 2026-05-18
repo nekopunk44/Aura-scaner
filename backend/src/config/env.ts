@@ -21,6 +21,7 @@ export const env = {
 };
 
 function validateEnv(): void {
+  console.log('ENV CHECK:', Object.keys(process.env).filter(k => k.startsWith('MONGO') || k.startsWith('JWT')));
   const required = ['MONGODB_URI', 'JWT_SECRET'];
   const missing = required.filter(k => !process.env[k]);
   if (missing.length > 0) {
