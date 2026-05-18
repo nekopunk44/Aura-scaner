@@ -3,6 +3,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../config/theme_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/social_auth_service.dart';
+import '../../utils/app_notification.dart';
 import '../ui_screens/main_screen/app_tabs_screen.dart';
 import 'register_screen.dart';
 
@@ -52,8 +53,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: Colors.red));
+      AppNotification.show(context, message: e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -72,8 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (!mounted) return;
       final message = e.toString().replaceFirst('Exception: ', '');
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.red));
+      AppNotification.show(context, message: message);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -84,11 +83,12 @@ class _LoginScreenState extends State<LoginScreen> {
   void _onTelegramTap() => _socialLogin(() => _socialAuth.loginWithTelegram(context));
 
   void _onInstagramTap() {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Instagram: замените YOUR_INSTAGRAM_APP_ID в SocialAuthService'),
-      duration: Duration(seconds: 4),
-      backgroundColor: Color(0xFFE1306C),
-    ));
+    AppNotification.show(
+      context,
+      message: 'Instagram: замените YOUR_INSTAGRAM_APP_ID в SocialAuthService',
+      type: NotificationType.info,
+      duration: const Duration(seconds: 4),
+    );
   }
 
   @override
