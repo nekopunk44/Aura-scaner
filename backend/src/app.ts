@@ -21,7 +21,8 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", 'https://telegram.org'],
-      frameSrc: ["'none'"],
+      frameSrc: ["'self'", 'https://telegram.org', 'https://oauth.telegram.org'],
+      imgSrc: ["'self'", 'https://telegram.org', 'https://*.telegram.org', 'data:'],
       objectSrc: ["'none'"],
     },
   },
