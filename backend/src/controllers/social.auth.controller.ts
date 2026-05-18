@@ -128,6 +128,12 @@ export async function googleCallback(req: Request, res: Response): Promise<void>
 }
 
 function buildDeepLinkPage(deepLink: string, errorMsg?: string): string {
+  // On Android, Chrome blocks window.location.href for custom schemes from JS.
+  // Use intent:// URI so Chrome launches the app directly.
+  // Extract the path+query from aurascanner://oauth2redirect?...
+  const afterScheme = deepLink.replace(/^aurascanner:\/\//, '');
+  const intentUri = `intent://${afterScheme}#Intent;scheme=aurascanner;package=com.example.scanner_ap;end`;
+
   return `<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -138,12 +144,20 @@ function buildDeepLinkPage(deepLink: string, errorMsg?: string): string {
     body{font-family:sans-serif;display:flex;flex-direction:column;align-items:center;
          justify-content:center;height:100vh;margin:0;background:#f5f5f5;color:#333;}
     p{text-align:center;padding:0 24px;}
+    a.btn{margin-top:16px;padding:12px 24px;background:#4285f4;color:#fff;
+          text-decoration:none;border-radius:8px;font-size:16px;}
   </style>
 </head>
 <body>
-  <p>${errorMsg ? `Ошибка: ${errorMsg}` : 'Авторизация выполнена. Возврат в приложение…'}</p>
+  <p>${errorMsg ? `Ошибка: ${errorMsg}` : 'Авторизация выполнена.'}</p>
+  <a class="btn" href="${intentUri}">Вернуться в приложение</a>
   <script>
-    window.location.href = ${JSON.stringify(deepLink)};
+    var ua = navigator.userAgent;
+    if (/Android/i.test(ua)) {
+      window.location.href = ${JSON.stringify(intentUri)};
+    } else {
+      window.location.href = ${JSON.stringify(deepLink)};
+    }
   </script>
 </body>
 </html>`;
