@@ -30,7 +30,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.example.scanner_ap</string>
+				<string>aurascanner</string>
 				<string>com.googleusercontent.apps.408293307028-jg4ii6ad6utd27kf723iq2052jjkapk8</string>
 				<string>com.googleusercontent.apps.408293307028-1b19tnjl4dvrocfcv62l8360u7lf0haq</string>
 			</array>

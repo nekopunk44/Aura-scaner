@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 
-const CALLBACK_SCHEME = 'com.example.scanner_ap';
+const CALLBACK_SCHEME = 'aurascanner';
 
 // GET /auth/telegram/login
 // Отдаёт HTML-страницу с Telegram Login Widget.

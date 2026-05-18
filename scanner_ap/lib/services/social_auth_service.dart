@@ -38,8 +38,12 @@
 // iOS: добавьте в Info.plist CFBundleURLSchemes → com.example.scanner_ap
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:http/http.dart' as http;
 import '../config/server_config.dart';
 import 'auth_service.dart';
 
@@ -68,7 +72,8 @@ class SocialAuthService {
   static const _instagramClientId = 'YOUR_INSTAGRAM_APP_ID';
 
   // ── Схема deep link для VK, Telegram, Instagram ──────────────────────────
-  static const _callbackScheme = 'com.example.scanner_ap';
+  // Underscore недопустим в URL scheme (RFC 3986) — используем aurascanner
+  static const _callbackScheme = 'aurascanner';
   static const _redirectUri = '$_callbackScheme:/oauth2redirect';
 
   final _authService = AuthService();
@@ -77,12 +82,21 @@ class SocialAuthService {
   // Google
   // ════════════════════════════════════════════════════════════════════════════
 
-  /// Открывает Google OAuth в системном браузере, получает access_token,
-  /// верифицирует его на backend и возвращает [AuthUser].
-  ///
-  /// Google возвращает access_token (не id_token) при implicit flow.
-  /// Backend ожидает id_token для /auth/social?provider=google, поэтому
-  /// мы запрашиваем id_token через response_type=token+id_token.
+  // PKCE helpers
+  static String _generateCodeVerifier() {
+    const chars =
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    final random = Random.secure();
+    return List.generate(64, (_) => chars[random.nextInt(chars.length)]).join();
+  }
+
+  static String _generateCodeChallenge(String verifier) {
+    final digest = sha256.convert(utf8.encode(verifier));
+    return base64Url.encode(digest.bytes).replaceAll('=', '');
+  }
+
+  // Authorization Code + PKCE flow (required for Android/iOS native clients).
+  // Gets id_token by exchanging the auth code at Google's token endpoint.
   Future<AuthUser> loginWithGoogle() async {
     final clientId = Platform.isIOS ? _googleClientIdIos : _googleClientIdAndroid;
     final callbackScheme = Platform.isIOS
@@ -90,12 +104,16 @@ class SocialAuthService {
         : _googleCallbackSchemeAndroid;
     final redirectUri = '$callbackScheme:/oauth2redirect';
 
+    final codeVerifier = _generateCodeVerifier();
+    final codeChallenge = _generateCodeChallenge(codeVerifier);
+
     final uri = Uri.https('accounts.google.com', '/o/oauth2/auth', {
       'client_id': clientId,
       'redirect_uri': redirectUri,
-      'response_type': 'token id_token',
+      'response_type': 'code',
       'scope': 'openid email profile',
-      'nonce': DateTime.now().millisecondsSinceEpoch.toString(),
+      'code_challenge': codeChallenge,
+      'code_challenge_method': 'S256',
     });
 
     final resultUrl = await FlutterWebAuth2.authenticate(
@@ -103,16 +121,31 @@ class SocialAuthService {
       callbackUrlScheme: callbackScheme,
     );
 
-    // Google возвращает токены во fragment (#id_token=...&access_token=...)
-    final fragment = Uri.parse(resultUrl).fragment;
-    final params = Uri.splitQueryString(fragment);
-
-    final idToken = params['id_token'];
-    if (idToken == null || idToken.isEmpty) {
-      throw 'Google не вернул id_token. Проверьте настройки OAuth-приложения.';
+    final code = Uri.parse(resultUrl).queryParameters['code'];
+    if (code == null || code.isEmpty) {
+      throw 'Google не вернул код авторизации.';
     }
 
-    // Отправляем id_token на backend для верификации и получения JWT
+    // Exchange code for tokens at Google token endpoint
+    final tokenResponse = await http.post(
+      Uri.parse('https://oauth2.googleapis.com/token'),
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: {
+        'code': code,
+        'client_id': clientId,
+        'redirect_uri': redirectUri,
+        'grant_type': 'authorization_code',
+        'code_verifier': codeVerifier,
+      },
+    );
+
+    final tokenData = jsonDecode(tokenResponse.body) as Map<String, dynamic>;
+    final idToken = tokenData['id_token'] as String?;
+    if (idToken == null || idToken.isEmpty) {
+      throw tokenData['error_description'] as String?
+          ?? 'Google не вернул id_token.';
+    }
+
     return _authService.loginWithSocial(
       provider: 'google',
       token: idToken,
