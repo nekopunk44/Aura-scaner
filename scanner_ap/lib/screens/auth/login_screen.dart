@@ -22,6 +22,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isLoading = false;
   bool _obscurePassword = true;
+  int _logoTapCount = 0;
 
   @override
   void dispose() {
@@ -30,7 +31,10 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _toggleTheme() => ThemeNotifier().toggle();
+  void _toggleTheme() {
+    setState(() => _logoTapCount++);
+    ThemeNotifier().toggle();
+  }
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
@@ -128,29 +132,29 @@ class _LoginScreenState extends State<LoginScreen> {
                   Center(
                     child: GestureDetector(
                       onTap: _toggleTheme,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 400),
-                        curve: Curves.easeInOut,
-                        width: 72,
-                        height: 72,
-                        decoration: BoxDecoration(
-                          color: iconBg,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: iconColor.withValues(alpha: 0.35),
-                            width: 1.5,
-                          ),
-                        ),
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 300),
-                          transitionBuilder: (child, anim) => ScaleTransition(
-                            scale: anim,
-                            child: child,
+                      child: TweenAnimationBuilder<double>(
+                        key: ValueKey(_logoTapCount),
+                        tween: Tween(begin: 0.82, end: 1.0),
+                        duration: const Duration(milliseconds: 450),
+                        curve: Curves.elasticOut,
+                        builder: (context, scale, child) =>
+                            Transform.scale(scale: scale, child: child),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 400),
+                          curve: Curves.easeInOut,
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            color: iconBg,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: iconColor.withValues(alpha: 0.35),
+                              width: 1.5,
+                            ),
                           ),
                           child: Icon(
-                            isDark ? Icons.nights_stay_outlined : Icons.wb_sunny_outlined,
-                            key: ValueKey(isDark),
-                            size: 34,
+                            Icons.document_scanner,
+                            size: 36,
                             color: iconColor,
                           ),
                         ),
