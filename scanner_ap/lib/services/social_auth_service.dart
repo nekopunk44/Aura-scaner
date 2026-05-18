@@ -38,7 +38,7 @@
 // iOS: добавьте в Info.plist CFBundleURLSchemes → com.example.scanner_ap
 
 import 'dart:async';
-import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart'; // used by VK, Instagram
 import 'package:url_launcher/url_launcher.dart';
 import '../config/server_config.dart';
 import 'auth_service.dart';
@@ -236,12 +236,17 @@ class SocialAuthService {
   Future<AuthUser> loginWithTelegram() async {
     final loginUrl = buildTelegramLoginUrl(ServerConfig().baseUrl);
 
-    final resultUrl = await FlutterWebAuth2.authenticate(
-      url: loginUrl,
-      callbackUrlScheme: _callbackScheme,
-    );
+    // Register deep link listener BEFORE opening browser
+    final deepLinkFuture = DeepLinkService().waitForLink();
 
-    final parsed = parseTelegramDeepLink(Uri.parse(resultUrl));
+    final launched = await launchUrl(
+      Uri.parse(loginUrl),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!launched) throw 'Не удалось открыть браузер для авторизации Telegram.';
+
+    final resultUri = await deepLinkFuture;
+    final parsed = parseTelegramDeepLink(resultUri);
 
     return _authService.loginWithSocial(
       provider: 'telegram',
