@@ -33,10 +33,33 @@ export function telegramLoginPage(req: Request, res: Response): void {
 
 // GET /auth/telegram/callback
 // Telegram вызывает этот URL после авторизации пользователя.
-// Верифицирует hash, затем делает redirect в приложение через deep link.
+// Поддерживает два формата:
+//   1. Login Widget (?id=...&hash=...&auth_date=...)
+//   2. oauth.telegram.org (?tgAuthResult=BASE64_JSON)
 export function telegramCallback(req: Request, res: Response): void {
-  const { id, hash, auth_date, first_name, last_name, username, photo_url } =
+  let { id, hash, auth_date, first_name, last_name, username, photo_url } =
     req.query as Record<string, string | undefined>;
+
+  // Формат oauth.telegram.org: все данные упакованы в base64-JSON
+  const tgAuthResult = req.query['tgAuthResult'] as string | undefined;
+  if (tgAuthResult) {
+    try {
+      const decoded = JSON.parse(
+        Buffer.from(tgAuthResult, 'base64url').toString('utf-8'),
+      ) as Record<string, unknown>;
+      id         = decoded['id']?.toString();
+      hash       = decoded['hash'] as string | undefined;
+      auth_date  = decoded['auth_date']?.toString();
+      first_name = decoded['first_name'] as string | undefined;
+      last_name  = decoded['last_name']  as string | undefined;
+      username   = decoded['username']   as string | undefined;
+      photo_url  = decoded['photo_url']  as string | undefined;
+    } catch {
+      logger.warn('[telegramCallback] Failed to decode tgAuthResult');
+      res.status(400).send('<h3>Ошибка декодирования данных Telegram</h3>');
+      return;
+    }
+  }
 
   if (!id || !hash || !auth_date) {
     res.status(400).send('<h3>Недостаточно данных от Telegram</h3>');
