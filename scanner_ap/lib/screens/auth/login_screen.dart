@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../config/theme_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/social_auth_service.dart';
@@ -291,7 +292,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: _SocialTile(
                           label: 'Google',
                           color: const Color(0xFFEA4335),
-                          icon: Icons.g_mobiledata_rounded,
+                          faIcon: FontAwesomeIcons.google,
                           isDark: isDark,
                           labelColor: textColor,
                           onTap: _isLoading ? null : _onGoogleTap,
@@ -302,7 +303,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: _SocialTile(
                           label: 'ВКонтакте',
                           color: const Color(0xFF0077FF),
-                          icon: Icons.people_alt_outlined,
+                          faIcon: FontAwesomeIcons.vk,
                           isDark: isDark,
                           labelColor: textColor,
                           onTap: _isLoading ? null : _onVkTap,
@@ -317,7 +318,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: _SocialTile(
                           label: 'Telegram',
                           color: const Color(0xFF26A5E4),
-                          icon: Icons.send_outlined,
+                          faIcon: FontAwesomeIcons.telegram,
                           isDark: isDark,
                           labelColor: textColor,
                           onTap: _isLoading ? null : _onTelegramTap,
@@ -328,7 +329,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: _SocialTile(
                           label: 'Instagram',
                           color: const Color(0xFFE1306C),
-                          icon: Icons.camera_alt_outlined,
+                          faIcon: FontAwesomeIcons.instagram,
                           isDark: isDark,
                           labelColor: textColor,
                           onTap: _isLoading ? null : _onInstagramTap,
@@ -440,7 +441,7 @@ class _AdaptiveTextField extends StatelessWidget {
 class _SocialTile extends StatelessWidget {
   final String label;
   final Color color;
-  final IconData icon;
+  final IconData faIcon;
   final bool isDark;
   final Color labelColor;
   final VoidCallback? onTap;
@@ -448,7 +449,7 @@ class _SocialTile extends StatelessWidget {
   const _SocialTile({
     required this.label,
     required this.color,
-    required this.icon,
+    required this.faIcon,
     required this.isDark,
     required this.labelColor,
     required this.onTap,
@@ -479,7 +480,7 @@ class _SocialTile extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, color: color, size: 22),
+                FaIcon(faIcon, color: color, size: 20),
                 const SizedBox(width: 8),
                 Text(label,
                     style: TextStyle(
