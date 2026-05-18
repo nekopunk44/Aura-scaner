@@ -1,17 +1,12 @@
-// Точка входа приложения Aura Scanner.
-//
-// Приложение для сканирования документов, паспортов, ID-карт,
-// распознавания текста (OCR), перевода через камеру и хранения файлов.
-//
-// Поток навигации:
-//   main() → SplashScreen (3 сек) → MainScreen (нижняя навигация)
 import 'package:flutter/material.dart';
 import 'screens/ui_screens/splash_screen.dart';
 import 'services/deep_link_service.dart';
+import 'config/theme_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   DeepLinkService().init();
+  await ThemeNotifier().load();
   runApp(const ScannerApp());
 }
 
@@ -20,20 +15,17 @@ class ScannerApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        // Используем более светлые цвета по умолчанию, чтобы соответствовать новому стилю
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        scaffoldBackgroundColor: Colors.white,
-        appBarTheme: const AppBarTheme(
-          elevation: 0, // Убираем тень
-          backgroundColor: Colors.white,
-          iconTheme: IconThemeData(color: Colors.black),
-        ),
-      ),
-      // Запускаем SplashScreen, который затем перейдет на MainScreen
-      home: const SplashScreen(),
+    return ListenableBuilder(
+      listenable: ThemeNotifier(),
+      builder: (context, _) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          themeMode: ThemeNotifier().mode,
+          home: const SplashScreen(),
+        );
+      },
     );
   }
 }
