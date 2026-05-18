@@ -63,7 +63,7 @@ export function telegramCallback(req: Request, res: Response): void {
   // Формат 3: данных нет в query → возможно, tgAuthResult в fragment или
   // oauth.telegram.org вернул пустой callback. Отдаём JS-страницу для диагностики и редиректа.
   if (!id || !hash || !auth_date) {
-    logger.warn('[telegramCallback] No params in query. search=%s', req.url);
+    logger.warn('[telegramCallback] No params in query. url=%s', req.url);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!DOCTYPE html>
 <html>
@@ -72,32 +72,35 @@ export function telegramCallback(req: Request, res: Response): void {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Авторизация Telegram</title>
   <style>
+    *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:sans-serif;background:#0f1923;color:#fff;
          display:flex;flex-direction:column;align-items:center;
-         justify-content:center;min-height:100vh;margin:0;padding:24px;text-align:center}
-    pre{background:rgba(255,255,255,.08);padding:12px;border-radius:8px;
+         justify-content:center;min-height:100vh;padding:24px;text-align:center}
+    #btn{display:none;margin-top:24px;padding:14px 32px;background:#2CA5E0;
+         color:#fff;text-decoration:none;border-radius:14px;font-size:16px;font-weight:600}
+    pre{background:rgba(255,255,255,.08);padding:12px;border-radius:8px;margin-top:16px;
         font-size:11px;text-align:left;max-width:100%;word-break:break-all;white-space:pre-wrap}
   </style>
 </head>
 <body>
 <p id="status">Обработка данных Telegram...</p>
+<a id="btn" href="#">Открыть приложение</a>
 <pre id="debug"></pre>
 <script>
 (function () {
   var dbg = document.getElementById('debug');
   var st  = document.getElementById('status');
+  var btn = document.getElementById('btn');
 
-  dbg.textContent = 'search: ' + location.search + '\\nhash: ' + location.hash;
-
-  function getParam(str, key) {
-    return new URLSearchParams(str).get(key);
-  }
+  function getParam(str, key) { return new URLSearchParams(str).get(key); }
 
   var raw = getParam(location.search.slice(1), 'tgAuthResult')
          || getParam(location.hash.slice(1),   'tgAuthResult');
 
+  dbg.textContent = 'search: ' + location.search + '\\nhash: ' + location.hash.substring(0,40);
+
   if (!raw) {
-    st.textContent = 'Данные не найдены. Попробуйте ещё раз.';
+    st.textContent = 'Данные не найдены. Попробуйте снова.';
     return;
   }
 
@@ -105,8 +108,6 @@ export function telegramCallback(req: Request, res: Response): void {
     var b64 = raw.replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4) b64 += '=';
     var d = JSON.parse(atob(b64));
-
-    dbg.textContent += '\\nparsed id: ' + d.id;
 
     var p = new URLSearchParams();
     p.set('id',        String(d.id));
@@ -117,12 +118,17 @@ export function telegramCallback(req: Request, res: Response): void {
     if (d.username)   p.set('username',   d.username);
 
     var uri = 'aurascanner://oauth2redirect?' + p.toString();
-    dbg.textContent += '\\nredirecting to: ' + uri.substring(0, 60) + '...';
+    dbg.textContent += '\\nid=' + d.id + ' uri_len=' + uri.length;
+
+    // Показываем кнопку как fallback на случай если авто-редирект не сработает
+    btn.href = uri;
+    btn.style.display = 'inline-block';
     st.textContent = 'Возврат в приложение...';
-    setTimeout(function () { window.location.replace(uri); }, 300);
+
+    // Пробуем несколько способов редиректа
+    window.location.href = uri;
   } catch (e) {
-    st.textContent = 'Ошибка: ' + e.message;
-    dbg.textContent += '\\nraw (50): ' + raw.substring(0, 50);
+    st.textContent = 'Ошибка разбора: ' + e.message;
   }
 })();
 </script>
