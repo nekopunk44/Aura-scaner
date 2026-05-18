@@ -37,6 +37,13 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- app_links: перехват aurascanner:// deep link в основной activity -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="aurascanner"/>
+            </intent-filter>
         </activity>
         <!-- flutter_web_auth_2: перехват OAuth redirect callback -->
         <activity
