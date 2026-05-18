@@ -107,30 +107,49 @@ export function telegramCallback(req: Request, res: Response): void {
   <title>Авторизация выполнена</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
          min-height:100vh;display:flex;flex-direction:column;align-items:center;
-         justify-content:center;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);
-         color:#fff;padding:24px;text-align:center}
-    .icon{font-size:64px;margin-bottom:24px}
-    h1{font-size:22px;font-weight:700;margin-bottom:10px}
-    p{font-size:15px;opacity:.75;margin-bottom:32px;line-height:1.5}
-    a.btn{display:inline-flex;align-items:center;gap:10px;padding:16px 32px;
-          background:#2CA5E0;color:#fff;text-decoration:none;border-radius:14px;
-          font-size:16px;font-weight:600;box-shadow:0 4px 20px rgba(44,165,224,.4)}
-    a.btn:active{transform:scale(.97)}
+         justify-content:center;background:linear-gradient(160deg,#0f1923 0%,#1a2a3a 50%,#0d2137 100%);
+         color:#fff;padding:32px 24px;text-align:center}
+    .card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+          border-radius:24px;padding:40px 32px;max-width:360px;width:100%}
+    .check-wrap{width:80px;height:80px;margin:0 auto 28px;
+                background:rgba(44,165,224,.15);border-radius:50%;
+                display:flex;align-items:center;justify-content:center;
+                border:2px solid rgba(44,165,224,.35)}
+    .check-wrap svg{width:38px;height:38px}
+    h1{font-size:20px;font-weight:700;letter-spacing:.2px;margin-bottom:10px}
+    p{font-size:14px;color:rgba(255,255,255,.55);line-height:1.6;margin-bottom:32px}
+    a.btn{display:flex;align-items:center;justify-content:center;gap:10px;
+          padding:15px 28px;background:#2CA5E0;color:#fff;text-decoration:none;
+          border-radius:14px;font-size:15px;font-weight:600;
+          box-shadow:0 6px 24px rgba(44,165,224,.35);transition:opacity .15s}
+    a.btn:active{opacity:.85}
+    .tg-icon{width:20px;height:20px;fill:#fff;flex-shrink:0}
   </style>
 </head>
 <body>
-  <div class="icon">✅</div>
-  <h1>Авторизация выполнена</h1>
-  <p>Вы успешно вошли через Telegram.<br>Нажмите кнопку чтобы вернуться в приложение.</p>
-  <a class="btn" id="btn" href="${deepLink}">
-    <span>✈</span> Открыть приложение
-  </a>
+  <div class="card">
+    <div class="check-wrap">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="11" stroke="#2CA5E0" stroke-width="1.5"/>
+        <path d="M7 12.5l3.5 3.5 6.5-7" stroke="#2CA5E0" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1>Авторизация выполнена</h1>
+    <p>Вы успешно вошли через Telegram.<br>Возврат в приложение...</p>
+    <a class="btn" id="btn" href="${deepLink}">
+      <svg class="tg-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/>
+      </svg>
+      Открыть приложение
+    </a>
+  </div>
   <script>
     var isAndroid = /Android/i.test(navigator.userAgent);
     var target = isAndroid ? ${JSON.stringify(intentUri)} : ${JSON.stringify(deepLink)};
-    setTimeout(function(){ window.location.href = target; }, 400);
+    setTimeout(function(){ window.location.href = target; }, 600);
     document.getElementById('btn').href = target;
   </script>
 </body>

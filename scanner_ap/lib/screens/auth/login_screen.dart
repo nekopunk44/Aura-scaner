@@ -53,7 +53,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Выполняет социальную авторизацию, навигирует на главный экран при успехе.
   Future<void> _socialLogin(Future<AuthUser> Function() authCall) async {
     setState(() => _isLoading = true);
     try {
@@ -76,9 +75,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _onGoogleTap() => _socialLogin(_socialAuth.loginWithGoogle);
-
   void _onVkTap() => _socialLogin(_socialAuth.loginWithVk);
-
   void _onTelegramTap() => _socialLogin(() => _socialAuth.loginWithTelegram(context));
 
   void _onInstagramTap() {
@@ -92,282 +89,384 @@ class _LoginScreenState extends State<LoginScreen> {
         backgroundColor: Color(0xFFE1306C),
       ),
     );
-    // Раскомментируйте после настройки Instagram Basic Display API:
-    // _socialLogin(_socialAuth.loginWithInstagram);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 24),
-                // Логотип
-                Container(
-                  width: 80,
-                  height: 80,
-                  margin: const EdgeInsets.only(bottom: 20),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.document_scanner,
-                      size: 44, color: Colors.blue),
-                ),
-                const Text(
-                  'Aura Scanner',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A2E)),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Войдите в свой аккаунт',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
-                ),
-                const SizedBox(height: 36),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF1a1a2e), Color(0xFF16213e), Color(0xFF0f3460)],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 16),
 
-                // Форма
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.06),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(20),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      children: [
-                        TextFormField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: _inputDecoration('Email', Icons.email_outlined),
-                          validator: (v) {
-                            if (v == null || v.trim().isEmpty) return 'Введите email';
-                            if (!v.contains('@')) return 'Некорректный email';
-                            return null;
-                          },
+                  // Logo
+                  Center(
+                    child: Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          width: 1.5,
                         ),
-                        const SizedBox(height: 14),
-                        TextFormField(
-                          controller: _passwordController,
-                          obscureText: _obscurePassword,
-                          decoration: _inputDecoration(
-                            'Пароль',
-                            Icons.lock_outline,
+                      ),
+                      child: const Icon(
+                        Icons.document_scanner,
+                        size: 36,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  const Text(
+                    'Aura Scanner',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Войдите в свой аккаунт',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white.withValues(alpha: 0.55),
+                    ),
+                  ),
+
+                  const SizedBox(height: 36),
+
+                  // Form card
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.07),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.12),
+                        width: 1,
+                      ),
+                    ),
+                    padding: const EdgeInsets.all(20),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        children: [
+                          _DarkTextField(
+                            controller: _emailController,
+                            label: 'Email',
+                            icon: Icons.email_outlined,
+                            keyboardType: TextInputType.emailAddress,
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) return 'Введите email';
+                              if (!v.contains('@')) return 'Некорректный email';
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 14),
+                          _DarkTextField(
+                            controller: _passwordController,
+                            label: 'Пароль',
+                            icon: Icons.lock_outline,
+                            obscureText: _obscurePassword,
                             suffix: IconButton(
                               icon: Icon(
                                 _obscurePassword
                                     ? Icons.visibility_outlined
                                     : Icons.visibility_off_outlined,
-                                color: Colors.grey,
+                                color: Colors.white54,
                                 size: 20,
                               ),
-                              onPressed: () => setState(
-                                  () => _obscurePassword = !_obscurePassword),
+                              onPressed: () =>
+                                  setState(() => _obscurePassword = !_obscurePassword),
                             ),
+                            validator: (v) {
+                              if (v == null || v.isEmpty) return 'Введите пароль';
+                              if (v.length < 6) return 'Минимум 6 символов';
+                              return null;
+                            },
                           ),
-                          validator: (v) {
-                            if (v == null || v.isEmpty) return 'Введите пароль';
-                            if (v.length < 6) return 'Минимум 6 символов';
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _login,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                            ),
-                            child: _isLoading
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2, color: Colors.white),
-                                  )
-                                : const Text('Войти',
-                                    style: TextStyle(
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _login,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF2CA5E0),
+                                disabledBackgroundColor:
+                                    const Color(0xFF2CA5E0).withValues(alpha: 0.4),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                elevation: 0,
+                              ),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: Colors.white),
+                                    )
+                                  : const Text(
+                                      'Войти',
+                                      style: TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w600,
-                                        color: Colors.white)),
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
 
-                const SizedBox(height: 24),
+                  const SizedBox(height: 28),
 
-                // Разделитель
-                Row(
-                  children: [
-                    Expanded(child: Divider(color: Colors.grey.shade300)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text('или войдите через',
+                  // Divider
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Divider(
+                          color: Colors.white.withValues(alpha: 0.15),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        child: Text(
+                          'или войдите через',
                           style: TextStyle(
-                              fontSize: 12, color: Colors.grey.shade500)),
-                    ),
-                    Expanded(child: Divider(color: Colors.grey.shade300)),
-                  ],
-                ),
-
-                const SizedBox(height: 16),
-
-                // Социальные кнопки
-                _SocialButton(
-                  label: 'Google',
-                  icon: Icons.g_mobiledata_rounded,
-                  iconColor: Colors.red,
-                  onTap: _isLoading ? null : _onGoogleTap,
-                ),
-                const SizedBox(height: 10),
-                _SocialButton(
-                  label: 'ВКонтакте',
-                  icon: Icons.people_alt_outlined,
-                  iconColor: const Color(0xFF0077FF),
-                  onTap: _isLoading ? null : _onVkTap,
-                ),
-                const SizedBox(height: 10),
-                _SocialButton(
-                  label: 'Telegram',
-                  icon: Icons.send_outlined,
-                  iconColor: const Color(0xFF26A5E4),
-                  onTap: _isLoading ? null : _onTelegramTap,
-                ),
-                const SizedBox(height: 10),
-                _SocialButton(
-                  label: 'Instagram',
-                  icon: Icons.camera_alt_outlined,
-                  iconColor: const Color(0xFFE1306C),
-                  onTap: _isLoading ? null : _onInstagramTap,
-                ),
-
-                const SizedBox(height: 28),
-
-                // Регистрация
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text('Нет аккаунта? ',
-                        style: TextStyle(color: Colors.grey.shade600)),
-                    GestureDetector(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const RegisterScreen()),
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.45),
+                          ),
+                        ),
                       ),
-                      child: const Text(
-                        'Зарегистрироваться',
+                      Expanded(
+                        child: Divider(
+                          color: Colors.white.withValues(alpha: 0.15),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Social buttons grid
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _SocialTile(
+                          label: 'Google',
+                          color: const Color(0xFFEA4335),
+                          icon: Icons.g_mobiledata_rounded,
+                          onTap: _isLoading ? null : _onGoogleTap,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _SocialTile(
+                          label: 'ВКонтакте',
+                          color: const Color(0xFF0077FF),
+                          icon: Icons.people_alt_outlined,
+                          onTap: _isLoading ? null : _onVkTap,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _SocialTile(
+                          label: 'Telegram',
+                          color: const Color(0xFF26A5E4),
+                          icon: Icons.send_outlined,
+                          onTap: _isLoading ? null : _onTelegramTap,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _SocialTile(
+                          label: 'Instagram',
+                          color: const Color(0xFFE1306C),
+                          icon: Icons.camera_alt_outlined,
+                          onTap: _isLoading ? null : _onInstagramTap,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // Register link
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Нет аккаунта? ',
                         style: TextStyle(
-                            color: Colors.blue,
-                            fontWeight: FontWeight.w600),
+                          color: Colors.white.withValues(alpha: 0.55),
+                          fontSize: 14,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
+                      GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const RegisterScreen()),
+                        ),
+                        child: const Text(
+                          'Зарегистрироваться',
+                          style: TextStyle(
+                            color: Color(0xFF2CA5E0),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
+}
 
-  InputDecoration _inputDecoration(String label, IconData icon,
-      {Widget? suffix}) {
-    return InputDecoration(
-      labelText: label,
-      prefixIcon: Icon(icon, size: 20, color: Colors.grey),
-      suffixIcon: suffix,
-      filled: true,
-      fillColor: const Color(0xFFF7F8FA),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.grey.shade200),
+class _DarkTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final IconData icon;
+  final TextInputType? keyboardType;
+  final bool obscureText;
+  final Widget? suffix;
+  final String? Function(String?)? validator;
+
+  const _DarkTextField({
+    required this.controller,
+    required this.label,
+    required this.icon,
+    this.keyboardType,
+    this.obscureText = false,
+    this.suffix,
+    this.validator,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      obscureText: obscureText,
+      style: const TextStyle(color: Colors.white, fontSize: 15),
+      validator: validator,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
+        prefixIcon: Icon(icon, size: 20, color: Colors.white54),
+        suffixIcon: suffix,
+        filled: true,
+        fillColor: Colors.white.withValues(alpha: 0.07),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF2CA5E0), width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.redAccent),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
+        ),
+        errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 12),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.grey.shade200),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Colors.blue),
-      ),
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     );
   }
 }
 
-class _SocialButton extends StatelessWidget {
+class _SocialTile extends StatelessWidget {
   final String label;
+  final Color color;
   final IconData icon;
-  final Color iconColor;
-  // nullable — кнопка отключается во время загрузки (_isLoading = true)
   final VoidCallback? onTap;
 
-  const _SocialButton({
+  const _SocialTile({
     required this.label,
+    required this.color,
     required this.icon,
-    required this.iconColor,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        height: 48,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        splashColor: color.withValues(alpha: 0.15),
+        child: Container(
+          height: 52,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.07),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.12),
+              width: 1,
             ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: iconColor, size: 22),
-            const SizedBox(width: 10),
-            Text(
-              label,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w500, fontSize: 14),
-            ),
-          ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: color, size: 22),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
