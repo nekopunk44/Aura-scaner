@@ -7,10 +7,11 @@
 //   main() → SplashScreen (3 сек) → MainScreen (нижняя навигация)
 import 'package:flutter/material.dart';
 import 'screens/ui_screens/splash_screen.dart';
+import 'services/deep_link_service.dart';
 
 void main() async {
-  // Инициализация, необходимая для плагинов (например, camera)
   WidgetsFlutterBinding.ensureInitialized();
+  DeepLinkService().init();
   runApp(const ScannerApp());
 }
 

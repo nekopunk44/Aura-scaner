@@ -39,8 +39,10 @@
 
 import 'dart:async';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../config/server_config.dart';
 import 'auth_service.dart';
+import 'deep_link_service.dart';
 
 class SocialAuthService {
   // ── Замените эти константы на реальные значения из консолей разработчика ──
@@ -68,11 +70,10 @@ class SocialAuthService {
   static const _googleWebClientId =
       '408293307028-59uhh1lio31abr5r3cof7undvqarj6e7.apps.googleusercontent.com';
 
-  // Server-side OAuth flow: Flutter opens Google auth → backend exchanges code →
-  // backend redirects to aurascanner://oauth2redirect?token=JWT&refreshToken=...
+  // Server-side OAuth flow via external browser + app_links deep link.
+  // External browser avoids Chrome Custom Tab issues with custom scheme intercept.
   Future<AuthUser> loginWithGoogle() async {
-    // Backend redirect URI must match the one registered in Google Cloud Console
-    final baseUrl = ServerConfig().baseUrl; // e.g. https://host/api
+    final baseUrl = ServerConfig().baseUrl;
     final serverOrigin = baseUrl.replaceAll(RegExp(r'/api$'), '');
     final redirectUri = '$serverOrigin/api/auth/google/callback';
 
@@ -85,17 +86,18 @@ class SocialAuthService {
       'prompt': 'select_account',
     });
 
-    final resultUrl = await FlutterWebAuth2.authenticate(
-      url: uri.toString(),
-      callbackUrlScheme: _callbackScheme,
-    );
+    // Register deep link listener BEFORE opening the browser
+    final deepLinkFuture = DeepLinkService().waitForLink();
 
-    final params = Uri.parse(resultUrl).queryParameters;
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched) throw 'Не удалось открыть браузер для авторизации Google.';
+
+    // Wait for aurascanner://oauth2redirect?token=...
+    final resultUri = await deepLinkFuture;
+    final params = resultUri.queryParameters;
 
     final error = params['error'];
-    if (error != null && error.isNotEmpty) {
-      throw 'Google OAuth ошибка: $error';
-    }
+    if (error != null && error.isNotEmpty) throw 'Google OAuth ошибка: $error';
 
     final token = params['token'];
     final refreshToken = params['refreshToken'];

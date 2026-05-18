@@ -61,6 +61,7 @@ dependencies:
   signature: ^6.3.0
   qr_code_scanner_plus: ^2.0.14
   url_launcher: ^6.3.2
+  app_links: ^6.4.0
   image: ^4.5.4
   archive: ^4.0.0
   dio: ^5.7.0
