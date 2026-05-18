@@ -99,12 +99,18 @@ class AuthService {
     }
   }
 
-  Future<void> _saveTokens(Map<String, dynamic> data) async {
-    await _api.saveToken(data['token'] as String);
-    final refreshToken = data['refreshToken'] as String?;
-    if (refreshToken != null) {
+  Future<void> saveTokens(String token, String? refreshToken) async {
+    await _api.saveToken(token);
+    if (refreshToken != null && refreshToken.isNotEmpty) {
       await _api.saveRefreshToken(refreshToken);
     }
+  }
+
+  Future<void> _saveTokens(Map<String, dynamic> data) async {
+    await saveTokens(
+      data['token'] as String,
+      data['refreshToken'] as String?,
+    );
   }
 
   String _parseError(DioException e) {

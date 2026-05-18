@@ -38,30 +38,12 @@
 // iOS: добавьте в Info.plist CFBundleURLSchemes → com.example.scanner_ap
 
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'dart:math';
-import 'package:crypto/crypto.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
-import 'package:http/http.dart' as http;
 import '../config/server_config.dart';
 import 'auth_service.dart';
 
 class SocialAuthService {
   // ── Замените эти константы на реальные значения из консолей разработчика ──
-
-  // Google Client ID зависит от платформы.
-  // Android: использует обратную схему от Client ID как redirect URI.
-  // iOS: свой Client ID с тем же механизмом обратной схемы.
-  static const _googleClientIdAndroid =
-      '408293307028-jg4ii6ad6utd27kf723iq2052jjkapk8.apps.googleusercontent.com';
-  static const _googleClientIdIos =
-      '408293307028-1b19tnjl4dvrocfcv62l8360u7lf0haq.apps.googleusercontent.com';
-
-  static const _googleCallbackSchemeAndroid =
-      'com.googleusercontent.apps.408293307028-jg4ii6ad6utd27kf723iq2052jjkapk8';
-  static const _googleCallbackSchemeIos =
-      'com.googleusercontent.apps.408293307028-1b19tnjl4dvrocfcv62l8360u7lf0haq';
 
   /// VK Application ID (Standalone-приложение).
   /// Получить: https://vk.com/editapp → настройки приложения → ID приложения
@@ -82,73 +64,55 @@ class SocialAuthService {
   // Google
   // ════════════════════════════════════════════════════════════════════════════
 
-  // PKCE helpers
-  static String _generateCodeVerifier() {
-    const chars =
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-    final random = Random.secure();
-    return List.generate(64, (_) => chars[random.nextInt(chars.length)]).join();
-  }
+  // Web application Client ID (server-side OAuth flow).
+  static const _googleWebClientId =
+      '408293307028-59uhh1lio31abr5r3cof7undvqarj6e7.apps.googleusercontent.com';
 
-  static String _generateCodeChallenge(String verifier) {
-    final digest = sha256.convert(utf8.encode(verifier));
-    return base64Url.encode(digest.bytes).replaceAll('=', '');
-  }
-
-  // Authorization Code + PKCE flow (required for Android/iOS native clients).
-  // Gets id_token by exchanging the auth code at Google's token endpoint.
+  // Server-side OAuth flow: Flutter opens Google auth → backend exchanges code →
+  // backend redirects to aurascanner://oauth2redirect?token=JWT&refreshToken=...
   Future<AuthUser> loginWithGoogle() async {
-    final clientId = Platform.isIOS ? _googleClientIdIos : _googleClientIdAndroid;
-    final callbackScheme = Platform.isIOS
-        ? _googleCallbackSchemeIos
-        : _googleCallbackSchemeAndroid;
-    final redirectUri = '$callbackScheme:/oauth2redirect';
-
-    final codeVerifier = _generateCodeVerifier();
-    final codeChallenge = _generateCodeChallenge(codeVerifier);
+    // Backend redirect URI must match the one registered in Google Cloud Console
+    final baseUrl = ServerConfig().baseUrl; // e.g. https://host/api
+    final serverOrigin = baseUrl.replaceAll(RegExp(r'/api$'), '');
+    final redirectUri = '$serverOrigin/api/auth/google/callback';
 
     final uri = Uri.https('accounts.google.com', '/o/oauth2/auth', {
-      'client_id': clientId,
+      'client_id': _googleWebClientId,
       'redirect_uri': redirectUri,
       'response_type': 'code',
       'scope': 'openid email profile',
-      'code_challenge': codeChallenge,
-      'code_challenge_method': 'S256',
+      'access_type': 'offline',
+      'prompt': 'select_account',
     });
 
     final resultUrl = await FlutterWebAuth2.authenticate(
       url: uri.toString(),
-      callbackUrlScheme: callbackScheme,
+      callbackUrlScheme: _callbackScheme,
     );
 
-    final code = Uri.parse(resultUrl).queryParameters['code'];
-    if (code == null || code.isEmpty) {
-      throw 'Google не вернул код авторизации.';
+    final params = Uri.parse(resultUrl).queryParameters;
+
+    final error = params['error'];
+    if (error != null && error.isNotEmpty) {
+      throw 'Google OAuth ошибка: $error';
     }
 
-    // Exchange code for tokens at Google token endpoint
-    final tokenResponse = await http.post(
-      Uri.parse('https://oauth2.googleapis.com/token'),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: {
-        'code': code,
-        'client_id': clientId,
-        'redirect_uri': redirectUri,
-        'grant_type': 'authorization_code',
-        'code_verifier': codeVerifier,
-      },
-    );
+    final token = params['token'];
+    final refreshToken = params['refreshToken'];
+    final userId = params['userId'];
+    final email = params['email'];
+    final name = params['name'];
 
-    final tokenData = jsonDecode(tokenResponse.body) as Map<String, dynamic>;
-    final idToken = tokenData['id_token'] as String?;
-    if (idToken == null || idToken.isEmpty) {
-      throw tokenData['error_description'] as String?
-          ?? 'Google не вернул id_token.';
+    if (token == null || token.isEmpty) {
+      throw 'Не получен токен авторизации от сервера.';
     }
 
-    return _authService.loginWithSocial(
-      provider: 'google',
-      token: idToken,
+    await _authService.saveTokens(token, refreshToken);
+
+    return AuthUser(
+      id: userId ?? '',
+      email: email ?? '',
+      name: name ?? email?.split('@').first ?? '',
     );
   }
 

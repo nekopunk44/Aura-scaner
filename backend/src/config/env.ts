@@ -18,6 +18,8 @@ export const env = {
   vkAppId: process.env.VK_APP_ID || '',
   instagramAppId: process.env.INSTAGRAM_APP_ID || '',
   instagramAppSecret: process.env.INSTAGRAM_APP_SECRET || '',
+  googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
 };
 
 function validateEnv(): void {

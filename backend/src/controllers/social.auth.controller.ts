@@ -8,6 +8,121 @@ import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { exchangeInstagramCode } from './telegram.controller';
 
+const CALLBACK_SCHEME = 'aurascanner';
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Обмен Google auth code на токены (server-side Web application flow)
+// ──────────────────────────────────────────────────────────────────────────────
+function exchangeGoogleCode(
+  code: string,
+  redirectUri: string,
+): Promise<{ idToken: string }> {
+  return new Promise((resolve, reject) => {
+    if (!env.googleClientId || !env.googleClientSecret) {
+      reject(new Error('Google OAuth не настроен. Задайте GOOGLE_CLIENT_ID и GOOGLE_CLIENT_SECRET в .env'));
+      return;
+    }
+
+    const body = new URLSearchParams({
+      code,
+      client_id: env.googleClientId,
+      client_secret: env.googleClientSecret,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+    }).toString();
+
+    const options = {
+      hostname: 'oauth2.googleapis.com',
+      path: '/token',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let raw = '';
+      res.on('data', (chunk) => (raw += chunk));
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(raw) as {
+            id_token?: string;
+            error?: string;
+            error_description?: string;
+          };
+          if (!data.id_token) {
+            reject(new Error(data.error_description ?? data.error ?? 'Google не вернул id_token'));
+            return;
+          }
+          resolve({ idToken: data.id_token });
+        } catch {
+          reject(new Error('Ошибка разбора ответа Google'));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GET /auth/google/callback — принимает code от Google, выдаёт JWT через deep link
+// ──────────────────────────────────────────────────────────────────────────────
+export async function googleCallback(req: Request, res: Response): Promise<void> {
+  const { code, error } = req.query as Record<string, string | undefined>;
+
+  if (error) {
+    logger.warn(`[googleCallback] OAuth error: ${error}`);
+    res.redirect(302, `${CALLBACK_SCHEME}://oauth2redirect?error=${encodeURIComponent(error)}`);
+    return;
+  }
+
+  if (!code) {
+    res.status(400).send('<h3>Отсутствует код авторизации</h3>');
+    return;
+  }
+
+  const redirectUri = `${env.nodeEnv === 'production' ? 'https' : 'http'}://${req.headers.host}/api/auth/google/callback`;
+
+  try {
+    const { idToken } = await exchangeGoogleCode(code, redirectUri);
+    const googlePayload = await verifyGoogleToken(idToken);
+
+    let user = await User.findOne({ email: googlePayload.email });
+    if (!user) {
+      const randomPassword = crypto.randomBytes(32).toString('hex');
+      user = await User.create({
+        email: googlePayload.email,
+        name: googlePayload.name,
+        password: randomPassword,
+      });
+    }
+
+    const jwtToken = signToken(String(user._id));
+    const refreshToken = signRefreshToken(String(user._id));
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await RefreshToken.create({ userId: user._id, token: refreshToken, expiresAt });
+
+    const params = new URLSearchParams({
+      token: jwtToken,
+      refreshToken,
+      userId: String(user._id),
+      email: user.email,
+      name: user.name ?? '',
+    });
+
+    logger.info(`[googleCallback] Success: email=${user.email}`);
+    res.redirect(302, `${CALLBACK_SCHEME}://oauth2redirect?${params.toString()}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Ошибка авторизации Google';
+    logger.error('[googleCallback] Error:', { err });
+    res.redirect(302, `${CALLBACK_SCHEME}://oauth2redirect?error=${encodeURIComponent(message)}`);
+  }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Вспомогательная функция: верификация Google id_token через tokeninfo endpoint
 // ──────────────────────────────────────────────────────────────────────────────
