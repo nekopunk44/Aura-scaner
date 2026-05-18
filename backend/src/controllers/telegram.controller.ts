@@ -93,9 +93,36 @@ export function telegramCallback(req: Request, res: Response): void {
   if (last_name) params.set('last_name', last_name);
   if (username) params.set('username', username);
 
-  const deepLink = `${CALLBACK_SCHEME}:/oauth2redirect?${params.toString()}`;
+  const deepLink = `${CALLBACK_SCHEME}://oauth2redirect?${params.toString()}`;
+  const afterScheme = deepLink.replace(/^aurascanner:\/\//, '');
+  const intentUri = `intent://${afterScheme}#Intent;scheme=aurascanner;package=com.example.scanner_ap;end`;
+
   logger.info(`[telegramCallback] Redirecting to app: tg_id=${id}`);
-  res.redirect(302, deepLink);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Возврат в приложение</title>
+  <style>
+    body{font-family:sans-serif;display:flex;flex-direction:column;align-items:center;
+         justify-content:center;height:100vh;margin:0;background:#f5f5f5;color:#333;}
+    a.btn{padding:14px 28px;background:#2CA5E0;color:#fff;text-decoration:none;
+          border-radius:10px;font-size:17px;}
+  </style>
+</head>
+<body>
+  <p>Авторизация выполнена. Возврат в приложение…</p>
+  <a class="btn" id="btn" href="${deepLink}">Открыть приложение</a>
+  <script>
+    var isAndroid = /Android/i.test(navigator.userAgent);
+    var target = isAndroid ? ${JSON.stringify(intentUri)} : ${JSON.stringify(deepLink)};
+    setTimeout(function(){ window.location.href = target; }, 300);
+    document.getElementById('btn').href = target;
+  </script>
+</body>
+</html>`);
 }
 
 // Вспомогательная функция для обмена Instagram code → access_token
