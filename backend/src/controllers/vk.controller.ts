@@ -221,8 +221,6 @@ export function vkCallback(req: Request, res: Response): void {
     msg.textContent = 'Нажмите кнопку ниже чтобы вернуться в приложение:';
     if(typeof FlutterAuth!=='undefined'){
       FlutterAuth.postMessage(uri);
-    } else {
-      window.location.href = intentUri;
     }
   })
   .catch(function(e){
