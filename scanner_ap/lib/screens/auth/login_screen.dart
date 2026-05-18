@@ -79,7 +79,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _onVkTap() => _socialLogin(_socialAuth.loginWithVk);
 
-  void _onTelegramTap() => _socialLogin(_socialAuth.loginWithTelegram);
+  void _onTelegramTap() => _socialLogin(() => _socialAuth.loginWithTelegram(context));
 
   void _onInstagramTap() {
     ScaffoldMessenger.of(context).showSnackBar(

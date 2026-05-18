@@ -38,9 +38,11 @@
 // iOS: добавьте в Info.plist CFBundleURLSchemes → com.example.scanner_ap
 
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart'; // used by VK, Instagram
 import 'package:url_launcher/url_launcher.dart';
 import '../config/server_config.dart';
+import '../screens/auth/oauth_webview_screen.dart';
 import 'auth_service.dart';
 import 'deep_link_service.dart';
 
@@ -233,21 +235,23 @@ class SocialAuthService {
   /// авторизации редиректит на com.example.scanner_ap:/oauth2redirect?...
   ///
   /// Документация: https://core.telegram.org/widgets/login
-  Future<AuthUser> loginWithTelegram() async {
+  Future<AuthUser> loginWithTelegram(BuildContext context) async {
     final loginUrl = buildTelegramLoginUrl(ServerConfig().baseUrl);
 
-    // Register deep link listener BEFORE opening browser
-    final deepLinkFuture = DeepLinkService().waitForLink();
-
-    final launched = await launchUrl(
-      Uri.parse(loginUrl),
-      mode: LaunchMode.externalApplication,
+    // WebView intercepts aurascanner:// directly — no Android intent needed
+    final resultUri = await Navigator.of(context).push<Uri>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => OAuthWebViewScreen(
+          url: loginUrl,
+          title: 'Вход через Telegram',
+        ),
+      ),
     );
-    if (!launched) throw 'Не удалось открыть браузер для авторизации Telegram.';
 
-    final resultUri = await deepLinkFuture;
+    if (resultUri == null) throw 'Авторизация Telegram отменена.';
+
     final parsed = parseTelegramDeepLink(resultUri);
-
     return _authService.loginWithSocial(
       provider: 'telegram',
       token: parsed.hash,
