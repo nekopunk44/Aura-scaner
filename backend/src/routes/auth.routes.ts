@@ -3,6 +3,7 @@ import { register, login, changePassword, refreshAccessToken } from '../controll
 import { socialLogin, googleCallback } from '../controllers/social.auth.controller';
 import { getProfile, updateProfile, logout } from '../controllers/profile.controller';
 import { telegramLoginPage, telegramCallback } from '../controllers/telegram.controller';
+import { vkLoginPage, vkCallback } from '../controllers/vk.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -18,6 +19,10 @@ router.get('/telegram/callback', telegramCallback);
 
 // Google server-side OAuth callback
 router.get('/google/callback', googleCallback);
+
+// VK server-side OAuth flow
+router.get('/vk/login', vkLoginPage);
+router.get('/vk/callback', vkCallback);
 
 // Профиль и logout — требуют авторизации
 router.get('/profile', authMiddleware, getProfile);
