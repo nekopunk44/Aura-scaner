@@ -7,42 +7,28 @@ import { logger } from '../utils/logger';
 const CALLBACK_SCHEME = 'aurascanner';
 
 // GET /auth/telegram/login
-// Отдаёт HTML-страницу с Telegram Login Widget.
-// Flutter открывает её через FlutterWebAuth2.
-export function telegramLoginPage(_req: Request, res: Response): void {
-  if (!env.telegramBotUsername) {
+// Перенаправляет напрямую на oauth.telegram.org, минуя промежуточную страницу с виджетом.
+// bot_id — числовой ID бота, первая часть TELEGRAM_BOT_TOKEN до двоеточия.
+export function telegramLoginPage(req: Request, res: Response): void {
+  if (!env.telegramBotToken) {
     res.status(503).send(
-      '<h3>Telegram login не настроен. Задайте TELEGRAM_BOT_USERNAME в .env</h3>',
+      '<h3>Telegram login не настроен. Задайте TELEGRAM_BOT_TOKEN в .env</h3>',
     );
     return;
   }
 
-  const callbackUrl = `${_req.protocol}://${_req.headers.host}/api/auth/telegram/callback`;
+  const botId = env.telegramBotToken.split(':')[0];
+  const origin = `${req.protocol}://${req.headers.host}`;
+  const callbackUrl = `${origin}/api/auth/telegram/callback`;
 
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(`<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Вход через Telegram</title>
-  <style>
-    body { font-family: sans-serif; display: flex; flex-direction: column;
-           align-items: center; justify-content: center; height: 100vh;
-           margin: 0; background: #f5f5f5; }
-    h2 { color: #333; margin-bottom: 24px; }
-  </style>
-</head>
-<body>
-  <h2>Вход через Telegram</h2>
-  <script async src="https://telegram.org/js/telegram-widget.js?22"
-    data-telegram-login="${env.telegramBotUsername}"
-    data-size="large"
-    data-auth-url="${callbackUrl}"
-    data-request-access="write">
-  </script>
-</body>
-</html>`);
+  const authUrl = new URL('https://oauth.telegram.org/auth');
+  authUrl.searchParams.set('bot_id', botId);
+  authUrl.searchParams.set('origin', origin);
+  authUrl.searchParams.set('embed', '1');
+  authUrl.searchParams.set('request_access', 'write');
+  authUrl.searchParams.set('return_to', callbackUrl);
+
+  res.redirect(302, authUrl.toString());
 }
 
 // GET /auth/telegram/callback
