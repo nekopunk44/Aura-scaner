@@ -70,12 +70,14 @@ class SocialAuthService {
   static const _googleWebClientId =
       '408293307028-59uhh1lio31abr5r3cof7undvqarj6e7.apps.googleusercontent.com';
 
+  // Must match exactly what is registered in Google Cloud Console.
+  static const _googleRedirectUri =
+      'https://aura-scaner-production.up.railway.app/api/auth/google/callback';
+
   // Server-side OAuth flow via external browser + app_links deep link.
   // External browser avoids Chrome Custom Tab issues with custom scheme intercept.
   Future<AuthUser> loginWithGoogle() async {
-    final baseUrl = ServerConfig().baseUrl;
-    final serverOrigin = baseUrl.replaceAll(RegExp(r'/api$'), '');
-    final redirectUri = '$serverOrigin/api/auth/google/callback';
+    const redirectUri = _googleRedirectUri;
 
     final uri = Uri.https('accounts.google.com', '/o/oauth2/auth', {
       'client_id': _googleWebClientId,
