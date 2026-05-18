@@ -3,12 +3,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 const _serverUrlKey = 'server_url';
 
 const _presets = {
+  'Production (Railway)': 'https://aura-scaner-production.up.railway.app/api',
   'Эмулятор Android': 'http://10.0.2.2:3000/api',
   'Localhost': 'http://localhost:3000/api',
   'Локальная сеть (192.168.x.x)': '',
 };
 
-const defaultServerUrl = 'http://localhost:3000/api';
+const defaultServerUrl =
+    'https://aura-scaner-production.up.railway.app/api';
 
 class ServerConfig {
   static final ServerConfig _instance = ServerConfig._internal();
