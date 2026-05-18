@@ -180,7 +180,10 @@ export function vkCallback(req: Request, res: Response): void {
           border-radius:50%;display:flex;align-items:center;justify-content:center;
           border:2px solid rgba(0,119,255,.35);font-size:26px;font-weight:700}
     h1{font-size:20px;font-weight:700;margin-bottom:10px}
-    p{font-size:14px;color:rgba(255,255,255,.55);line-height:1.6}
+    p{font-size:14px;color:rgba(255,255,255,.55);line-height:1.6;margin-bottom:20px}
+    a.btn{display:inline-flex;align-items:center;gap:8px;padding:14px 28px;
+          background:#0077FF;color:#fff;text-decoration:none;border-radius:14px;
+          font-size:15px;font-weight:600;box-shadow:0 6px 20px rgba(0,119,255,.35)}
     #err{color:#ff6b6b;font-size:13px;margin-top:12px;display:none}
   </style>
 </head>
@@ -188,12 +191,14 @@ export function vkCallback(req: Request, res: Response): void {
   <div class="card">
     <div class="icon">ВК</div>
     <h1>Авторизация выполнена</h1>
-    <p id="msg">Возврат в приложение...</p>
+    <p id="msg">Открываем приложение...</p>
+    <a id="btn" class="btn" href="#" style="display:none">Открыть Aura Scanner</a>
     <div id="err"></div>
   </div>
   <script nonce="${nonce}">
 (function(){
   var msg = document.getElementById('msg');
+  var btn = document.getElementById('btn');
   var err = document.getElementById('err');
   fetch('${serverOrigin}/api/auth/social', {
     method: 'POST',
@@ -209,8 +214,14 @@ export function vkCallback(req: Request, res: Response): void {
     if(data.email) p.set('email',data.email);
     if(data.name) p.set('name',data.name);
     var uri = '${CALLBACK_SCHEME}://oauth2redirect?'+p.toString();
+    btn.href = uri;
+    btn.style.display = 'inline-flex';
+    msg.textContent = 'Нажмите кнопку ниже или вернитесь в приложение:';
     if(typeof FlutterAuth!=='undefined'){FlutterAuth.postMessage(uri);}
-    else{window.location.href=uri;}
+    else{
+      window.location.href = uri;
+      // Браузер может показать ошибку — кнопка позволит вернуться вручную
+    }
   })
   .catch(function(e){
     msg.textContent='Ошибка авторизации.';
