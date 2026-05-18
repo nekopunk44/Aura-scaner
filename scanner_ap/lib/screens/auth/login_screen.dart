@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../config/theme_config.dart';
 import '../../services/auth_service.dart';
@@ -13,8 +12,7 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen>
-    with SingleTickerProviderStateMixin {
+class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -24,40 +22,14 @@ class _LoginScreenState extends State<LoginScreen>
   bool _isLoading = false;
   bool _obscurePassword = true;
 
-  late AnimationController _logoController;
-  late Animation<double> _spinAnim;
-  late Animation<double> _scaleAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _logoController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _spinAnim = Tween<double>(begin: 0, end: 2 * math.pi).animate(
-      CurvedAnimation(parent: _logoController, curve: Curves.easeInOut),
-    );
-    _scaleAnim = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.25), weight: 35),
-      TweenSequenceItem(tween: Tween(begin: 1.25, end: 0.92), weight: 30),
-      TweenSequenceItem(tween: Tween(begin: 0.92, end: 1.0), weight: 35),
-    ]).animate(CurvedAnimation(parent: _logoController, curve: Curves.easeInOut));
-  }
-
   @override
   void dispose() {
-    _logoController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  void _toggleTheme() {
-    if (_logoController.isAnimating) return;
-    _logoController.forward(from: 0);
-    ThemeNotifier().toggle();
-  }
+  void _toggleTheme() => ThemeNotifier().toggle();
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
@@ -155,27 +127,30 @@ class _LoginScreenState extends State<LoginScreen>
                   Center(
                     child: GestureDetector(
                       onTap: _toggleTheme,
-                      child: AnimatedBuilder(
-                        animation: _logoController,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 400),
-                          width: 72,
-                          height: 72,
-                          decoration: BoxDecoration(
-                            color: iconBg,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: iconColor.withValues(alpha: 0.35),
-                              width: 1.5,
-                            ),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 400),
+                        curve: Curves.easeInOut,
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          color: iconBg,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: iconColor.withValues(alpha: 0.35),
+                            width: 1.5,
                           ),
-                          child: Icon(Icons.document_scanner, size: 36, color: iconColor),
                         ),
-                        builder: (context, child) => Transform.scale(
-                          scale: _scaleAnim.value,
-                          child: Transform.rotate(
-                            angle: _spinAnim.value,
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          transitionBuilder: (child, anim) => ScaleTransition(
+                            scale: anim,
                             child: child,
+                          ),
+                          child: Icon(
+                            isDark ? Icons.nights_stay_outlined : Icons.wb_sunny_outlined,
+                            key: ValueKey(isDark),
+                            size: 34,
+                            color: iconColor,
                           ),
                         ),
                       ),
