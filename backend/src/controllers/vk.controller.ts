@@ -213,14 +213,16 @@ export function vkCallback(req: Request, res: Response): void {
     if(data.userId) p.set('userId',data.userId);
     if(data.email) p.set('email',data.email);
     if(data.name) p.set('name',data.name);
-    var uri = '${CALLBACK_SCHEME}://oauth2redirect?'+p.toString();
-    btn.href = uri;
+    var params = p.toString();
+    var uri = '${CALLBACK_SCHEME}://oauth2redirect?'+params;
+    var intentUri = 'intent://oauth2redirect?'+params+'#Intent;scheme=${CALLBACK_SCHEME};package=com.example.scanner_ap;end';
+    btn.href = intentUri;
     btn.style.display = 'inline-flex';
-    msg.textContent = 'Нажмите кнопку ниже или вернитесь в приложение:';
-    if(typeof FlutterAuth!=='undefined'){FlutterAuth.postMessage(uri);}
-    else{
-      window.location.href = uri;
-      // Браузер может показать ошибку — кнопка позволит вернуться вручную
+    msg.textContent = 'Нажмите кнопку ниже чтобы вернуться в приложение:';
+    if(typeof FlutterAuth!=='undefined'){
+      FlutterAuth.postMessage(uri);
+    } else {
+      window.location.href = intentUri;
     }
   })
   .catch(function(e){
