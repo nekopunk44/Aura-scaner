@@ -26,10 +26,28 @@ class _OAuthWebViewScreenState extends State<OAuthWebViewScreen> {
         onPageStarted: (_) => setState(() => _loading = true),
         onPageFinished: (_) => setState(() => _loading = false),
         onNavigationRequest: (request) {
-          if (request.url.startsWith('aurascanner://')) {
-            Navigator.of(context).pop(Uri.parse(request.url));
+          final url = request.url;
+
+          // Direct custom scheme
+          if (url.startsWith('aurascanner://')) {
+            Navigator.of(context).pop(Uri.parse(url));
             return NavigationDecision.prevent;
           }
+
+          // intent:// URI produced by backend HTML for Android Chrome.
+          // Format: intent://HOST?QUERY#Intent;scheme=aurascanner;...;end
+          if (url.startsWith('intent://')) {
+            final match = RegExp(
+              r'intent://([^#]+)#Intent;scheme=aurascanner',
+            ).firstMatch(url);
+            if (match != null) {
+              Navigator.of(context).pop(
+                Uri.parse('aurascanner://${match.group(1)}'),
+              );
+              return NavigationDecision.prevent;
+            }
+          }
+
           return NavigationDecision.navigate;
         },
       ))

@@ -104,21 +104,33 @@ export function telegramCallback(req: Request, res: Response): void {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Возврат в приложение</title>
+  <title>Авторизация выполнена</title>
   <style>
-    body{font-family:sans-serif;display:flex;flex-direction:column;align-items:center;
-         justify-content:center;height:100vh;margin:0;background:#f5f5f5;color:#333;}
-    a.btn{padding:14px 28px;background:#2CA5E0;color:#fff;text-decoration:none;
-          border-radius:10px;font-size:17px;}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+         min-height:100vh;display:flex;flex-direction:column;align-items:center;
+         justify-content:center;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);
+         color:#fff;padding:24px;text-align:center}
+    .icon{font-size:64px;margin-bottom:24px}
+    h1{font-size:22px;font-weight:700;margin-bottom:10px}
+    p{font-size:15px;opacity:.75;margin-bottom:32px;line-height:1.5}
+    a.btn{display:inline-flex;align-items:center;gap:10px;padding:16px 32px;
+          background:#2CA5E0;color:#fff;text-decoration:none;border-radius:14px;
+          font-size:16px;font-weight:600;box-shadow:0 4px 20px rgba(44,165,224,.4)}
+    a.btn:active{transform:scale(.97)}
   </style>
 </head>
 <body>
-  <p>Авторизация выполнена. Возврат в приложение…</p>
-  <a class="btn" id="btn" href="${deepLink}">Открыть приложение</a>
+  <div class="icon">✅</div>
+  <h1>Авторизация выполнена</h1>
+  <p>Вы успешно вошли через Telegram.<br>Нажмите кнопку чтобы вернуться в приложение.</p>
+  <a class="btn" id="btn" href="${deepLink}">
+    <span>✈</span> Открыть приложение
+  </a>
   <script>
     var isAndroid = /Android/i.test(navigator.userAgent);
     var target = isAndroid ? ${JSON.stringify(intentUri)} : ${JSON.stringify(deepLink)};
-    setTimeout(function(){ window.location.href = target; }, 300);
+    setTimeout(function(){ window.location.href = target; }, 400);
     document.getElementById('btn').href = target;
   </script>
 </body>
