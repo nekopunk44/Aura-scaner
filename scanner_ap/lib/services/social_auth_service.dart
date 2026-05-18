@@ -74,12 +74,9 @@ class SocialAuthService {
   static const _googleRedirectUri =
       'https://aura-scaner-production.up.railway.app/api/auth/google/callback';
 
-  // Server-side OAuth flow via external browser + app_links deep link.
-  // External browser avoids Chrome Custom Tab issues with custom scheme intercept.
-  Future<AuthUser> loginWithGoogle() async {
-    const redirectUri = _googleRedirectUri;
-
-    final uri = Uri.https('accounts.google.com', '/o/oauth2/auth', {
+  /// Строит URL для Google OAuth (для тестирования).
+  static Uri buildGoogleAuthUri([String redirectUri = _googleRedirectUri]) {
+    return Uri.https('accounts.google.com', '/o/oauth2/auth', {
       'client_id': _googleWebClientId,
       'redirect_uri': redirectUri,
       'response_type': 'code',
@@ -87,6 +84,29 @@ class SocialAuthService {
       'access_type': 'offline',
       'prompt': 'select_account',
     });
+  }
+
+  /// Извлекает AuthUser из deep link после Google OAuth (для тестирования).
+  static AuthUser parseGoogleDeepLink(Uri resultUri) {
+    final params = resultUri.queryParameters;
+    final error = params['error'];
+    if (error != null && error.isNotEmpty) throw 'Google OAuth ошибка: $error';
+    final token = params['token'];
+    if (token == null || token.isEmpty) {
+      throw 'Не получен токен авторизации от сервера.';
+    }
+    return AuthUser(
+      id: params['userId'] ?? '',
+      email: params['email'] ?? '',
+      name: params['name'] ??
+          (params['email']?.split('@').first ?? ''),
+    );
+  }
+
+  // Server-side OAuth flow via external browser + app_links deep link.
+  // External browser avoids Chrome Custom Tab issues with custom scheme intercept.
+  Future<AuthUser> loginWithGoogle() async {
+    final uri = buildGoogleAuthUri();
 
     // Register deep link listener BEFORE opening the browser
     final deepLinkFuture = DeepLinkService().waitForLink();
@@ -97,27 +117,12 @@ class SocialAuthService {
     // Wait for aurascanner://oauth2redirect?token=...
     final resultUri = await deepLinkFuture;
     final params = resultUri.queryParameters;
-
-    final error = params['error'];
-    if (error != null && error.isNotEmpty) throw 'Google OAuth ошибка: $error';
-
     final token = params['token'];
     final refreshToken = params['refreshToken'];
-    final userId = params['userId'];
-    final email = params['email'];
-    final name = params['name'];
 
-    if (token == null || token.isEmpty) {
-      throw 'Не получен токен авторизации от сервера.';
-    }
-
-    await _authService.saveTokens(token, refreshToken);
-
-    return AuthUser(
-      id: userId ?? '',
-      email: email ?? '',
-      name: name ?? email?.split('@').first ?? '',
-    );
+    final user = parseGoogleDeepLink(resultUri);
+    await _authService.saveTokens(token!, refreshToken);
+    return user;
   }
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -171,6 +176,52 @@ class SocialAuthService {
   // Telegram
   // ════════════════════════════════════════════════════════════════════════════
 
+  /// Строит URL страницы Telegram Login Widget на бэкенде (для тестирования).
+  static String buildTelegramLoginUrl(String baseUrl) =>
+      '$baseUrl/auth/telegram/login';
+
+  /// Извлекает поля из deep link после Telegram OAuth (для тестирования).
+  /// Throws если обязательные поля отсутствуют.
+  static ({
+    String id,
+    String hash,
+    String authDate,
+    String name,
+    String email,
+    Map<String, dynamic> extra,
+  }) parseTelegramDeepLink(Uri resultUri) {
+    final params = resultUri.queryParameters;
+    final telegramId = params['id'];
+    final hash = params['hash'];
+    final authDate = params['auth_date'];
+
+    if (telegramId == null || hash == null || authDate == null) {
+      throw 'Telegram не вернул данные авторизации.';
+    }
+
+    final username = params['username'] ?? 'tg_$telegramId';
+    final firstName = params['first_name'] ?? '';
+    final lastName = params['last_name'] ?? '';
+    final displayName =
+        [firstName, lastName].where((s) => s.isNotEmpty).join(' ');
+
+    return (
+      id: telegramId,
+      hash: hash,
+      authDate: authDate,
+      name: displayName.isNotEmpty ? displayName : username,
+      email: 'tg_$telegramId@telegram.placeholder',
+      extra: {
+        'id': telegramId,
+        'hash': hash,
+        'auth_date': authDate,
+        if (firstName.isNotEmpty) 'first_name': firstName,
+        if (lastName.isNotEmpty) 'last_name': lastName,
+        if (username != 'tg_$telegramId') 'username': username,
+      },
+    );
+  }
+
   /// Открывает Telegram Login Widget через web-view.
   ///
   /// Telegram не поддерживает стандартный OAuth implicit flow для мобильных.
@@ -183,46 +234,21 @@ class SocialAuthService {
   ///
   /// Документация: https://core.telegram.org/widgets/login
   Future<AuthUser> loginWithTelegram() async {
-    // Backend serves an HTML page with Telegram Login Widget at /auth/telegram/login.
-    // After user approves, Telegram redirects to /auth/telegram/callback which
-    // verifies the hash and redirects back to the app via deep link.
-    // Strip /api suffix from base URL to get the server root, then append
-    // the Telegram login route (which is mounted at /api/auth/telegram/login).
-    final telegramLoginPageUrl =
-        '${ServerConfig().baseUrl}/auth/telegram/login';
+    final loginUrl = buildTelegramLoginUrl(ServerConfig().baseUrl);
 
     final resultUrl = await FlutterWebAuth2.authenticate(
-      url: telegramLoginPageUrl,
+      url: loginUrl,
       callbackUrlScheme: _callbackScheme,
     );
 
-    final params = Uri.parse(resultUrl).queryParameters;
-    final telegramId = params['id'];
-    final hash = params['hash'];
-    final authDate = params['auth_date'];
-
-    if (telegramId == null || hash == null || authDate == null) {
-      throw 'Telegram не вернул данные авторизации.';
-    }
-
-    final username = params['username'] ?? 'tg_$telegramId';
-    final firstName = params['first_name'] ?? '';
-    final lastName = params['last_name'] ?? '';
-    final name = [firstName, lastName].where((s) => s.isNotEmpty).join(' ');
+    final parsed = parseTelegramDeepLink(Uri.parse(resultUrl));
 
     return _authService.loginWithSocial(
       provider: 'telegram',
-      token: hash,
-      email: 'tg_$telegramId@telegram.placeholder',
-      name: name.isNotEmpty ? name : username,
-      extra: {
-        'id': telegramId,
-        'hash': hash,
-        'auth_date': authDate,
-        if (firstName.isNotEmpty) 'first_name': firstName,
-        if (lastName.isNotEmpty) 'last_name': lastName,
-        if (username != 'tg_$telegramId') 'username': username,
-      },
+      token: parsed.hash,
+      email: parsed.email,
+      name: parsed.name,
+      extra: parsed.extra,
     );
   }
 
