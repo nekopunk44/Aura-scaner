@@ -9,6 +9,7 @@ import { connectDatabase, setupGracefulShutdown } from './config/database';
 import { logger } from './utils/logger';
 import authRoutes from './routes/auth.routes';
 import documentsRoutes from './routes/documents.routes';
+import { vkCallback } from './controllers/vk.controller';
 
 const app = express();
 
@@ -67,6 +68,9 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/documents', apiLimiter, documentsRoutes);
+
+// VK Universal Link callback (must be at root, matches iOS Universal link registered in VK ID)
+app.get('/vk_id_redirect', vkCallback);
 
 // Глобальный error handler — перехватывает всё что вылетело из контроллеров
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
