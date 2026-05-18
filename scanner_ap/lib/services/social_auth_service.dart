@@ -92,7 +92,10 @@ class SocialAuthService {
   static AuthUser parseGoogleDeepLink(Uri resultUri) {
     final params = resultUri.queryParameters;
     final error = params['error'];
-    if (error != null && error.isNotEmpty) throw 'Google OAuth ошибка: $error';
+    if (error != null && error.isNotEmpty) {
+      if (error == 'access_denied') throw 'Вход через Google отменён.';
+      throw 'Ошибка входа через Google. Попробуйте ещё раз.';
+    }
     final token = params['token'];
     if (token == null || token.isEmpty) {
       throw 'Не получен токен авторизации от сервера.';

@@ -118,15 +118,17 @@ export function telegramCallback(req: Request, res: Response): void {
     if (d.username)   p.set('username',   d.username);
 
     var uri = 'aurascanner://oauth2redirect?' + p.toString();
-    dbg.textContent += '\\nid=' + d.id + ' uri_len=' + uri.length;
 
-    // Показываем кнопку как fallback на случай если авто-редирект не сработает
     btn.href = uri;
     btn.style.display = 'inline-block';
     st.textContent = 'Возврат в приложение...';
 
-    // Пробуем несколько способов редиректа
-    window.location.href = uri;
+    // Самый надёжный способ: JS channel напрямую в Flutter
+    if (typeof FlutterAuth !== 'undefined') {
+      FlutterAuth.postMessage(uri);
+    } else {
+      window.location.href = uri;
+    }
   } catch (e) {
     st.textContent = 'Ошибка разбора: ' + e.message;
   }

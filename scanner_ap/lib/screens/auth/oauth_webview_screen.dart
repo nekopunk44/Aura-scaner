@@ -17,33 +17,40 @@ class _OAuthWebViewScreenState extends State<OAuthWebViewScreen> {
   late WebViewController _controller;
   bool _loading = true;
 
+  void _handleUri(String raw) {
+    if (!mounted) return;
+    try {
+      Navigator.of(context).pop(Uri.parse(raw));
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      // JS channel: backend page calls FlutterAuth.postMessage('aurascanner://...')
+      ..addJavaScriptChannel(
+        'FlutterAuth',
+        onMessageReceived: (msg) => _handleUri(msg.message),
+      )
       ..setNavigationDelegate(NavigationDelegate(
         onPageStarted: (_) => setState(() => _loading = true),
         onPageFinished: (_) => setState(() => _loading = false),
         onNavigationRequest: (request) {
           final url = request.url;
 
-          // Direct custom scheme
           if (url.startsWith('aurascanner://')) {
-            Navigator.of(context).pop(Uri.parse(url));
+            _handleUri(url);
             return NavigationDecision.prevent;
           }
 
-          // intent:// URI produced by backend HTML for Android Chrome.
-          // Format: intent://HOST?QUERY#Intent;scheme=aurascanner;...;end
           if (url.startsWith('intent://')) {
             final match = RegExp(
               r'intent://([^#]+)#Intent;scheme=aurascanner',
             ).firstMatch(url);
             if (match != null) {
-              Navigator.of(context).pop(
-                Uri.parse('aurascanner://${match.group(1)}'),
-              );
+              _handleUri('aurascanner://${match.group(1)}');
               return NavigationDecision.prevent;
             }
           }
