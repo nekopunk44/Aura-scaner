@@ -64,7 +64,9 @@ export function telegramCallback(req: Request, res: Response): void {
   // oauth.telegram.org вернул пустой callback. Отдаём JS-страницу для диагностики и редиректа.
   if (!id || !hash || !auth_date) {
     logger.warn('[telegramCallback] No params in query. url=%s', req.url);
+    const nonce = crypto.randomBytes(16).toString('base64');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Security-Policy', `script-src 'nonce-${nonce}'`);
     res.send(`<!DOCTYPE html>
 <html>
 <head>
@@ -86,7 +88,7 @@ export function telegramCallback(req: Request, res: Response): void {
 <p id="status">Обработка данных Telegram...</p>
 <a id="btn" href="#">Открыть приложение</a>
 <pre id="debug"></pre>
-<script>
+<script nonce="${nonce}">
 (function () {
   var dbg = document.getElementById('debug');
   var st  = document.getElementById('status');
