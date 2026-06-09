@@ -1,232 +1,572 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
+import '../../services/premium_service.dart';
 
-class PremiumScreen extends StatelessWidget {
+// Идентификатор продукта — должен совпадать с тем, что настроен в
+// Google Play Console (subscriptions) и App Store Connect (auto-renewable)
+const _kMonthlyId = 'aura_scanner_premium_monthly';
+const _kYearlyId = 'aura_scanner_premium_yearly';
+
+class PremiumScreen extends StatefulWidget {
   const PremiumScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
-      appBar: AppBar(
-        title: const Text('Premium',
-            style: TextStyle(fontWeight: FontWeight.w600)),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: Colors.black,
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Шапка
-            Container(
-              width: double.infinity,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF1A237E), Color(0xFF1565C0)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+  State<PremiumScreen> createState() => _PremiumScreenState();
+}
+
+class _PremiumScreenState extends State<PremiumScreen> {
+  final InAppPurchase _iap = InAppPurchase.instance;
+  late final StreamSubscription<List<PurchaseDetails>> _sub;
+
+  bool _storeAvailable = false;
+  bool _loading = true;
+  bool _purchasing = false;
+  bool _isPremium = false;
+
+  List<ProductDetails> _products = [];
+  String? _selectedId = _kMonthlyId;
+
+  @override
+  void initState() {
+    super.initState();
+    _isPremium = PremiumService().isPremium;
+    _sub = _iap.purchaseStream.listen(_onPurchaseUpdate, onError: _onPurchaseError);
+    _init();
+  }
+
+  @override
+  void dispose() {
+    _sub.cancel();
+    super.dispose();
+  }
+
+  Future<void> _init() async {
+    final available = await _iap.isAvailable();
+    if (!available) {
+      if (mounted) setState(() { _storeAvailable = false; _loading = false; });
+      return;
+    }
+    final response = await _iap.queryProductDetails({_kMonthlyId, _kYearlyId});
+    if (mounted) {
+      setState(() {
+        _storeAvailable = true;
+        _loading = false;
+        _products = response.productDetails
+          ..sort((a, b) => a.rawPrice.compareTo(b.rawPrice));
+      });
+    }
+  }
+
+  Future<void> _onPurchaseUpdate(List<PurchaseDetails> purchases) async {
+    for (final purchase in purchases) {
+      if (purchase.status == PurchaseStatus.pending) {
+        if (mounted) setState(() => _purchasing = true);
+      } else if (purchase.status == PurchaseStatus.purchased ||
+          purchase.status == PurchaseStatus.restored) {
+        // Сначала верифицируем receipt на сервере. Локальный флаг
+        // ставим только после подтверждения — иначе клиент может
+        // активировать Premium без реальной покупки.
+        final platform = Platform.isIOS ? 'ios' : 'android';
+        final receipt = purchase.verificationData.serverVerificationData;
+
+        bool serverVerified = false;
+        String? serverError;
+        try {
+          await PremiumService().activateOnServer(
+            platform: platform,
+            productId: purchase.productID,
+            receipt: receipt,
+          );
+          serverVerified = true;
+          await PremiumService().activate();
+        } catch (e) {
+          serverError = e.toString().replaceFirst('Exception: ', '');
+        }
+
+        if (purchase.pendingCompletePurchase) {
+          await _iap.completePurchase(purchase);
+        }
+        if (mounted) {
+          setState(() {
+            _purchasing = false;
+            if (serverVerified) _isPremium = true;
+          });
+          if (serverVerified) {
+            _showSuccess();
+          } else {
+            _showError('Не удалось подтвердить покупку: ${serverError ?? "ошибка сервера"}');
+          }
+        }
+      } else if (purchase.status == PurchaseStatus.error) {
+        if (purchase.pendingCompletePurchase) {
+          await _iap.completePurchase(purchase);
+        }
+        if (mounted) {
+          setState(() => _purchasing = false);
+          _showError(purchase.error?.message ?? 'Ошибка оплаты');
+        }
+      } else if (purchase.status == PurchaseStatus.canceled) {
+        if (purchase.pendingCompletePurchase) {
+          await _iap.completePurchase(purchase);
+        }
+        if (mounted) setState(() => _purchasing = false);
+      }
+    }
+  }
+
+  void _onPurchaseError(dynamic error) {
+    if (mounted) {
+      setState(() => _purchasing = false);
+      _showError(error.toString());
+    }
+  }
+
+  Future<void> _buy() async {
+    if (_selectedId == null || _products.isEmpty) return;
+    final product = _products.firstWhere(
+      (p) => p.id == _selectedId,
+      orElse: () => _products.first,
+    );
+    setState(() => _purchasing = true);
+    final param = PurchaseParam(productDetails: product);
+    try {
+      if (Platform.isIOS) {
+        await _iap.buyNonConsumable(purchaseParam: param);
+      } else {
+        await _iap.buyNonConsumable(purchaseParam: param);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _purchasing = false);
+        _showError(e.toString());
+      }
+    }
+  }
+
+  Future<void> _restore() async {
+    setState(() => _purchasing = true);
+    try {
+      await _iap.restorePurchases();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _purchasing = false);
+        _showError('Не удалось восстановить покупки: $e');
+      }
+    }
+  }
+
+  void _showSuccess() {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final bg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+        final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+        return AlertDialog(
+          backgroundColor: bg,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72, height: 72,
+                decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.12), shape: BoxShape.circle),
+                child: const Icon(Icons.check_circle, color: Colors.green, size: 40),
+              ),
+              const SizedBox(height: 16),
+              Text('Premium активирован!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: textColor)),
+              const SizedBox(height: 8),
+              Text('Все возможности теперь доступны.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : Colors.grey.shade600)),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    Navigator.pop(context);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Отлично!'),
                 ),
               ),
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final cardBorder = isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE8EDF5);
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white38 : Colors.grey.shade500;
+    final dividerColor = isDark ? Colors.white.withValues(alpha: 0.07) : Colors.grey.shade100;
+
+    return Scaffold(
+      backgroundColor: bg,
+      appBar: AppBar(
+        title: Text('Premium',
+            style: TextStyle(fontWeight: FontWeight.w600, color: textColor)),
+        backgroundColor: isDark ? const Color(0xFF141E2B) : Colors.white,
+        elevation: 0,
+        iconTheme: IconThemeData(color: textColor),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF2CA5E0)))
+          : SingleChildScrollView(
               child: Column(
                 children: [
+                  // Шапка
                   Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade400,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.amber.withValues(alpha: 0.4),
-                          blurRadius: 20,
-                          spreadRadius: 4,
+                    width: double.infinity,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFF0D47A1), Color(0xFF1565C0), Color(0xFF1976D2)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 48),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 76, height: 76,
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade500,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.amber.withValues(alpha: 0.45),
+                                blurRadius: 24, spreadRadius: 4,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(Icons.workspace_premium, size: 40, color: Colors.white),
+                        ),
+                        const SizedBox(height: 18),
+                        const Text('Aura Scanner Premium',
+                            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                        const SizedBox(height: 6),
+                        Text('Откройте все возможности приложения',
+                            style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.75))),
+                        if (_isPremium) ...[
+                          const SizedBox(height: 14),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.green.withValues(alpha: 0.4)),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.check_circle, color: Colors.greenAccent, size: 16),
+                                SizedBox(width: 6),
+                                Text('Активна', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                  if (!_isPremium) ...[
+                    // Выбор плана
+                    Transform.translate(
+                      offset: const Offset(0, -22),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: cardBg,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: cardBorder),
+                            boxShadow: isDark ? null : [
+                              BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 20, offset: const Offset(0, 4)),
+                            ],
+                          ),
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            children: [
+                              if (_storeAvailable && _products.isNotEmpty) ...[
+                                ..._products.map((p) => _buildPlanTile(p, isDark, textColor, subColor, cardBorder)),
+                                const SizedBox(height: 16),
+                              ] else if (!_storeAvailable) ...[
+                                Icon(Icons.store_mall_directory_outlined, size: 40, color: subColor),
+                                const SizedBox(height: 8),
+                                Text('Магазин недоступен', style: TextStyle(color: subColor)),
+                                const SizedBox(height: 16),
+                              ] else ...[
+                                // Продукты не загружены — показываем fallback с ценами
+                                _buildFallbackPlan(isDark, textColor, subColor, cardBorder),
+                                const SizedBox(height: 16),
+                              ],
+                              SizedBox(
+                                width: double.infinity,
+                                height: 50,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.amber.shade600,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                    elevation: 0,
+                                  ),
+                                  onPressed: (_purchasing || !_storeAvailable) ? null : _buy,
+                                  child: _purchasing
+                                      ? const SizedBox(
+                                          width: 20, height: 20,
+                                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                        )
+                                      : const Text('Оформить Premium',
+                                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text('Отменить можно в любой момент',
+                                  style: TextStyle(fontSize: 12, color: subColor)),
+                              const SizedBox(height: 4),
+                              TextButton(
+                                onPressed: _purchasing ? null : _restore,
+                                child: Text('Восстановить покупки',
+                                    style: TextStyle(fontSize: 12, color: const Color(0xFF2CA5E0))),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 24),
+                  ],
+
+                  // Список возможностей
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Text('ЧТО ВХОДИТ В PREMIUM',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
+                                  color: subColor, letterSpacing: 0.8)),
+                        ),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: cardBg,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: cardBorder),
+                            boxShadow: isDark ? null : [
+                              BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 2)),
+                            ],
+                          ),
+                          child: Column(
+                            children: [
+                              _FeatureTile(icon: Icons.library_books, iconColor: Colors.purple,
+                                  title: '+10 страниц', subtitle: 'Пакетное сканирование без ограничений',
+                                  textColor: textColor, subColor: subColor, dividerColor: dividerColor),
+                              _FeatureTile(icon: Icons.auto_fix_high_outlined, iconColor: Colors.orange,
+                                  title: 'Восстановление фото', subtitle: 'Улучшение качества и четкости',
+                                  textColor: textColor, subColor: subColor, dividerColor: dividerColor),
+                              _FeatureTile(icon: Icons.highlight, iconColor: Colors.yellow.shade700,
+                                  title: 'Выделение текста', subtitle: 'Подсветка важных фрагментов',
+                                  textColor: textColor, subColor: subColor, dividerColor: dividerColor),
+                              _FeatureTile(icon: Icons.lock_outline, iconColor: Colors.blue,
+                                  title: 'Защита паролем', subtitle: 'Шифрование PDF-документов',
+                                  textColor: textColor, subColor: subColor, dividerColor: dividerColor),
+                              _FeatureTile(icon: Icons.voice_chat, iconColor: Colors.teal,
+                                  title: 'Голосовые заметки', subtitle: 'Аудио-комментарии к документам',
+                                  textColor: textColor, subColor: subColor, dividerColor: dividerColor),
+                              _FeatureTile(icon: Icons.eco, iconColor: Colors.green,
+                                  title: 'Эко-сканер', subtitle: 'Распознавание эко-маркировки',
+                                  textColor: textColor, subColor: subColor, dividerColor: dividerColor, isLast: true),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Center(
+                          child: Text(
+                            'Подписка оформляется через ${Platform.isIOS ? "App Store" : "Google Play"}.\n'
+                            'Управление и отмена — в настройках магазина.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 11, color: subColor, height: 1.5),
+                          ),
                         ),
                       ],
                     ),
-                    child: const Icon(Icons.workspace_premium,
-                        size: 38, color: Colors.white),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Aura Scanner Premium',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Откройте все возможности приложения',
-                    style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.white.withValues(alpha: 0.8)),
                   ),
                 ],
               ),
             ),
+    );
+  }
 
-            // Карточка с ценой и кнопкой
-            Transform.translate(
-              offset: const Offset(0, -20),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 20,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('₽',
-                              style: TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue)),
-                          const Text('299',
-                              style: TextStyle(
-                                  fontSize: 44,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue)),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 22),
-                            child: Text(' / мес',
-                                style: TextStyle(
-                                    color: Colors.grey.shade500,
-                                    fontSize: 14)),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.amber.shade600,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14)),
-                            elevation: 0,
-                          ),
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    'Оплата будет доступна в следующем обновлении'),
-                              ),
-                            );
-                          },
-                          child: const Text(
-                            'Оформить Premium',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Отменить можно в любой момент',
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade400),
-                      ),
-                    ],
-                  ),
+  Widget _buildPlanTile(
+    ProductDetails product,
+    bool isDark,
+    Color textColor,
+    Color subColor,
+    Color borderColor,
+  ) {
+    final isSelected = _selectedId == product.id;
+    final isYearly = product.id == _kYearlyId;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedId = product.id),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF2CA5E0).withValues(alpha: isDark ? 0.18 : 0.08)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF2CA5E0) : borderColor,
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 20, height: 20,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isSelected ? const Color(0xFF2CA5E0) : subColor,
+                  width: 2,
                 ),
+                color: isSelected ? const Color(0xFF2CA5E0) : Colors.transparent,
               ),
+              child: isSelected
+                  ? const Icon(Icons.check, color: Colors.white, size: 12)
+                  : null,
             ),
-
-            // Список возможностей
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+            const SizedBox(width: 12),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: Text(
-                      'ЧТО ВХОДИТ В PREMIUM',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.grey.shade500,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 2),
+                  Row(
+                    children: [
+                      Text(isYearly ? 'Годовая подписка' : 'Месячная подписка',
+                          style: TextStyle(fontWeight: FontWeight.w600, color: textColor, fontSize: 14)),
+                      if (isYearly) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text('ВЫГОДНО', style: TextStyle(fontSize: 9, color: Colors.green, fontWeight: FontWeight.w700)),
                         ),
                       ],
-                    ),
-                    child: Column(
-                      children: const [
-                        _FeatureTile(
-                          icon: Icons.cloud_sync_outlined,
-                          iconColor: Colors.blue,
-                          title: 'Облачная синхронизация',
-                          subtitle: 'Доступ к файлам с любого устройства',
-                        ),
-                        _FeatureTile(
-                          icon: Icons.merge_outlined,
-                          iconColor: Colors.purple,
-                          title: 'Слияние PDF',
-                          subtitle: 'Объединяйте несколько файлов в один',
-                        ),
-                        _FeatureTile(
-                          icon: Icons.compress_outlined,
-                          iconColor: Colors.teal,
-                          title: 'Сжатие PDF',
-                          subtitle: 'Уменьшайте размер документов',
-                        ),
-                        _FeatureTile(
-                          icon: Icons.auto_fix_high_outlined,
-                          iconColor: Colors.orange,
-                          title: 'OCR без ограничений',
-                          subtitle: 'Распознавание текста без лимитов',
-                        ),
-                        _FeatureTile(
-                          icon: Icons.cleaning_services_outlined,
-                          iconColor: Colors.green,
-                          title: 'Удаление фона и пятен',
-                          subtitle: 'Профессиональная очистка документов',
-                        ),
-                        _FeatureTile(
-                          icon: Icons.support_agent_outlined,
-                          iconColor: Colors.red,
-                          title: 'Приоритетная поддержка',
-                          subtitle: 'Ответ в течение 24 часов',
-                          isLast: true,
-                        ),
-                      ],
-                    ),
+                    ],
                   ),
+                  const SizedBox(height: 2),
+                  Text(product.description,
+                      style: TextStyle(fontSize: 11, color: subColor)),
                 ],
               ),
             ),
+            Text(product.price,
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: textColor)),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildFallbackPlan(bool isDark, Color textColor, Color subColor, Color borderColor) {
+    final plans = [
+      {'id': _kMonthlyId, 'title': 'Месячная подписка', 'price': '299 ₽/мес', 'yearly': false},
+      {'id': _kYearlyId, 'title': 'Годовая подписка', 'price': '1 990 ₽/год', 'yearly': true},
+    ];
+    return Column(
+      children: plans.map((plan) {
+        final id = plan['id'] as String;
+        final isSelected = _selectedId == id;
+        final isYearly = plan['yearly'] as bool;
+        return GestureDetector(
+          onTap: () => setState(() => _selectedId = id),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? const Color(0xFF2CA5E0).withValues(alpha: isDark ? 0.18 : 0.08)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isSelected ? const Color(0xFF2CA5E0) : borderColor,
+                width: isSelected ? 1.5 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 20, height: 20,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: isSelected ? const Color(0xFF2CA5E0) : subColor, width: 2),
+                    color: isSelected ? const Color(0xFF2CA5E0) : Colors.transparent,
+                  ),
+                  child: isSelected ? const Icon(Icons.check, color: Colors.white, size: 12) : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Text(plan['title'] as String,
+                          style: TextStyle(fontWeight: FontWeight.w600, color: textColor, fontSize: 14)),
+                      if (isYearly) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text('ВЫГОДНО', style: TextStyle(fontSize: 9, color: Colors.green, fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Text(plan['price'] as String,
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: textColor)),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }
@@ -236,14 +576,16 @@ class _FeatureTile extends StatelessWidget {
   final Color iconColor;
   final String title;
   final String subtitle;
+  final Color textColor;
+  final Color subColor;
+  final Color dividerColor;
   final bool isLast;
 
   const _FeatureTile({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    required this.subtitle,
-    this.isLast = false,
+    required this.icon, required this.iconColor,
+    required this.title, required this.subtitle,
+    required this.textColor, required this.subColor,
+    required this.dividerColor, this.isLast = false,
   });
 
   @override
@@ -255,10 +597,9 @@ class _FeatureTile extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: 40, height: 40,
                 decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.12),
+                  color: iconColor.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(icon, color: iconColor, size: 22),
@@ -268,23 +609,17 @@ class _FeatureTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 14)),
+                    Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: textColor)),
                     const SizedBox(height: 2),
-                    Text(subtitle,
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade500)),
+                    Text(subtitle, style: TextStyle(fontSize: 12, color: subColor)),
                   ],
                 ),
               ),
-              Icon(Icons.check_circle,
-                  color: Colors.green.shade400, size: 20),
+              Icon(Icons.check_circle, color: Colors.green.shade400, size: 20),
             ],
           ),
         ),
-        if (!isLast)
-          Divider(height: 1, indent: 70, color: Colors.grey.shade100),
+        if (!isLast) Divider(height: 1, indent: 70, color: dividerColor),
       ],
     );
   }
