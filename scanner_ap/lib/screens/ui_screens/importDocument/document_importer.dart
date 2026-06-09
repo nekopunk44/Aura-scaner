@@ -139,171 +139,392 @@ class _DocumentImporterState extends State<DocumentImporter> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+    const accent = Color(0xFF2CA5E0);
+
+    final enabled = !_isPicking && !_isImporting;
+
     return Scaffold(
+      backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: const Text('Импорт документа'),
+        backgroundColor: appBarBg,
+        elevation: 0,
+        iconTheme: IconThemeData(color: textColor),
+        title: Text(
+          'Импорт документа',
+          style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: widget.onBack,
         ),
-        actions: [
-          if (_selectedPath != null && !_isImporting)
-            TextButton(
-              onPressed: _confirmImport,
-              child: const Text('Импортировать'),
-            ),
-        ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_selectedPath != null) ...[
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.insert_drive_file, color: Colors.blue),
-                  title: Text(p.basename(_selectedPath!)),
-                  subtitle: const Text('Выбранный файл'),
-                  trailing: _isImporting
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => setState(() => _selectedPath = null),
-                        ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_selectedPath != null) ...[
+                _SelectedFileCard(
+                  path: _selectedPath!,
+                  isImporting: _isImporting,
+                  cardBg: cardBg,
+                  textColor: textColor,
+                  subColor: subColor,
+                  accent: accent,
+                  onClear: () => setState(() => _selectedPath = null),
                 ),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _isImporting ? null : _confirmImport,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                child: _isImporting
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text(
-                        'Импортировать',
-                        style: TextStyle(color: Colors.white, fontSize: 16),
-                      ),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: _isImporting ? null : _importAndOpenEditor,
-                icon: const Icon(Icons.edit_document),
-                label: const Text('Импортировать и открыть редактор'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              const Divider(),
-              const SizedBox(height: 16),
-            ] else
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 32),
-                child: Column(
+                const SizedBox(height: 14),
+                Row(
                   children: [
-                    Icon(Icons.folder_open, size: 72, color: Colors.grey),
-                    SizedBox(height: 16),
-                    Text(
-                      'Выберите файл для импорта',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                      textAlign: TextAlign.center,
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _isImporting ? null : _importAndOpenEditor,
+                        icon: const Icon(Icons.edit_document, size: 18),
+                        label: const Text('Редактор'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: accent,
+                          side: const BorderSide(color: accent),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton.icon(
+                        onPressed: _isImporting ? null : _confirmImport,
+                        icon: _isImporting
+                            ? const SizedBox(
+                                width: 18, height: 18,
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              )
+                            : const Icon(Icons.check, size: 18),
+                        label: const Text('Импортировать'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: accent,
+                          disabledBackgroundColor: accent.withValues(alpha: 0.4),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                      ),
                     ),
                   ],
                 ),
+                const SizedBox(height: 24),
+              ] else ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 96, height: 96,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.folder_open_outlined,
+                          size: 48,
+                          color: accent,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'Откройте документ из памяти',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: textColor,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Выберите тип файла, чтобы открыть проводник',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 13, color: subColor),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              Text(
+                'ВЫБОР ТИПА ФАЙЛА',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: subColor,
+                  letterSpacing: 0.8,
+                ),
               ),
-            const Text(
-              'Выбрать файл',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-            ),
-            const SizedBox(height: 12),
-            _PickButton(
-              icon: Icons.picture_as_pdf,
-              label: 'PDF документ',
-              color: Colors.red,
-              enabled: !_isPicking && !_isImporting,
-              onTap: () => _pickFile(extensions: ['pdf']),
-            ),
-            const SizedBox(height: 10),
-            _PickButton(
-              icon: Icons.description,
-              label: 'Word / TXT документ',
-              color: Colors.blue,
-              enabled: !_isPicking && !_isImporting,
-              onTap: () => _pickFile(extensions: ['docx', 'doc', 'txt']),
-            ),
-            const SizedBox(height: 10),
-            _PickButton(
-              icon: Icons.image,
-              label: 'Изображение',
-              color: Colors.green,
-              enabled: !_isPicking && !_isImporting,
-              onTap: () => _pickFile(extensions: ['jpg', 'jpeg', 'png']),
-            ),
-            const SizedBox(height: 10),
-            _PickButton(
-              icon: Icons.folder,
-              label: 'Любой файл',
-              color: Colors.orange,
-              enabled: !_isPicking && !_isImporting,
-              onTap: () => _pickFile(extensions: null),
-            ),
-          ],
+              const SizedBox(height: 12),
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 1.05,
+                children: [
+                  _PickCard(
+                    icon: Icons.picture_as_pdf,
+                    label: 'PDF',
+                    description: 'Документы и книги',
+                    color: const Color(0xFFE74C3C),
+                    enabled: enabled,
+                    cardBg: cardBg,
+                    textColor: textColor,
+                    subColor: subColor,
+                    onTap: () => _pickFile(extensions: ['pdf']),
+                  ),
+                  _PickCard(
+                    icon: Icons.description_outlined,
+                    label: 'Word / TXT',
+                    description: 'Тексты, отчёты',
+                    color: const Color(0xFF3498DB),
+                    enabled: enabled,
+                    cardBg: cardBg,
+                    textColor: textColor,
+                    subColor: subColor,
+                    onTap: () => _pickFile(extensions: ['docx', 'doc', 'txt']),
+                  ),
+                  _PickCard(
+                    icon: Icons.photo_outlined,
+                    label: 'Изображение',
+                    description: 'JPG, PNG',
+                    color: const Color(0xFF27AE60),
+                    enabled: enabled,
+                    cardBg: cardBg,
+                    textColor: textColor,
+                    subColor: subColor,
+                    onTap: () => _pickFile(extensions: ['jpg', 'jpeg', 'png']),
+                  ),
+                  _PickCard(
+                    icon: Icons.folder_outlined,
+                    label: 'Любой файл',
+                    description: 'Открыть проводник',
+                    color: const Color(0xFFE67E22),
+                    enabled: enabled,
+                    cardBg: cardBg,
+                    textColor: textColor,
+                    subColor: subColor,
+                    onTap: () => _pickFile(extensions: null),
+                  ),
+                ],
+              ),
+              if (_isPicking) ...[
+                const SizedBox(height: 18),
+                const Center(
+                  child: SizedBox(
+                    width: 22, height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: accent),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _PickButton extends StatelessWidget {
+class _SelectedFileCard extends StatelessWidget {
+  final String path;
+  final bool isImporting;
+  final Color cardBg;
+  final Color textColor;
+  final Color subColor;
+  final Color accent;
+  final VoidCallback onClear;
+
+  const _SelectedFileCard({
+    required this.path,
+    required this.isImporting,
+    required this.cardBg,
+    required this.textColor,
+    required this.subColor,
+    required this.accent,
+    required this.onClear,
+  });
+
+  IconData _iconFor(String ext) {
+    switch (ext) {
+      case '.pdf':
+        return Icons.picture_as_pdf;
+      case '.doc':
+      case '.docx':
+      case '.txt':
+        return Icons.description_outlined;
+      case '.jpg':
+      case '.jpeg':
+      case '.png':
+        return Icons.photo_outlined;
+      default:
+        return Icons.insert_drive_file_outlined;
+    }
+  }
+
+  Color _colorFor(String ext) {
+    switch (ext) {
+      case '.pdf':
+        return const Color(0xFFE74C3C);
+      case '.doc':
+      case '.docx':
+      case '.txt':
+        return const Color(0xFF3498DB);
+      case '.jpg':
+      case '.jpeg':
+      case '.png':
+        return const Color(0xFF27AE60);
+      default:
+        return const Color(0xFFE67E22);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ext = p.extension(path).toLowerCase();
+    final fileColor = _colorFor(ext);
+    final fileIcon = _iconFor(ext);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48, height: 48,
+            decoration: BoxDecoration(
+              color: fileColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(fileIcon, color: fileColor, size: 26),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  p.basename(path),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: textColor,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Готов к импорту',
+                  style: TextStyle(fontSize: 12, color: subColor),
+                ),
+              ],
+            ),
+          ),
+          isImporting
+              ? const SizedBox(
+                  width: 22, height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : IconButton(
+                  icon: Icon(Icons.close, color: subColor, size: 22),
+                  onPressed: onClear,
+                ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PickCard extends StatelessWidget {
   final IconData icon;
   final String label;
+  final String description;
   final Color color;
   final bool enabled;
+  final Color cardBg;
+  final Color textColor;
+  final Color subColor;
   final VoidCallback onTap;
 
-  const _PickButton({
+  const _PickCard({
     required this.icon,
     required this.label,
+    required this.description,
     required this.color,
     required this.enabled,
+    required this.cardBg,
+    required this.textColor,
+    required this.subColor,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      icon: Icon(icon, color: enabled ? color : Colors.grey),
-      label: Text(
-        label,
-        style: TextStyle(color: enabled ? Colors.black87 : Colors.grey),
+    return Material(
+      color: cardBg,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: enabled ? onTap : null,
+        child: Opacity(
+          opacity: enabled ? 1 : 0.45,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  width: 46, height: 46,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: color, size: 24),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: textColor,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      description,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11.5, color: subColor),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-        side: BorderSide(color: enabled ? color : Colors.grey.shade300),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        alignment: Alignment.centerLeft,
-      ),
-      onPressed: enabled ? onTap : null,
     );
   }
 }
