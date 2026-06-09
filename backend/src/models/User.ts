@@ -5,6 +5,12 @@ export interface IUser extends Document {
   email: string;
   password: string;
   name: string;
+  isPremium: boolean;
+  premiumActivatedAt?: Date;
+  premiumExpiresAt?: Date;
+  premiumPlatform?: 'ios' | 'android';
+  premiumProductId?: string;
+  premiumOriginalTransactionId?: string;
   createdAt: Date;
   comparePassword(candidate: string): Promise<boolean>;
 }
@@ -14,6 +20,12 @@ const userSchema = new Schema<IUser>(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     password: { type: String, required: true, minlength: 6 },
     name: { type: String, required: true, trim: true },
+    isPremium: { type: Boolean, default: false },
+    premiumActivatedAt: { type: Date },
+    premiumExpiresAt: { type: Date },
+    premiumPlatform: { type: String, enum: ['ios', 'android'] },
+    premiumProductId: { type: String },
+    premiumOriginalTransactionId: { type: String, index: true },
   },
   { timestamps: true }
 );
