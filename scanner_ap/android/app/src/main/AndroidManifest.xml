@@ -13,7 +13,7 @@
 <!--    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />-->
 <!--    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />-->
     <application
-        android:label="scanner_ap"
+        android:label="Aura Scanner"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

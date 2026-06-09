@@ -36,6 +36,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Для записи голосовых заметок к документам</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Для сканирования документов и распознавания текста</string>
 	<key>NSPhotoLibraryUsageDescription</key>
