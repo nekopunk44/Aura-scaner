@@ -24,6 +24,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
   bool _loading = true;
   bool _purchasing = false;
   bool _isPremium = false;
+  DateTime? _expiresAt;
 
   List<ProductDetails> _products = [];
   String? _selectedId = _kMonthlyId;
@@ -32,6 +33,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
   void initState() {
     super.initState();
     _isPremium = PremiumService().isPremium;
+    _expiresAt = PremiumService().expiresAt;
     _sub = _iap.purchaseStream.listen(_onPurchaseUpdate, onError: _onPurchaseError);
     _init();
   }
@@ -81,6 +83,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
           );
           serverVerified = true;
           await PremiumService().activate();
+          await PremiumService().syncWithServer();
         } catch (e) {
           serverError = e.toString().replaceFirst('Exception: ', '');
         }
@@ -91,7 +94,10 @@ class _PremiumScreenState extends State<PremiumScreen> {
         if (mounted) {
           setState(() {
             _purchasing = false;
-            if (serverVerified) _isPremium = true;
+            if (serverVerified) {
+              _isPremium = true;
+              _expiresAt = PremiumService().expiresAt;
+            }
           });
           if (serverVerified) {
             _showSuccess();
@@ -359,7 +365,15 @@ class _PremiumScreenState extends State<PremiumScreen> {
                       ),
                     ),
                   ] else ...[
-                    const SizedBox(height: 24),
+                    Transform.translate(
+                      offset: const Offset(0, -22),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: _buildActiveSubscriptionCard(
+                          isDark, textColor, subColor, cardBg, cardBorder,
+                        ),
+                      ),
+                    ),
                   ],
 
                   // Список возможностей
@@ -422,6 +436,100 @@ class _PremiumScreenState extends State<PremiumScreen> {
               ),
             ),
     );
+  }
+
+  Widget _buildActiveSubscriptionCard(
+    bool isDark,
+    Color textColor,
+    Color subColor,
+    Color cardBg,
+    Color cardBorder,
+  ) {
+    final expires = _expiresAt;
+    final expiresText = expires != null
+        ? '${expires.day.toString().padLeft(2, '0')}.'
+            '${expires.month.toString().padLeft(2, '0')}.'
+            '${expires.year}'
+        : null;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: cardBorder),
+        boxShadow: isDark ? null : [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 20, offset: const Offset(0, 4)),
+        ],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.verified, color: Colors.green, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Подписка активна',
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: textColor)),
+                    const SizedBox(height: 2),
+                    Text(
+                      expiresText != null ? 'Действует до $expiresText' : 'Премиум-доступ открыт',
+                      style: TextStyle(fontSize: 12, color: subColor),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: OutlinedButton.icon(
+              onPressed: _purchasing ? null : _openManageSubscription,
+              icon: const Icon(Icons.settings_outlined, size: 18),
+              label: Text(Platform.isIOS ? 'Управление в App Store' : 'Управление в Google Play'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF2CA5E0),
+                side: const BorderSide(color: Color(0xFF2CA5E0)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 42,
+            child: TextButton.icon(
+              onPressed: _purchasing ? null : _restore,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Восстановить покупки'),
+              style: TextButton.styleFrom(
+                foregroundColor: subColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openManageSubscription() async {
+    final ok = await PremiumService().openManageSubscription();
+    if (!ok && mounted) {
+      _showError('Не удалось открыть страницу управления подпиской');
+    }
   }
 
   Widget _buildPlanTile(
