@@ -1,0 +1,1 @@
+enum SaveFormat { img, pdf }
