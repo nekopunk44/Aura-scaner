@@ -76,8 +76,12 @@ class ApiService {
         options: Options(extra: {'_retry': true}),
       );
 
-      final newToken = refreshResponse.data['token'] as String;
-      final newRefreshToken = refreshResponse.data['refreshToken'] as String;
+      final newToken = refreshResponse.data['token'];
+      final newRefreshToken = refreshResponse.data['refreshToken'];
+      if (newToken is! String || newToken.isEmpty ||
+          newRefreshToken is! String || newRefreshToken.isEmpty) {
+        throw Exception('Invalid tokens received');
+      }
       await saveToken(newToken);
       await saveRefreshToken(newRefreshToken);
 

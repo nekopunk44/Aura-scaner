@@ -23,6 +23,14 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
   double _qualityFactor = 0.7;
   bool _isProcessing = false;
   PdfInfo? _pdfInfo;
+  final ValueNotifier<({int current, int total})> _compressProgress =
+      ValueNotifier((current: 0, total: 0));
+
+  @override
+  void dispose() {
+    _compressProgress.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -60,20 +68,42 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
 
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dialogBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
     try {
       setState(() => _isProcessing = true);
+      _compressProgress.value = (current: 0, total: _pdfInfo?.pageCount ?? 0);
 
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => const AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('Сжатие PDF...'),
-            ],
+        builder: (_) => AlertDialog(
+          backgroundColor: dialogBg,
+          content: ValueListenableBuilder<({int current, int total})>(
+            valueListenable: _compressProgress,
+            builder: (ctx, p, _) {
+              final ratio = p.total == 0 ? null : p.current / p.total;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    p.total == 0
+                        ? 'Сжатие PDF...'
+                        : 'Сжатие: ${p.current}/${p.total} стр.',
+                    style: TextStyle(color: textColor),
+                  ),
+                  const SizedBox(height: 12),
+                  LinearProgressIndicator(
+                    value: ratio,
+                    color: const Color(0xFF2CA5E0),
+                    backgroundColor: const Color(0xFF2CA5E0).withValues(alpha: 0.15),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       );
@@ -81,6 +111,10 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
       final compressedBytes = await PdfService.compressPdf(
         pdfPath: _selectedPdfPath!,
         qualityFactor: _qualityFactor,
+        onProgress: (current, total) {
+          if (!mounted) return;
+          _compressProgress.value = (current: current, total: total);
+        },
       );
 
       final dir = await getApplicationDocumentsDirectory();
@@ -111,7 +145,7 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
         SnackBar(
           content: Text(
             'PDF сжат на $reduction%\n'
-            'Было: ${(originalSize / 1024).toStringAsFixed(2)}KB -> '
+            'Было: ${(originalSize / 1024).toStringAsFixed(2)}KB → '
             '${(compressedSize / 1024).toStringAsFixed(2)}KB',
           ),
           backgroundColor: Colors.green,
@@ -126,150 +160,201 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
         SnackBar(content: Text('Ошибка: $e')),
       );
     } finally {
-      if (mounted) {
-        setState(() => _isProcessing = false);
-      }
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+    final dividerColor = isDark ? Colors.white12 : const Color(0xFFE8EDF5);
+
     return Scaffold(
+      backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: const Text('Сжать PDF'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        title: Text('Сжать PDF', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        backgroundColor: appBarBg,
+        iconTheme: IconThemeData(color: textColor),
         elevation: 0,
       ),
       body: _pdfInfo == null
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator(color: const Color(0xFF2CA5E0)))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: cardBg,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: dividerColor),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Информация о файле',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: textColor),
+                        ),
+                        const SizedBox(height: 12),
+                        _InfoRow(label: 'Имя файла', value: _pdfInfo!.fileName, textColor: textColor, subColor: subColor),
+                        const SizedBox(height: 6),
+                        _InfoRow(label: 'Размер', value: '${_pdfInfo!.fileSizeMB} MB', textColor: textColor, subColor: subColor),
+                        const SizedBox(height: 6),
+                        _InfoRow(label: 'Страниц', value: '${_pdfInfo!.pageCount}', textColor: textColor, subColor: subColor),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Уровень сжатия',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: textColor),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: cardBg,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: dividerColor),
+                    ),
+                    child: RadioGroup<double>(
+                      groupValue: _qualityFactor,
+                      onChanged: (v) => setState(() => _qualityFactor = v!),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Информация о PDF:',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Имя файла:'),
-                              Expanded(
-                                child: Text(
-                                  _pdfInfo!.fileName,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.right,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Размер:'),
-                              Text('${_pdfInfo!.fileSizeMB} MB'),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Страниц:'),
-                              Text('${_pdfInfo!.pageCount}'),
-                            ],
-                          ),
+                          _QualityOption(title: 'Максимальное качество', subtitle: 'Минимальное сжатие (0.9)', value: 0.9, textColor: textColor, subColor: subColor),
+                          Divider(height: 1, color: dividerColor),
+                          _QualityOption(title: 'Хорошее качество', subtitle: 'Среднее сжатие (0.7) — рекомендуется', value: 0.7, textColor: textColor, subColor: subColor),
+                          Divider(height: 1, color: dividerColor),
+                          _QualityOption(title: 'Среднее качество', subtitle: 'Хорошее сжатие (0.5)', value: 0.5, textColor: textColor, subColor: subColor),
+                          Divider(height: 1, color: dividerColor),
+                          _QualityOption(title: 'Низкое качество', subtitle: 'Максимальное сжатие (0.3)', value: 0.3, textColor: textColor, subColor: subColor),
                         ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Уровень сжатия:',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  const SizedBox(height: 8),
-                  RadioGroup<double>(
-                    groupValue: _qualityFactor,
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() => _qualityFactor = value);
-                    },
-                    child: Column(
-                      children: const [
-                        RadioListTile<double>(
-                          title: Text('Максимальное качество'),
-                          subtitle: Text('Минимальное сжатие (0.9)'),
-                          value: 0.9,
-                        ),
-                        RadioListTile<double>(
-                          title: Text('Хорошее качество'),
-                          subtitle: Text('Среднее сжатие (0.7) - рекомендуется'),
-                          value: 0.7,
-                        ),
-                        RadioListTile<double>(
-                          title: Text('Среднее качество'),
-                          subtitle: Text('Хорошее сжатие (0.5)'),
-                          value: 0.5,
-                        ),
-                        RadioListTile<double>(
-                          title: Text('Низкое качество'),
-                          subtitle: Text('Максимальное сжатие (0.3)'),
-                          value: 0.3,
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2CA5E0).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF2CA5E0).withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline, size: 16, color: const Color(0xFF2CA5E0)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Сжатие происходит путём снижения качества изображений. '
+                            'Текст останется читаемым, но качество графики может снизиться.',
+                            style: TextStyle(fontSize: 12, color: const Color(0xFF2CA5E0), height: 1.4),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue),
-                    ),
-                    child: const Text(
-                      'Сжатие происходит путём снижения качества изображений страниц PDF. '
-                      'Текст останется читаемым, но качество графики может снизиться.',
-                      style: TextStyle(fontSize: 12, color: Colors.blue),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
                   Row(
                     children: [
                       Expanded(
-                        child: ElevatedButton.icon(
+                        child: OutlinedButton.icon(
                           onPressed: _isProcessing ? null : _pickPdf,
-                          icon: const Icon(Icons.folder_open),
-                          label: const Text('Выбрать другой'),
+                          icon: const Icon(Icons.folder_open, size: 18),
+                          label: const Text('Другой файл'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF2CA5E0),
+                            side: const BorderSide(color: Color(0xFF2CA5E0)),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: _isProcessing ? null : _compressAndSave,
-                          icon: const Icon(Icons.compress),
-                          label: const Text('Сжать и сохранить'),
+                          icon: const Icon(Icons.compress, size: 18),
+                          label: const Text('Сжать'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
+                            backgroundColor: Colors.green.shade600,
+                            disabledBackgroundColor: Colors.green.shade600.withValues(alpha: 0.4),
                             foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                         ),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 16),
                 ],
               ),
             ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color textColor;
+  final Color subColor;
+
+  const _InfoRow({required this.label, required this.value, required this.textColor, required this.subColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(fontSize: 13, color: subColor)),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 13, color: textColor, fontWeight: FontWeight.w500),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _QualityOption extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final double value;
+  final Color textColor;
+  final Color subColor;
+
+  const _QualityOption({
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.textColor,
+    required this.subColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return RadioListTile<double>(
+      title: Text(title, style: TextStyle(fontSize: 14, color: textColor, fontWeight: FontWeight.w500)),
+      subtitle: Text(subtitle, style: TextStyle(fontSize: 12, color: subColor)),
+      value: value,
+      activeColor: const Color(0xFF2CA5E0),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
     );
   }
 }

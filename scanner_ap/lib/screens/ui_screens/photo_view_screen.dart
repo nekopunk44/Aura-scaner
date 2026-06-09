@@ -1,7 +1,5 @@
-// photo_view_screen.dart
-
-import 'package:flutter/material.dart';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
 
 class PhotoViewScreen extends StatelessWidget {
@@ -13,22 +11,24 @@ class PhotoViewScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(title),
-        backgroundColor: Colors.black, 
+        title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+        backgroundColor: Colors.black54,
         iconTheme: const IconThemeData(color: Colors.white),
+        elevation: 0,
       ),
       backgroundColor: Colors.black,
       body: PhotoView(
         imageProvider: FileImage(File(imagePath)),
         minScale: PhotoViewComputedScale.contained * 0.8,
         maxScale: PhotoViewComputedScale.covered * 4.0,
-        enableRotation: true, 
+        enableRotation: true,
         loadingBuilder: (context, event) => const Center(
           child: SizedBox(
-            width: 20.0,
-            height: 20.0,
-            child: CircularProgressIndicator(),
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2),
           ),
         ),
       ),

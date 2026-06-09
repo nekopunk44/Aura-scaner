@@ -11,6 +11,7 @@ class PdfService {
   static Future<Uint8List> compressPdf({
     required String pdfPath,
     double qualityFactor = 0.7, // 0.0-1.0, где 1.0 = максимальное качество
+    void Function(int current, int total)? onProgress,
   }) async {
     try {
       final pdfDoc = await PdfDocument.openFile(pdfPath);
@@ -23,7 +24,10 @@ class PdfService {
       final renderWidth = (1024 * qualityFactor).clamp(512.0, 2048.0);
       final renderHeight = (1024 * qualityFactor).clamp(512.0, 2048.0);
 
-      for (int i = 0; i < pdfDoc.pages.length; i++) {
+      final total = pdfDoc.pages.length;
+      onProgress?.call(0, total);
+
+      for (int i = 0; i < total; i++) {
         final page = pdfDoc.pages[i];
 
         final pdfImage = await page.render(
@@ -57,6 +61,8 @@ class PdfService {
             pdfImage.dispose();
           }
         }
+
+        onProgress?.call(i + 1, total);
       }
 
       await pdfDoc.dispose();

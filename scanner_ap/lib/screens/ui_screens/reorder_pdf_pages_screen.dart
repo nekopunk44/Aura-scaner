@@ -151,29 +151,40 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+    final dividerColor = isDark ? Colors.white12 : const Color(0xFFE8EDF5);
+
     return Scaffold(
+      backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: const Text('Реупорядочивание страниц PDF'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        title: Text('Порядок страниц PDF', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        backgroundColor: appBarBg,
+        iconTheme: IconThemeData(color: textColor),
         elevation: 0,
         actions: [
           TextButton.icon(
-            onPressed: () {
-              _isDeleteMode = !_isDeleteMode;
-              setState(() {});
-            },
-            icon: Icon(_isDeleteMode ? Icons.layers : Icons.delete),
-            label: Text(_isDeleteMode ? 'Порядок' : 'Удалить'),
+            onPressed: () => setState(() => _isDeleteMode = !_isDeleteMode),
+            icon: Icon(_isDeleteMode ? Icons.layers : Icons.delete_outline,
+                color: _isDeleteMode ? const Color(0xFF2CA5E0) : Colors.red.shade400, size: 18),
+            label: Text(
+              _isDeleteMode ? 'Порядок' : 'Удалить',
+              style: TextStyle(color: _isDeleteMode ? const Color(0xFF2CA5E0) : Colors.red.shade400),
+            ),
           ),
         ],
       ),
       body: _pdfDoc == null || _pageOrder.isEmpty
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator(color: const Color(0xFF2CA5E0)))
           : Column(
               children: [
                 Expanded(
                   child: ReorderableListView.builder(
+                    padding: const EdgeInsets.all(12),
                     onReorder: (oldIdx, newIdx) {
                       setState(() {
                         if (newIdx > oldIdx) newIdx -= 1;
@@ -188,46 +199,48 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
                       return GestureDetector(
                         key: ValueKey(pageNum),
                         onTap: _isDeleteMode
-                            ? () {
-                                setState(() {
-                                  _selectedPages[_pageOrder[idx]] =
-                                      !_selectedPages[_pageOrder[idx]];
-                                });
-                              }
+                            ? () => setState(() => _selectedPages[_pageOrder[idx]] = !_selectedPages[_pageOrder[idx]])
                             : null,
                         child: Container(
-                          margin: const EdgeInsets.all(8),
+                          margin: const EdgeInsets.only(bottom: 8),
                           decoration: BoxDecoration(
                             border: Border.all(
-                              color: isSelected ? Colors.red : Colors.grey,
-                              width: isSelected ? 2 : 1,
+                              color: isSelected ? Colors.red.shade400 : dividerColor,
+                              width: isSelected ? 1.5 : 1,
                             ),
-                            borderRadius: BorderRadius.circular(8),
-                            color: isSelected
-                                ? Colors.red.withValues(alpha: 0.1)
-                                : Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            color: isSelected ? Colors.red.withValues(alpha: 0.08) : cardBg,
                           ),
                           child: Row(
                             children: [
                               if (!_isDeleteMode)
                                 ReorderableDragStartListener(
                                   index: idx,
-                                  child: const Padding(
-                                    padding: EdgeInsets.all(8.0),
-                                    child: Icon(Icons.drag_handle),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Icon(Icons.drag_handle, color: subColor),
                                   ),
-                                ),
+                                )
+                              else
+                                const SizedBox(width: 12),
                               Expanded(
                                 child: Padding(
-                                  padding: const EdgeInsets.all(12.0),
+                                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
                                   child: Text(
                                     'Страница $pageNum',
-                                    style: const TextStyle(fontSize: 16),
+                                    style: TextStyle(fontSize: 15, color: textColor, fontWeight: FontWeight.w500),
                                   ),
                                 ),
                               ),
-                              if (_isDeleteMode && isSelected)
-                                const Icon(Icons.check_circle, color: Colors.red),
+                              if (_isDeleteMode)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 12),
+                                  child: Icon(
+                                    isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                                    color: isSelected ? Colors.red.shade400 : subColor,
+                                    size: 20,
+                                  ),
+                                ),
                             ],
                           ),
                         ),
@@ -236,49 +249,63 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
                     itemCount: _pageOrder.length,
                   ),
                 ),
-
-                // Кнопки
                 Container(
-                  color: Colors.white,
-                  padding: const EdgeInsets.all(16),
+                  color: cardBg,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                   child: Column(
                     children: [
                       if (_isDeleteMode)
-                        ElevatedButton.icon(
-                          onPressed:
-                              _selectedPages.contains(true) ? _deleteSelectedPages : null,
-                          icon: const Icon(Icons.delete),
-                          label: const Text('Удалить выбранные'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _selectedPages.contains(true) ? _deleteSelectedPages : null,
+                            icon: const Icon(Icons.delete, size: 18),
+                            label: const Text('Удалить выбранные'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red.shade600,
+                              disabledBackgroundColor: Colors.red.shade600.withValues(alpha: 0.4),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
                           ),
                         )
                       else
-                        const Text(
+                        Text(
                           'Перетаскивайте страницы для переупорядочивания',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey),
+                          style: TextStyle(color: subColor, fontSize: 13),
                         ),
                       const SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _isProcessing ? null : () => _pickPdf(),
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('Выбрать другой PDF'),
+                            child: OutlinedButton.icon(
+                              onPressed: _isProcessing ? null : _pickPdf,
+                              icon: const Icon(Icons.folder_open, size: 18),
+                              label: const Text('Другой PDF'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF2CA5E0),
+                                side: const BorderSide(color: Color(0xFF2CA5E0)),
+                                padding: const EdgeInsets.symmetric(vertical: 13),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: ElevatedButton.icon(
                               onPressed: _isProcessing ? null : _savePdf,
-                              icon: const Icon(Icons.check),
+                              icon: const Icon(Icons.check, size: 18),
                               label: const Text('Сохранить'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
+                                backgroundColor: Colors.green.shade600,
+                                disabledBackgroundColor: Colors.green.shade600.withValues(alpha: 0.4),
                                 foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(vertical: 13),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               ),
                             ),
                           ),

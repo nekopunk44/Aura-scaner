@@ -1,5 +1,8 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -21,11 +24,21 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   final List<PdfAnnotation> _annotations = [];
   PdfAnnotation? _currentAnnotation;
   Offset? _startPoint;
-  final Color _selectedColor = Colors.red;
+  static const List<Color> _annotationPalette = [
+    Color(0xFFE53935), // red
+    Color(0xFFFFB300), // amber
+    Color(0xFF43A047), // green
+    Color(0xFF1E88E5), // blue
+    Color(0xFF000000), // black
+  ];
+  Color _selectedColor = _annotationPalette.first;
   final double _strokeWidth = 3.0;
 
 
   int _rotation = 0;
+
+  final GlobalKey _captureKey = GlobalKey();
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -62,71 +75,80 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   }
 
   void _showMoreOptions() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final sheetBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+
     showModalBottomSheet(
       context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(16),
+      backgroundColor: sheetBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            const SizedBox(height: 8),
+            Container(width: 36, height: 4, decoration: BoxDecoration(color: isDark ? Colors.white24 : Colors.black12, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 8),
             ListTile(
-              leading: const Icon(Icons.crop),
-              title: const Text('Обрезать документ'),
-              onTap: () {
-                Navigator.pop(context);
-                _showCropDialog();
-              },
+              leading: Icon(Icons.save, color: const Color(0xFF2CA5E0)),
+              title: Text('Сохранить изменения', style: TextStyle(color: textColor)),
+              onTap: () { Navigator.pop(ctx); _saveDocument(); },
             ),
             ListTile(
-              leading: const Icon(Icons.save),
-              title: const Text('Сохранить изменения'),
-              onTap: () {
-                Navigator.pop(context);
-                _saveDocument();
-              },
+              leading: Icon(Icons.undo, color: const Color(0xFF2CA5E0)),
+              title: Text('Отменить последнее', style: TextStyle(color: textColor)),
+              onTap: () { Navigator.pop(ctx); _undoLastAction(); },
             ),
             ListTile(
-              leading: const Icon(Icons.undo),
-              title: const Text('Отменить последнее действие'),
-              onTap: () {
-                Navigator.pop(context);
-                _undoLastAction();
-              },
+              leading: Icon(Icons.clear_all, color: Colors.red.shade400),
+              title: Text('Очистить аннотации', style: TextStyle(color: textColor)),
+              onTap: () { Navigator.pop(ctx); _clearAllAnnotations(); },
             ),
-            ListTile(
-              leading: const Icon(Icons.clear_all),
-              title: const Text('Очистить все аннотации'),
-              onTap: () {
-                Navigator.pop(context);
-                _clearAllAnnotations();
-              },
-            ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
     );
   }
 
-  void _showCropDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Обрезать документ'),
-        content: const Text('Функция обрезки будет реализована в следующей версии'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<void> _saveDocument() async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      final boundary = _captureKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (boundary == null) {
+        throw StateError('Не удалось получить область захвата');
+      }
+      final image = await boundary.toImage(pixelRatio: 2.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      if (byteData == null) {
+        throw StateError('Не удалось закодировать изображение');
+      }
+      final pngBytes = byteData.buffer.asUint8List();
 
-  void _saveDocument() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Изменения сохранены')),
-    );
+      final dir = await getApplicationDocumentsDirectory();
+      final baseName = widget.fileName.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '');
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final outPath = '${dir.path}/${baseName}_annotated_$timestamp.png';
+      await File(outPath).writeAsBytes(pngBytes);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Сохранено: $outPath')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось сохранить: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   void _undoLastAction() {
@@ -192,98 +214,120 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.fileName),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        title: Text(widget.fileName,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        backgroundColor: appBarBg,
+        iconTheme: IconThemeData(color: textColor),
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.share),
+            icon: Icon(Icons.share, color: textColor),
             onPressed: () async {
               final file = File(widget.filePath);
               if (await file.exists()) {
-                await Share.shareXFiles(
-                  [XFile(widget.filePath)],
-                  subject: widget.fileName,
-                );
+                await Share.shareXFiles([XFile(widget.filePath)], subject: widget.fileName);
               }
             },
           ),
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Stack(
-        children: [
-          Transform.rotate(
-            angle: _rotation * 3.14159 / 180,
-            child: GestureDetector(
-              onPanStart: _handlePanStart,
-              onPanUpdate: _handlePanUpdate,
-              onPanEnd: _handlePanEnd,
-              child: PdfViewPinch(controller: pdfController),
+          ? Center(child: CircularProgressIndicator(color: const Color(0xFF2CA5E0)))
+          : RepaintBoundary(
+              key: _captureKey,
+              child: Stack(
+                children: [
+                  Transform.rotate(
+                    angle: _rotation * 3.14159 / 180,
+                    child: GestureDetector(
+                      onPanStart: _handlePanStart,
+                      onPanUpdate: _handlePanUpdate,
+                      onPanEnd: _handlePanEnd,
+                      child: PdfViewPinch(controller: pdfController),
+                    ),
+                  ),
+                  ..._annotations.map(_buildAnnotation),
+                  if (_currentAnnotation != null) _buildAnnotation(_currentAnnotation!),
+                ],
+              ),
             ),
-          ),
-          ..._annotations.map(_buildAnnotation),
-          if (_currentAnnotation != null) _buildAnnotation(_currentAnnotation!),
-        ],
-      ),
-      bottomNavigationBar: _buildToolbar(),
+      bottomNavigationBar: _buildToolbar(isDark),
     );
   }
 
-  Widget _buildToolbar() {
+  Widget _buildToolbar(bool isDark) {
+    final toolbarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+    final activeColor = const Color(0xFF2CA5E0);
+    final inactiveColor = isDark ? Colors.white38 : Colors.black45;
+    final showColors = _currentMode != EditingMode.none;
+
     return Container(
-      height: 80,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
+        color: toolbarBg,
+        border: Border(top: BorderSide(color: isDark ? Colors.white12 : const Color(0xFFE8EDF5))),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _buildToolbarButton(
-            icon: Icons.rotate_right,
-            label: 'Повернуть',
-            isActive: false,
-            onTap: _rotateDocument,
-          ),
-          _buildToolbarButton(
-            icon: Icons.edit,
-            label: 'Ручка',
-            isActive: _currentMode == EditingMode.pen,
-            onTap: () => setState(() {
-              _currentMode = _currentMode == EditingMode.pen ? EditingMode.none : EditingMode.pen;
-            }),
-          ),
-          _buildToolbarButton(
-            icon: Icons.highlight,
-            label: 'Выделить',
-            isActive: _currentMode == EditingMode.highlight,
-            onTap: () => setState(() {
-              _currentMode = _currentMode == EditingMode.highlight ? EditingMode.none : EditingMode.highlight;
-            }),
-          ),
-          _buildToolbarButton(
-            icon: Icons.draw,
-            label: 'Подпись',
-            isActive: false,
-            onTap: () => _showSignatureDialog(),
-          ),
-          _buildToolbarButton(
-            icon: Icons.more_vert,
-            label: 'Еще',
-            isActive: false,
-            onTap: _showMoreOptions,
+          if (showColors)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (final c in _annotationPalette)
+                    GestureDetector(
+                      onTap: () => setState(() => _selectedColor = c),
+                      child: Container(
+                        width: 26,
+                        height: 26,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: c,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: _selectedColor == c ? activeColor : Colors.transparent,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          SizedBox(
+            height: 64,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildToolbarButton(icon: Icons.rotate_right, label: 'Повернуть', isActive: false, activeColor: activeColor, inactiveColor: inactiveColor, onTap: _rotateDocument),
+                _buildToolbarButton(
+                  icon: Icons.edit,
+                  label: 'Ручка',
+                  isActive: _currentMode == EditingMode.pen,
+                  activeColor: activeColor,
+                  inactiveColor: inactiveColor,
+                  onTap: () => setState(() => _currentMode = _currentMode == EditingMode.pen ? EditingMode.none : EditingMode.pen),
+                ),
+                _buildToolbarButton(
+                  icon: Icons.highlight,
+                  label: 'Выделить',
+                  isActive: _currentMode == EditingMode.highlight,
+                  activeColor: activeColor,
+                  inactiveColor: inactiveColor,
+                  onTap: () => setState(() => _currentMode = _currentMode == EditingMode.highlight ? EditingMode.none : EditingMode.highlight),
+                ),
+                _buildToolbarButton(icon: Icons.more_vert, label: 'Ещё', isActive: false, activeColor: activeColor, inactiveColor: inactiveColor, onTap: _showMoreOptions),
+              ],
+            ),
           ),
         ],
       ),
@@ -294,39 +338,24 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     required IconData icon,
     required String label,
     required bool isActive,
+    required Color activeColor,
+    required Color inactiveColor,
     required VoidCallback onTap,
   }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          icon: Icon(icon),
-          color: isActive ? Colors.blue : Colors.black54,
-          onPressed: onTap,
+    final color = isActive ? activeColor : inactiveColor;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 2),
+            Text(label, style: TextStyle(fontSize: 10, color: color, fontWeight: isActive ? FontWeight.w600 : FontWeight.normal)),
+          ],
         ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            color: isActive ? Colors.blue : Colors.black54,
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _showSignatureDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Добавить подпись'),
-        content: const Text('Функция добавления подписи будет реализована в следующей версии'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
       ),
     );
   }

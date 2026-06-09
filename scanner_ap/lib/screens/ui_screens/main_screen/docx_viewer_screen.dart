@@ -221,110 +221,101 @@ class _DocxViewerScreenState extends State<DocxViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+    final bannerBg = isDark ? Colors.green.shade900.withValues(alpha: 0.4) : Colors.green.shade50;
+    final bannerBorder = isDark ? Colors.green.shade800 : Colors.green.shade300;
+    final bannerText = isDark ? Colors.green.shade300 : Colors.green.shade700;
+
     return Scaffold(
+      backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: Text(
-          widget.fileName,
-          overflow: TextOverflow.ellipsis,
-        ),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 1,
+        title: Text(widget.fileName, overflow: TextOverflow.ellipsis, style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        backgroundColor: appBarBg,
+        iconTheme: IconThemeData(color: textColor),
+        elevation: 0,
         actions: [
           if (!_isLoading && _fileContent.isNotEmpty) ...[
-            IconButton(
-              icon: const Icon(Icons.vertical_align_top),
-              tooltip: 'В начало',
-              onPressed: _scrollToTop,
-            ),
-            IconButton(
-              icon: const Icon(Icons.vertical_align_bottom),
-              tooltip: 'В конец',
-              onPressed: _scrollToBottom,
-            ),
+            IconButton(icon: Icon(Icons.vertical_align_top, color: textColor), tooltip: 'В начало', onPressed: _scrollToTop),
+            IconButton(icon: Icon(Icons.vertical_align_bottom, color: textColor), tooltip: 'В конец', onPressed: _scrollToBottom),
           ],
         ],
       ),
       body: _isLoading
-          ? const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text(
-              'Обработка документа...',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
-          ],
-        ),
-      )
-          : _fileContent.isEmpty
-          ? const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.description, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text(
-              'Документ пуст',
-              style: TextStyle(fontSize: 18, color: Colors.grey),
-            ),
-          ],
-        ),
-      )
-          : Container(
-        color: Colors.white,
-        child: Column(
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.green[50],
-                border: Border(
-                  bottom: BorderSide(color: Colors.green[300]!),
-                ),
-              ),
-              child: Row(
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.check_circle, color: Colors.green[700], size: 16),
-                  const SizedBox(width: 8),
+                  const CircularProgressIndicator(color: Color(0xFF2CA5E0)),
+                  const SizedBox(height: 16),
+                  Text('Обработка документа...', style: TextStyle(fontSize: 15, color: subColor)),
+                ],
+              ),
+            )
+          : _fileContent.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.description, size: 64, color: subColor),
+                  const SizedBox(height: 16),
+                  Text('Документ пуст', style: TextStyle(fontSize: 18, color: subColor)),
+                ],
+              ),
+            )
+          : Container(
+              color: scaffoldBg,
+              child: Column(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: bannerBg,
+                      border: Border(bottom: BorderSide(color: bannerBorder)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.check_circle, color: bannerText, size: 15),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Документ загружен. Таблицы и структура сохранены.',
+                            style: TextStyle(fontSize: 12, color: bannerText),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   Expanded(
-                    child: Text(
-                      'Документ загружен. Таблицы и структура сохранены.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.green[700],
+                    child: Container(
+                      color: cardBg,
+                      child: Scrollbar(
+                        controller: _scrollController,
+                        thumbVisibility: true,
+                        child: SingleChildScrollView(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.all(16),
+                          child: SelectableText(
+                            _fileContent,
+                            style: TextStyle(
+                              fontSize: 14,
+                              height: 1.5,
+                              color: textColor,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-            Expanded(
-              child: Scrollbar(
-                controller: _scrollController,
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
-                  child: SelectableText(
-                    _fileContent,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      height: 1.4,
-                      color: Colors.black87,
-                      fontFamily: 'Courier',
-                    ),
-                    textAlign: TextAlign.left,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 

@@ -44,11 +44,22 @@ class DocumentSyncService {
     }
   }
 
-  Future<List<RemoteDocument>> list() async {
+  Future<List<RemoteDocument>> list({int limit = 100, int offset = 0}) async {
     try {
       await _api.syncBaseUrl();
-      final response = await _api.dio.get('/documents');
-      return (response.data as List)
+      final response = await _api.dio.get(
+        '/documents',
+        queryParameters: {'limit': limit, 'offset': offset},
+      );
+      // Сервер вернёт либо {items, total, limit, offset} (новый формат),
+      // либо голый массив (legacy на случай отката). Поддерживаем оба.
+      final data = response.data;
+      final List rawList = data is List
+          ? data
+          : (data is Map && data['items'] is List
+              ? data['items'] as List
+              : const []);
+      return rawList
           .map((e) => RemoteDocument.fromJson(e as Map<String, dynamic>))
           .toList();
     } on DioException catch (e) {

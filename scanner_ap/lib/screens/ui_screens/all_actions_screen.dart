@@ -12,6 +12,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../services/premium_service.dart';
+import 'premium_screen.dart';
+import 'add_password_screen.dart';
+import 'restore_photo_screen.dart';
+import 'highlight_screen.dart';
+import 'document_ai_screen.dart';
 import 'package:pdf/pdf.dart' hide PdfDocument;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdfrx/pdfrx.dart';
@@ -25,6 +31,10 @@ import 'remove_spots_screen.dart';
 import 'reorder_pdf_pages_screen.dart';
 import 'compress_pdf_screen.dart';
 import 'extract_pdf_pages_screen.dart';
+import 'voice_note_screen.dart';
+import 'print_screen.dart';
+import 'remove_watermark_screen.dart';
+import 'hot_zone_screen.dart';
 
 const _documentKey = 'saved_document_paths';
 
@@ -33,22 +43,85 @@ class AllActionsScreen extends StatelessWidget {
 
   const AllActionsScreen({super.key, this.onDocumentImported});
 
-  void _handleAction(
-      BuildContext context,
-      String featureName, {
-        bool isPremium = false,
-      }) {
-    if (isPremium) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Для функции "$featureName" требуется Премиум.'),
+  void _showPremiumPaywall(BuildContext context, String featureName) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => Container(
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
-      );
-    } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Запуск функции: $featureName')));
-    }
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white24 : Colors.black12,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Container(
+              width: 64, height: 64,
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.workspace_premium, size: 32, color: Colors.amber.shade600),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Функция только для Premium',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: textColor),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '«$featureName» доступна в подписке.\nОформите Premium чтобы разблокировать её.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: subColor, height: 1.45),
+            ),
+            const SizedBox(height: 24),
+            _PremiumBenefitRow(icon: Icons.library_books, label: 'Пакетное сканирование (+10 страниц)', isDark: isDark),
+            _PremiumBenefitRow(icon: Icons.auto_fix_high, label: 'Восстановление фото и выделение текста', isDark: isDark),
+            _PremiumBenefitRow(icon: Icons.lock, label: 'Защита паролем и удаление водяных знаков', isDark: isDark),
+            _PremiumBenefitRow(icon: Icons.voice_chat, label: 'Голосовые заметки и Эко-сканер', isDark: isDark, isLast: true),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.amber.shade600,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen()));
+                },
+                child: const Text('Оформить Premium',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Не сейчас', style: TextStyle(color: subColor, fontSize: 14)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget buildTile(
@@ -60,11 +133,17 @@ class AllActionsScreen extends StatelessWidget {
         VoidCallback? onTap,
         Color iconColor = Colors.blue,
       }) {
+    final effectiveTap = (isPremium && !PremiumService().isPremium)
+        ? () => _showPremiumPaywall(context, title)
+        : onTap ?? () => ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('«$title» в разработке')),
+            );
+
     return buildFeatureTile(
       context,
       title: title,
       icon: icon,
-      onTap: onTap ?? () => _handleAction(context, title, isPremium: isPremium),
+      onTap: effectiveTap,
       isPremium: isPremium,
       subtitle: subtitle,
       iconColor: iconColor,
@@ -73,22 +152,26 @@ class AllActionsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final sectionColor = isDark ? Colors.white38 : Colors.grey.shade500;
+
     Widget buildSectionHeader(String title) {
       return Padding(
-          padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
-          child: Text(
-            title,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey,
-            ),
+        padding: const EdgeInsets.only(top: 16, bottom: 8),
+        child: Text(
+          title,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: sectionColor,
+            letterSpacing: 0.8,
           ),
+        ),
       );
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -295,6 +378,9 @@ class AllActionsScreen extends StatelessWidget {
                   Icons.auto_fix_high,
                   isPremium: true,
                   subtitle: 'Улучшение качества и четкости',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => RestorePhotoScreen(onSaved: onDocumentImported),
+                  )),
                 ),
               ),
               const SizedBox(width: 16),
@@ -409,6 +495,9 @@ class AllActionsScreen extends StatelessWidget {
                   Icons.auto_fix_high,
                   isPremium: true,
                   subtitle: 'Подсветка важного текста',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => HighlightScreen(onSaved: onDocumentImported),
+                  )),
                 ),
               ),
               const SizedBox(width: 16),
@@ -470,6 +559,9 @@ class AllActionsScreen extends StatelessWidget {
                   Icons.lock,
                   subtitle: 'Защитите свой документ',
                   isPremium: true,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => AddPasswordScreen(onSaved: onDocumentImported),
+                  )),
                 ),
               ),
               const SizedBox(width: 16),
@@ -479,6 +571,9 @@ class AllActionsScreen extends StatelessWidget {
                   'Печать',
                   Icons.print,
                   subtitle: 'Распечатайте документ',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const PrintScreen(),
+                  )),
                 ),
               ),
             ],
@@ -491,8 +586,12 @@ class AllActionsScreen extends StatelessWidget {
                 child: buildTile(
                   context,
                   'Удалить водяной знак',
-                  Icons.close,
+                  Icons.auto_fix_normal,
                   isPremium: true,
+                  subtitle: 'Выделите и сотрите водяной знак',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => RemoveWatermarkScreen(onSaved: onDocumentImported),
+                  )),
                 ),
               ),
               const SizedBox(width: 16),
@@ -553,6 +652,9 @@ class AllActionsScreen extends StatelessWidget {
                   Icons.mobile_friendly,
                   subtitle: 'Для договора - выделяет ключевые моменты',
                   iconColor: Colors.red.shade700,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => DocumentAiScreen.analyze(),
+                  )),
                 ),
               ),
               const SizedBox(width: 16),
@@ -560,9 +662,12 @@ class AllActionsScreen extends StatelessWidget {
                 child: buildTile(
                   context,
                   'Наведите камеру на документ',
-                  Icons.cabin,
-                  subtitle: 'Покажет уведомление ("Эту квитанцию нужно оплатить до завтра")',
+                  Icons.camera_alt,
+                  subtitle: 'Сфотографируйте — ИИ мгновенно выделит суть',
                   iconColor: Colors.green.shade700,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => DocumentAiScreen.camera(),
+                  )),
                 ),
               ),
             ],
@@ -578,6 +683,9 @@ class AllActionsScreen extends StatelessWidget {
                   Icons.voice_chat,
                   subtitle: 'Можете оставить голосовой комментарий прямо в конкретном пункте документа',
                   isPremium: true,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => VoiceNoteScreen(onSaved: onDocumentImported),
+                  )),
                 ),
               ),
               const SizedBox(width: 16),
@@ -587,6 +695,9 @@ class AllActionsScreen extends StatelessWidget {
                   'Горячая зона',
                   Icons.hot_tub,
                   subtitle: 'Нажав на подпись, вы увидите визитку человека',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const HotZoneScreen(),
+                  )),
                 ),
               ),
             ],
@@ -603,6 +714,9 @@ class AllActionsScreen extends StatelessWidget {
                   subtitle: 'Рассказывает про упаковку',
                   isPremium: true,
                   iconColor: Colors.green.shade500,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => DocumentAiScreen.eco(),
+                  )),
                 ),
               ),
               const SizedBox(width: 16),
@@ -982,5 +1096,56 @@ class AllActionsScreen extends StatelessWidget {
         SnackBar(content: Text('Ошибка импорта: $e')),
       );
     }
+  }
+}
+
+class _PremiumBenefitRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isDark;
+  final bool isLast;
+
+  const _PremiumBenefitRow({
+    required this.icon,
+    required this.label,
+    required this.isDark,
+    this.isLast = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dividerColor = isDark ? Colors.white.withValues(alpha: 0.07) : Colors.grey.shade100;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 11),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 18, color: Colors.amber.shade600),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.white70 : const Color(0xFF3A4558),
+                  ),
+                ),
+              ),
+              Icon(Icons.check, size: 16, color: Colors.green.shade400),
+            ],
+          ),
+        ),
+        if (!isLast) Divider(height: 1, color: dividerColor),
+      ],
+    );
   }
 }

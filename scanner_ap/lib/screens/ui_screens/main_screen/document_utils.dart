@@ -1,41 +1,52 @@
+import 'dart:collection';
 import 'dart:typed_data';
 import 'dart:io';
 import 'dart:ui' as ui;
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:docx_to_text/docx_to_text.dart';
 
-/// Миксин с утилитами для генерации превью документов.
-///
-/// Подключается к MyDocumentsScreen для отображения миниатюр файлов.
-///
-/// Поддерживаемые форматы:
-/// - **PDF** — рендерит первую страницу через pdfx
-/// - **DOCX** — извлекает текст и рисует его на Canvas
-/// - **JPG/PNG** — использует Image.file напрямую
-/// - **TXT** — читает первые строки и рисует на Canvas
-///
-/// Кэширование: превью генерируются один раз и хранятся в памяти.
-/// Кэш не очищается автоматически; при необходимости стоит добавить LRU или очистку по размеру.
-///
-/// Известная проблема: `bool get mounted => true` захардкожен,
-/// что может вызвать setState после dispose. Нужно переопределять в классе-хосте.
-mixin DocumentUtils {
-  final Map<String, Uint8List?> _pdfPreviewCache = {};
-  final Map<String, Uint8List?> _docxPreviewCache = {};
-  final Map<String, bool> _pdfLoadingFlags = {};
-  final Map<String, bool> _docxLoadingFlags = {};
-  final _random = Random();
+const int _kMaxCacheEntries = 60;
+const double _kPdfRenderScale = 1.5;
 
-  bool get mounted => true;
+class _LruCache<K, V> {
+  _LruCache(this._maxEntries);
+  final int _maxEntries;
+  final LinkedHashMap<K, V> _store = LinkedHashMap<K, V>();
 
-  void updateState() {}
+  bool containsKey(K key) => _store.containsKey(key);
 
-  String getFileNameFromPath(String path) {
-    return path.split('/').last;
+  V? operator [](K key) {
+    if (!_store.containsKey(key)) return null;
+    final value = _store.remove(key) as V;
+    _store[key] = value;
+    return value;
   }
+
+  void operator []=(K key, V value) {
+    _store.remove(key);
+    _store[key] = value;
+    while (_store.length > _maxEntries) {
+      _store.remove(_store.keys.first);
+    }
+  }
+
+  void remove(K key) => _store.remove(key);
+  void clear() => _store.clear();
+}
+
+mixin DocumentUtils<T extends StatefulWidget> on State<T> {
+  final _LruCache<String, Uint8List?> _pdfPreviewCache = _LruCache(_kMaxCacheEntries);
+  final _LruCache<String, Uint8List?> _docxPreviewCache = _LruCache(_kMaxCacheEntries);
+  final Set<String> _pdfLoadingFlags = {};
+  final Set<String> _docxLoadingFlags = {};
+
+  void updateState() {
+    if (mounted) setState(() {});
+  }
+
+  String getFileNameFromPath(String path) => path.split(Platform.pathSeparator).last.split('/').last;
 
   void removeFromCache(String filePath) {
     _pdfPreviewCache.remove(filePath);
@@ -53,14 +64,8 @@ mixin DocumentUtils {
       _docxPreviewCache[newPath] = _docxPreviewCache[oldPath];
       _docxPreviewCache.remove(oldPath);
     }
-    if (_pdfLoadingFlags.containsKey(oldPath)) {
-      _pdfLoadingFlags[newPath] = _pdfLoadingFlags[oldPath]!;
-      _pdfLoadingFlags.remove(oldPath);
-    }
-    if (_docxLoadingFlags.containsKey(oldPath)) {
-      _docxLoadingFlags[newPath] = _docxLoadingFlags[oldPath]!;
-      _docxLoadingFlags.remove(oldPath);
-    }
+    if (_pdfLoadingFlags.remove(oldPath)) _pdfLoadingFlags.add(newPath);
+    if (_docxLoadingFlags.remove(oldPath)) _docxLoadingFlags.add(newPath);
   }
 
   Future<String> _extractTextFromDocxBytes(Uint8List bytes) async {
@@ -74,39 +79,29 @@ mixin DocumentUtils {
       final alphaNumericChars = cleanText.replaceAll(RegExp(r'[^a-zA-Zа-яА-Я0-9]'), '').length;
 
       if (totalChars > 50 && alphaNumericChars / totalChars < 0.10) {
-        return 'ОШИБКА ОЧИСТКИ: Извлеченный текст состоит в основном из нечитаемых символов. Документ может быть поврежден.';
-      }
-
-      if (cleanText.isEmpty) {
-        return 'Документ не содержит читаемого текста.';
+        return '';
       }
 
       return cleanText;
-
     } catch (e) {
       debugPrint('Критическая ошибка извлечения текста из DOCX: $e');
-      return 'КРИТИЧЕСКАЯ ОШИБКА: Не удалось прочитать файл DOCX. Документ, возможно, не является корректным DOCX-файлом.';
+      return '';
     }
   }
 
   Future<Uint8List?> generatePdfPreview(String filePath) async {
-    if (_pdfLoadingFlags[filePath] == true) {
-      return null;
-    }
-
-    if (_pdfPreviewCache.containsKey(filePath)) {
-      return _pdfPreviewCache[filePath];
-    }
+    if (_pdfLoadingFlags.contains(filePath)) return null;
+    if (_pdfPreviewCache.containsKey(filePath)) return _pdfPreviewCache[filePath];
 
     try {
-      _pdfLoadingFlags[filePath] = true;
+      _pdfLoadingFlags.add(filePath);
 
       final document = await PdfDocument.openFile(filePath);
       final page = await document.getPage(1);
 
       final pageImage = await page.render(
-        width: page.width * 2,
-        height: page.height * 2,
+        width: page.width * _kPdfRenderScale,
+        height: page.height * _kPdfRenderScale,
         format: PdfPageImageFormat.png,
       );
 
@@ -115,159 +110,183 @@ mixin DocumentUtils {
 
       final result = pageImage?.bytes;
       _pdfPreviewCache[filePath] = result;
-      _pdfLoadingFlags[filePath] = false;
+      _pdfLoadingFlags.remove(filePath);
 
       updateState();
-
       return result;
     } catch (e) {
       debugPrint('Ошибка создания превью PDF: $e');
       _pdfPreviewCache[filePath] = null;
-      _pdfLoadingFlags[filePath] = false;
+      _pdfLoadingFlags.remove(filePath);
       return null;
     }
   }
 
   Future<Uint8List?> generateDocxPreview(String filePath) async {
-    if (_docxLoadingFlags[filePath] == true) {
-      return null;
-    }
-
-    if (_docxPreviewCache.containsKey(filePath)) {
-      return _docxPreviewCache[filePath];
-    }
+    if (_docxLoadingFlags.contains(filePath)) return null;
+    if (_docxPreviewCache.containsKey(filePath)) return _docxPreviewCache[filePath];
 
     try {
-      _docxLoadingFlags[filePath] = true;
+      _docxLoadingFlags.add(filePath);
 
       final file = File(filePath);
       if (!await file.exists()) {
-        final errorPreview = await _createErrorPreview();
+        final errorPreview = await _createPlaceholderPreview(label: 'Файл не найден');
         _docxPreviewCache[filePath] = errorPreview;
-        _docxLoadingFlags[filePath] = false;
+        _docxLoadingFlags.remove(filePath);
         return errorPreview;
       }
 
       String realContent = '';
-
       try {
         final bytes = await file.readAsBytes();
         realContent = await _extractTextFromDocxBytes(bytes);
-
-        if (realContent.isEmpty) {
-          realContent = 'Документ не содержит видимого текста.';
-        }
-
       } catch (e) {
-      debugPrint('Ошибка чтения или парсинга DOCX файла $filePath: $e');
-        realContent = 'Ошибка чтения документа';
+        debugPrint('Ошибка чтения или парсинга DOCX файла $filePath: $e');
       }
 
-      final previewImage = await _createRealDocxPreviewImage(realContent, filePath);
+      final previewImage = realContent.trim().isEmpty
+          ? await _createPlaceholderPreview(label: 'DOCX')
+          : await _createRealDocxPreviewImage(realContent);
 
       _docxPreviewCache[filePath] = previewImage;
-      _docxLoadingFlags[filePath] = false;
+      _docxLoadingFlags.remove(filePath);
 
       updateState();
-
       return previewImage;
     } catch (e) {
       debugPrint('Ошибка создания превью DOCX: $e');
-      final errorPreview = await _createErrorPreview();
-      _docxLoadingFlags[filePath] = false;
+      final errorPreview = await _createPlaceholderPreview(label: 'Ошибка');
+      _docxLoadingFlags.remove(filePath);
       return errorPreview;
     }
   }
 
-  Future<Uint8List?> _createRealDocxPreviewImage(String realContent, String filePath) async {
+  Future<Uint8List?> _createRealDocxPreviewImage(String content) async {
     try {
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
-      final size = Size(120, 80);
+      const size = Size(160, 220);
 
-      final backgroundPaint = Paint()..color = Colors.white;
-      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), backgroundPaint);
-
-      final contentStyle = const TextStyle(
-        color: Colors.black,
-        fontSize: 4,
-        height: 1.2,
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        Paint()..color = Colors.white,
       );
 
-      String previewText = realContent.trim();
+      final lines = content
+          .split(RegExp(r'\r?\n'))
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty)
+          .toList();
+      final title = lines.isNotEmpty ? lines.first : '';
+      final body = lines.length > 1 ? lines.sublist(1).join('\n') : '';
 
-      if (previewText.isEmpty) {
-        const String baseFillerText =
-            "Это пустой документ. Содержимое появится после редактирования. DOCX распознан.";
+      const padding = 10.0;
+      const maxBodyChars = 800;
+      final trimmedBody = body.length > maxBodyChars
+          ? '${body.substring(0, maxBodyChars)}…'
+          : body;
 
-        final int targetLines = _random.nextInt(9) + 2;
-        final StringBuffer buffer = StringBuffer();
+      double cursorY = padding;
+      if (title.isNotEmpty) {
+        final titlePainter = TextPainter(
+          text: TextSpan(
+            text: title,
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              height: 1.2,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+          maxLines: 2,
+          ellipsis: '…',
+        );
+        titlePainter.layout(maxWidth: size.width - padding * 2);
+        titlePainter.paint(canvas, Offset(padding, cursorY));
+        cursorY += titlePainter.height + 4;
 
-        for (int i = 0; i < targetLines; i++) {
-          final int minLen = 30;
-          final int maxLen = 60;
-          final int randomLength = _random.nextInt(maxLen - minLen) + minLen;
-
-          buffer.write(baseFillerText.substring(0, min(baseFillerText.length, randomLength)));
-          buffer.write('\n');
-
-          if (_random.nextDouble() < 0.25) {
-            buffer.write('\n');
-          }
-        }
-
-        previewText = buffer.toString().trim();
+        canvas.drawLine(
+          Offset(padding, cursorY),
+          Offset(size.width - padding, cursorY),
+          Paint()
+            ..color = Colors.blue.shade300
+            ..strokeWidth = 0.8,
+        );
+        cursorY += 4;
       }
 
-      const int maxDisplayCharacters = 2000;
-      if (previewText.length > maxDisplayCharacters) {
-        previewText = '${previewText.substring(0, maxDisplayCharacters)}...';
+      if (trimmedBody.isNotEmpty) {
+        final bodyPainter = TextPainter(
+          text: TextSpan(
+            text: trimmedBody,
+            style: const TextStyle(
+              color: Color(0xFF334155),
+              fontSize: 7,
+              height: 1.3,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+          maxLines: 100,
+          ellipsis: '…',
+        );
+        bodyPainter.layout(maxWidth: size.width - padding * 2);
+        final bodyHeight = (size.height - cursorY - padding).clamp(0.0, double.infinity);
+        canvas.save();
+        canvas.clipRect(Rect.fromLTWH(padding, cursorY, size.width - padding * 2, bodyHeight));
+        bodyPainter.paint(canvas, Offset(padding, cursorY));
+        canvas.restore();
       }
 
-      const int veryLargeMaxLines = 1000;
-      final contentPainter = TextPainter(
-        text: TextSpan(text: previewText, style: contentStyle),
-        textDirection: TextDirection.ltr,
-        maxLines: veryLargeMaxLines,
-        ellipsis: '...',
-      );
-
-      final double padding = 4.0;
-      contentPainter.layout(maxWidth: size.width - (padding * 2));
-      contentPainter.paint(canvas, Offset(padding, padding));
-
-      final borderPaint = Paint()
-        ..color = Colors.blue.shade400
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0;
       canvas.drawRect(
         Rect.fromLTWH(0.5, 0.5, size.width - 1, size.height - 1),
-        borderPaint,
+        Paint()
+          ..color = Colors.blue.shade400
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0,
       );
 
       final picture = recorder.endRecording();
       final image = await picture.toImage(size.width.toInt(), size.height.toInt());
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-
       return byteData?.buffer.asUint8List();
     } catch (e) {
       debugPrint('Ошибка создания реального превью DOCX: $e');
-      return _createErrorPreview();
+      return _createPlaceholderPreview(label: 'Ошибка');
     }
   }
 
-  Future<Uint8List?> _createErrorPreview() async {
+  Future<Uint8List?> _createPlaceholderPreview({required String label}) async {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
-    final size = Size(40, 40);
+    const size = Size(120, 80);
 
-    final backgroundPaint = Paint()..color = Colors.grey.shade300;
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), backgroundPaint);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()..color = Colors.grey.shade100,
+    );
+
+    final painter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: TextStyle(
+          color: Colors.grey.shade600,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    painter.layout(maxWidth: size.width - 8);
+    painter.paint(
+      canvas,
+      Offset((size.width - painter.width) / 2, (size.height - painter.height) / 2),
+    );
 
     final picture = recorder.endRecording();
     final image = await picture.toImage(size.width.toInt(), size.height.toInt());
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-
     return byteData?.buffer.asUint8List();
   }
 
@@ -282,103 +301,78 @@ mixin DocumentUtils {
           width: 40,
           height: 40,
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return _buildErrorIcon();
-          },
+          errorBuilder: (context, error, stackTrace) => _buildErrorIcon(),
         ),
       );
     } else if (fileName.endsWith('.pdf')) {
-      if (_pdfPreviewCache.containsKey(filePath) && _pdfPreviewCache[filePath] != null) {
+      final cached = _pdfPreviewCache[filePath];
+      if (cached != null) {
         return ClipRRect(
           borderRadius: BorderRadius.circular(6.0),
-          child: Image.memory(
-            _pdfPreviewCache[filePath]!,
-            width: 40,
-            height: 40,
-            fit: BoxFit.cover,
-          ),
+          child: Image.memory(cached, width: 40, height: 40, fit: BoxFit.cover),
         );
       }
-
       return FutureBuilder<Uint8List?>(
         future: generatePdfPreview(filePath),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting || _pdfLoadingFlags[filePath] == true) {
+          if (snapshot.connectionState == ConnectionState.waiting ||
+              _pdfLoadingFlags.contains(filePath)) {
             return _buildLoadingIcon();
-          } else if (snapshot.hasData && snapshot.data != null) {
+          }
+          if (snapshot.hasData && snapshot.data != null) {
             return ClipRRect(
               borderRadius: BorderRadius.circular(6.0),
-              child: Image.memory(
-                snapshot.data!,
-                width: 40,
-                height: 40,
-                fit: BoxFit.cover,
-              ),
+              child: Image.memory(snapshot.data!, width: 40, height: 40, fit: BoxFit.cover),
             );
-          } else {
-            return _buildErrorIcon();
           }
+          return _buildErrorIcon();
         },
       );
     } else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
-      if (_docxPreviewCache.containsKey(filePath) && _docxPreviewCache[filePath] != null) {
+      final cached = _docxPreviewCache[filePath];
+      if (cached != null) {
         return ClipRRect(
           borderRadius: BorderRadius.circular(6.0),
-          child: Image.memory(
-            _docxPreviewCache[filePath]!,
-            width: 40,
-            height: 40,
-            fit: BoxFit.cover,
-          ),
+          child: Image.memory(cached, width: 40, height: 40, fit: BoxFit.cover),
         );
       }
-
       return FutureBuilder<Uint8List?>(
         future: generateDocxPreview(filePath),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting || _docxLoadingFlags[filePath] == true) {
+          if (snapshot.connectionState == ConnectionState.waiting ||
+              _docxLoadingFlags.contains(filePath)) {
             return _buildLoadingIcon();
-          } else if (snapshot.hasData && snapshot.data != null) {
+          }
+          if (snapshot.hasData && snapshot.data != null) {
             return ClipRRect(
               borderRadius: BorderRadius.circular(6.0),
-              child: Image.memory(
-                snapshot.data!,
-                width: 40,
-                height: 40,
-                fit: BoxFit.cover,
-              ),
+              child: Image.memory(snapshot.data!, width: 40, height: 40, fit: BoxFit.cover),
             );
-          } else {
-            return _buildErrorIcon();
           }
+          return _buildErrorIcon();
         },
       );
-    } else {
-      return _buildErrorIcon();
     }
+    return _buildErrorIcon();
   }
 
-  Widget _buildLoadingIcon() {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: Colors.grey.shade200,
-        borderRadius: BorderRadius.circular(6.0),
-      ),
-      child: const Icon(Icons.hourglass_empty, color: Colors.grey, size: 20),
-    );
-  }
+  Widget _buildLoadingIcon() => Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(6.0),
+        ),
+        child: const Icon(Icons.hourglass_empty, color: Colors.grey, size: 20),
+      );
 
-  Widget _buildErrorIcon() {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: Colors.grey.shade200,
-        borderRadius: BorderRadius.circular(6.0),
-      ),
-      child: const Icon(Icons.error_outline, color: Colors.grey, size: 20),
-    );
-  }
+  Widget _buildErrorIcon() => Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(6.0),
+        ),
+        child: const Icon(Icons.error_outline, color: Colors.grey, size: 20),
+      );
 }

@@ -113,7 +113,7 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Сохранено: $fileName'),
-            backgroundColor: Colors.green,
+            backgroundColor: const Color(0xFF2CA5E0),
           ),
         );
         Navigator.pop(context);
@@ -142,42 +142,45 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+    final previewBg = isDark ? const Color(0xFF0A1118) : const Color(0xFFE8EDF5);
+
     return Scaffold(
+      backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: const Text('Изменение цвета документа'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        title: Text('Настройка цвета', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        backgroundColor: appBarBg,
+        iconTheme: IconThemeData(color: textColor),
         elevation: 0,
         actions: [
           TextButton(
             onPressed: _resetValues,
-            child: const Text('Сброс', style: TextStyle(color: Colors.blue)),
+            child: const Text('Сброс', style: TextStyle(color: Color(0xFF2CA5E0))),
           ),
         ],
       ),
       body: _originalImage == null
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator(color: const Color(0xFF2CA5E0)))
           : Column(
               children: [
-                // Превью
                 Expanded(
                   child: Container(
-                    color: Colors.grey[200],
+                    color: previewBg,
                     child: Stack(
                       alignment: Alignment.center,
                       children: [
                         if (_previewImage != null)
-                          Center(
-                            child: Image.memory(
-                              _previewImage!,
-                              gaplessPlayback: true,
-                            ),
-                          )
+                          Center(child: Image.memory(_previewImage!, gaplessPlayback: true))
                         else
                           const SizedBox.shrink(),
                         if (_isProcessing)
                           Container(
-                            color: Colors.black26,
+                            color: Colors.black38,
                             child: const Center(
                               child: CircularProgressIndicator(color: Colors.white),
                             ),
@@ -186,113 +189,68 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
                     ),
                   ),
                 ),
-
-                // Слайдеры
                 Container(
-                  color: Colors.white,
+                  color: cardBg,
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       children: [
-                        // Яркость
-                        buildSlider(
-                          label: 'Яркость',
-                          value: _brightness,
-                          min: 0.5,
-                          max: 2.0,
-                          divisions: 30,
-                          onChanged: (val) {
-                            _brightness = val;
-                            _scheduleUpdate();
-                          },
-                        ),
-
-                        // Контраст
-                        buildSlider(
-                          label: 'Контраст',
-                          value: _contrast,
-                          min: 0.5,
-                          max: 2.0,
-                          divisions: 30,
-                          onChanged: (val) {
-                            _contrast = val;
-                            _scheduleUpdate();
-                          },
-                        ),
-
-                        // Насыщенность
-                        buildSlider(
-                          label: 'Насыщенность',
-                          value: _saturation,
-                          min: 0.0,
-                          max: 2.0,
-                          divisions: 40,
-                          onChanged: (val) {
-                            _saturation = val;
-                            _scheduleUpdate();
-                          },
-                        ),
-
-                        // Оттенок
-                        buildSlider(
-                          label: 'Оттенок',
-                          value: _hue,
-                          min: -180,
-                          max: 180,
-                          divisions: 72,
-                          onChanged: (val) {
-                            _hue = val;
-                            _scheduleUpdate();
-                          },
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // Чекбоксы для фильтров
+                        buildSlider(label: 'Яркость', value: _brightness, min: 0.5, max: 2.0, divisions: 30, textColor: textColor, onChanged: (val) { _brightness = val; _scheduleUpdate(); }),
+                        buildSlider(label: 'Контраст', value: _contrast, min: 0.5, max: 2.0, divisions: 30, textColor: textColor, onChanged: (val) { _contrast = val; _scheduleUpdate(); }),
+                        buildSlider(label: 'Насыщенность', value: _saturation, min: 0.0, max: 2.0, divisions: 40, textColor: textColor, onChanged: (val) { _saturation = val; _scheduleUpdate(); }),
+                        buildSlider(label: 'Оттенок', value: _hue, min: -180, max: 180, divisions: 72, textColor: textColor, onChanged: (val) { _hue = val; _scheduleUpdate(); }),
+                        const SizedBox(height: 8),
                         CheckboxListTile(
-                          title: const Text('Удалить шумы'),
+                          title: Text('Удалить шумы', style: TextStyle(color: textColor, fontSize: 14)),
+                          subtitle: Text('Сглаживание артефактов', style: TextStyle(color: subColor, fontSize: 12)),
                           value: _removeNoise,
-                          onChanged: (val) {
-                            _removeNoise = val ?? false;
-                            _scheduleUpdate();
-                          },
+                          onChanged: (val) { _removeNoise = val ?? false; _scheduleUpdate(); },
+                          activeColor: const Color(0xFF2CA5E0),
+                          contentPadding: EdgeInsets.zero,
                         ),
-
                         CheckboxListTile(
-                          title: const Text('Повысить резкость'),
+                          title: Text('Повысить резкость', style: TextStyle(color: textColor, fontSize: 14)),
+                          subtitle: Text('Чёткость краёв и текста', style: TextStyle(color: subColor, fontSize: 12)),
                           value: _sharpen,
-                          onChanged: (val) {
-                            _sharpen = val ?? false;
-                            _scheduleUpdate();
-                          },
+                          onChanged: (val) { _sharpen = val ?? false; _scheduleUpdate(); },
+                          activeColor: const Color(0xFF2CA5E0),
+                          contentPadding: EdgeInsets.zero,
                         ),
-
-                        const SizedBox(height: 16),
-
-                        // Кнопки действий
+                        const SizedBox(height: 12),
                         Row(
                           children: [
                             Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: _isProcessing ? null : () => _pickImage(),
-                                icon: const Icon(Icons.image),
-                                label: const Text('Выбрать другое'),
+                              child: OutlinedButton.icon(
+                                onPressed: _isProcessing ? null : _pickImage,
+                                icon: const Icon(Icons.image, size: 18),
+                                label: const Text('Другое фото'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF2CA5E0),
+                                  side: const BorderSide(color: Color(0xFF2CA5E0)),
+                                  padding: const EdgeInsets.symmetric(vertical: 13),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: ElevatedButton.icon(
                                 onPressed: _isProcessing ? null : _saveImage,
-                                icon: const Icon(Icons.check),
+                                icon: const Icon(Icons.check, size: 18),
                                 label: const Text('Сохранить'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
+                                  backgroundColor: const Color(0xFF2CA5E0),
+                                  disabledBackgroundColor: const Color(0xFF2CA5E0).withValues(alpha: 0.4),
                                   foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(vertical: 13),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
                               ),
                             ),
                           ],
                         ),
+                        const SizedBox(height: 4),
                       ],
                     ),
                   ),
@@ -308,26 +266,24 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
     required double min,
     required double max,
     required int divisions,
+    required Color textColor,
     required Function(double) onChanged,
   }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text(value.toStringAsFixed(2), style: const TextStyle(color: Colors.blue)),
+              Text(label, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: textColor)),
+              Text(value.toStringAsFixed(2), style: const TextStyle(color: Color(0xFF2CA5E0), fontSize: 13)),
             ],
           ),
-          Slider(
-            value: value,
-            min: min,
-            max: max,
-            divisions: divisions,
-            onChanged: onChanged,
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(activeTrackColor: const Color(0xFF2CA5E0), thumbColor: const Color(0xFF2CA5E0)),
+            child: Slider(value: value, min: min, max: max, divisions: divisions, onChanged: onChanged),
           ),
         ],
       ),

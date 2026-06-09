@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'screens/ui_screens/splash_screen.dart';
 import 'services/deep_link_service.dart';
+import 'services/premium_service.dart';
 import 'config/theme_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   DeepLinkService().init();
   await ThemeNotifier().load();
+  await PremiumService().load();
   runApp(const ScannerApp());
 }
 
@@ -23,6 +25,8 @@ class ScannerApp extends StatelessWidget {
           theme: AppTheme.light,
           darkTheme: AppTheme.dark,
           themeMode: ThemeNotifier().mode,
+          themeAnimationDuration: const Duration(milliseconds: 300),
+          themeAnimationCurve: Curves.easeOut,
           home: const SplashScreen(),
         );
       },

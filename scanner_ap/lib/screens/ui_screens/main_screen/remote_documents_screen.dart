@@ -28,7 +28,16 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
   List<RemoteDocument> _documents = [];
   bool _isLoading = true;
   bool _isBusy = false;
+  String? _busyLabel;
   String? _error;
+
+  void _setBusy(String? label) {
+    if (!mounted) return;
+    setState(() {
+      _isBusy = label != null;
+      _busyLabel = label;
+    });
+  }
   String _serverUrl = ServerConfig().baseUrl;
 
   @override
@@ -72,7 +81,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
     if (result == null || result.files.first.path == null) return;
 
     final file = File(result.files.first.path!);
-    setState(() => _isBusy = true);
+    _setBusy('Загрузка в облако…');
     try {
       await _apiService.syncBaseUrl();
       await _syncService.upload(file);
@@ -87,12 +96,12 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
         SnackBar(content: Text('Ошибка загрузки: $e')),
       );
     } finally {
-      if (mounted) setState(() => _isBusy = false);
+      _setBusy(null);
     }
   }
 
   Future<void> _downloadDocument(RemoteDocument doc) async {
-    setState(() => _isBusy = true);
+    _setBusy('Скачивание…');
     try {
       await _apiService.syncBaseUrl();
       final dir = await getApplicationDocumentsDirectory();
@@ -119,9 +128,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
         SnackBar(content: Text('Ошибка скачивания: $e')),
       );
     } finally {
-      if (mounted) {
-        setState(() => _isBusy = false);
-      }
+      _setBusy(null);
     }
   }
 
@@ -137,7 +144,10 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
     final newName = await showDialog<String>(
       context: context,
       builder: (dialogContext) {
+        final isDarkDialog = Theme.of(dialogContext).brightness == Brightness.dark;
         return AlertDialog(
+          backgroundColor: isDarkDialog ? const Color(0xFF1E2A3A) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('Переименовать в облаке'),
           content: TextField(
             controller: controller,
@@ -153,7 +163,8 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-              child: const Text('Сохранить'),
+              child: const Text('Сохранить',
+                  style: TextStyle(color: Color(0xFF2CA5E0))),
             ),
           ],
         );
@@ -162,7 +173,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
 
     if (newName == null || newName.isEmpty || newName == doc.name) return;
 
-    setState(() => _isBusy = true);
+    _setBusy('Переименование…');
     try {
       await _apiService.syncBaseUrl();
       await _syncService.rename(doc.id, newName);
@@ -177,7 +188,8 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка переименования: $e')),
       );
-      setState(() => _isBusy = false);
+    } finally {
+      _setBusy(null);
     }
   }
 
@@ -185,7 +197,10 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
+        final isDarkDialog = Theme.of(dialogContext).brightness == Brightness.dark;
         return AlertDialog(
+          backgroundColor: isDarkDialog ? const Color(0xFF1E2A3A) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('Удалить из облака'),
           content: Text('Удалить "${doc.name}" с сервера?'),
           actions: [
@@ -193,8 +208,12 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
               onPressed: () => Navigator.pop(dialogContext, false),
               child: const Text('Отмена'),
             ),
-            TextButton(
+            ElevatedButton(
               onPressed: () => Navigator.pop(dialogContext, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(dialogContext).colorScheme.error,
+                foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+              ),
               child: const Text('Удалить'),
             ),
           ],
@@ -204,7 +223,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
 
     if (confirmed != true) return;
 
-    setState(() => _isBusy = true);
+    _setBusy('Удаление…');
     try {
       await _apiService.syncBaseUrl();
       await _syncService.delete(doc.id);
@@ -219,7 +238,8 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка удаления: $e')),
       );
-      setState(() => _isBusy = false);
+    } finally {
+      _setBusy(null);
     }
   }
 
@@ -230,7 +250,10 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
     final newUrl = await showDialog<String>(
       context: context,
       builder: (dialogContext) {
+        final isDarkDialog = Theme.of(dialogContext).brightness == Brightness.dark;
         return AlertDialog(
+          backgroundColor: isDarkDialog ? const Color(0xFF1E2A3A) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('Адрес сервера'),
           content: TextField(
             controller: controller,
@@ -246,7 +269,8 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-              child: const Text('Сохранить'),
+              child: const Text('Сохранить',
+                  style: TextStyle(color: Color(0xFF2CA5E0))),
             ),
           ],
         );
@@ -310,20 +334,24 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
         icon: const Icon(Icons.cloud_upload),
         label: const Text('Загрузить'),
       ),
-      body: Column(
+      body: Builder(
+        builder: (context) {
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+          return Column(
         children: [
           Container(
             width: double.infinity,
             margin: const EdgeInsets.all(16),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.blue.withValues(alpha: 0.08),
+              color: const Color(0xFF2CA5E0).withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blue.withValues(alpha: 0.18)),
+              border: Border.all(color: const Color(0xFF2CA5E0).withValues(alpha: 0.18)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.cloud, color: Colors.blue),
+                const Icon(Icons.cloud, color: Color(0xFF2CA5E0)),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -336,7 +364,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
           ),
           if (_isLoading)
             const Expanded(
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(child: CircularProgressIndicator(color: Color(0xFF2CA5E0))),
             )
           else if (_error != null)
             Expanded(
@@ -346,16 +374,20 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.cloud_off, size: 64, color: Colors.grey),
+                      Icon(Icons.cloud_off, size: 64, color: subColor),
                       const SizedBox(height: 16),
                       Text(
                         'Не удалось загрузить облачные документы.\n$_error',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.grey),
+                        style: TextStyle(color: subColor),
                       ),
                       const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: _loadRemoteDocuments,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2CA5E0),
+                          foregroundColor: Colors.white,
+                        ),
                         child: const Text('Повторить'),
                       ),
                     ],
@@ -364,18 +396,18 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
               ),
             )
           else if (_documents.isEmpty)
-            const Expanded(
+            Expanded(
               child: Center(
                 child: Padding(
-                  padding: EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(24),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.cloud_queue, size: 72, color: Colors.grey),
-                      SizedBox(height: 16),
+                      Icon(Icons.cloud_queue, size: 72, color: subColor),
+                      const SizedBox(height: 16),
                       Text(
                         'В облаке пока нет документов',
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
+                        style: TextStyle(fontSize: 16, color: subColor),
                       ),
                     ],
                   ),
@@ -394,7 +426,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
                       return Card(
                         margin: const EdgeInsets.only(bottom: 10),
                         child: ListTile(
-                          leading: Icon(_iconForFormat(doc.format), color: Colors.blue),
+                          leading: Icon(_iconForFormat(doc.format), color: const Color(0xFF2CA5E0)),
                           title: Text(
                             doc.name,
                             maxLines: 1,
@@ -438,16 +470,36 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
                     },
                   ),
                   if (_isBusy)
-                    const Positioned.fill(
+                    Positioned.fill(
                       child: ColoredBox(
-                        color: Color(0x22000000),
-                        child: Center(child: CircularProgressIndicator()),
+                        color: const Color(0x66000000),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const CircularProgressIndicator(color: Color(0xFF2CA5E0)),
+                              if (_busyLabel != null) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  _busyLabel!,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                 ],
               ),
             ),
         ],
+      );
+        },
       ),
     );
   }

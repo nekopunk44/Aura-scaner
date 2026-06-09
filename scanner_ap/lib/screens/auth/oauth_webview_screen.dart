@@ -29,6 +29,10 @@ class _OAuthWebViewScreenState extends State<OAuthWebViewScreen> {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setUserAgent(
+        'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 '
+        '(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+      )
       // JS channel: backend page calls FlutterAuth.postMessage('aurascanner://...')
       ..addJavaScriptChannel(
         'FlutterAuth',
@@ -53,6 +57,12 @@ class _OAuthWebViewScreenState extends State<OAuthWebViewScreen> {
               _handleUri('aurascanner://${match.group(1)}');
               return NavigationDecision.prevent;
             }
+          }
+
+          // VK Standalone: redirect to oauth.vk.com/blank.html#access_token=...
+          if (url.startsWith('https://oauth.vk.com/blank.html')) {
+            _handleUri(url);
+            return NavigationDecision.prevent;
           }
 
           return NavigationDecision.navigate;

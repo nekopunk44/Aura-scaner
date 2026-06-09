@@ -68,7 +68,7 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
   }
 
   Future<void> _saveImageToGallery() async {
-    if (_editedImage == null || !_editedImage!.existsSync()) {
+    if (_editedImage == null || !await _editedImage!.exists()) {
       _showErrorSnackBar('Image file not found');
       return;
     }
@@ -88,12 +88,13 @@ class _DocumentScannerScreenState extends State<DocumentScannerScreen> {
   }
 
   Future<void> _cropImage() async {
-    if (_editedImage == null || !_editedImage!.existsSync()) {
+    if (_editedImage == null || !await _editedImage!.exists()) {
       debugPrint('Image file doesn`t exist: ${_editedImage?.path}');
       _showErrorSnackBar('Image file not found');
       return;
     }
     debugPrint('Attempting to crop image');
+    if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
       final croppedFile = await cropper.ImageCropper().cropImage(

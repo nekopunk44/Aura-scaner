@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../config/theme_config.dart';
+import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/social_auth_service.dart';
 import '../../utils/app_notification.dart';
@@ -79,16 +81,127 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _onGoogleTap() => _socialLogin(_socialAuth.loginWithGoogle);
-  void _onVkTap() => _socialLogin(_socialAuth.loginWithVk);
-  void _onTelegramTap() => _socialLogin(() => _socialAuth.loginWithTelegram(context));
 
-  void _onInstagramTap() {
-    AppNotification.show(
-      context,
-      message: 'Instagram: замените YOUR_INSTAGRAM_APP_ID в SocialAuthService',
-      type: NotificationType.info,
-      duration: const Duration(seconds: 4),
+  void _onAppleTap() => _socialLogin(_socialAuth.loginWithApple);
+
+  void _onTelegramTap() async {
+    setState(() => _isLoading = true);
+    try {
+      final user = await _socialAuth.loginWithTelegram(context);
+      if (!mounted) return;
+      if (user.email.contains('@telegram.placeholder')) {
+        await _promptTelegramEmail();
+      }
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const MainScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppNotification.show(context, message: e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _promptTelegramEmail() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final controller = TextEditingController();
+    final bg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+    final inputFill = isDark ? Colors.white.withValues(alpha: 0.07) : const Color(0xFFF2F6FC);
+    final inputBorder = isDark ? Colors.white.withValues(alpha: 0.15) : const Color(0xFFE8EDF5);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return Dialog(
+          backgroundColor: bg,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Добавить email',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: textColor)),
+                const SizedBox(height: 8),
+                Text(
+                  'Telegram не передаёт email. Добавьте его для восстановления доступа.',
+                  style: TextStyle(fontSize: 13, color: subColor, height: 1.4),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  keyboardType: TextInputType.emailAddress,
+                  style: TextStyle(color: textColor, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'your@email.com',
+                    hintStyle: TextStyle(color: subColor),
+                    filled: true,
+                    fillColor: inputFill,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: inputBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: inputBorder),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: scheme.primary, width: 1.5),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      style: TextButton.styleFrom(
+                        foregroundColor: subColor,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: const Text('Пропустить'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: scheme.primary,
+                        foregroundColor: scheme.onPrimary,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                      ),
+                      child: const Text('Добавить', style: TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
+
+    if (confirmed != true) return;
+    final email = controller.text.trim();
+    if (email.isEmpty || !email.contains('@')) return;
+    try {
+      await ApiService().dio.patch('/auth/profile', data: {'email': email});
+    } catch (_) {
+      // Некритично — пользователь может обновить email в настройках
+    }
   }
 
   @override
@@ -305,21 +418,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: _SocialTile(
-                          label: 'ВКонтакте',
-                          color: const Color(0xFF0077FF),
-                          faIcon: FontAwesomeIcons.vk,
-                          isDark: isDark,
-                          labelColor: textColor,
-                          onTap: _isLoading ? null : _onVkTap,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _SocialTile(
                           label: 'Telegram',
                           color: const Color(0xFF26A5E4),
                           faIcon: FontAwesomeIcons.telegram,
@@ -328,19 +426,20 @@ class _LoginScreenState extends State<LoginScreen> {
                           onTap: _isLoading ? null : _onTelegramTap,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _SocialTile(
-                          label: 'Instagram',
-                          color: const Color(0xFFE1306C),
-                          faIcon: FontAwesomeIcons.instagram,
-                          isDark: isDark,
-                          labelColor: textColor,
-                          onTap: _isLoading ? null : _onInstagramTap,
-                        ),
-                      ),
                     ],
                   ),
+
+                  if (Platform.isIOS) ...[
+                    const SizedBox(height: 12),
+                    _SocialTile(
+                      label: 'Войти через Apple',
+                      color: isDark ? Colors.white : Colors.black,
+                      faIcon: FontAwesomeIcons.apple,
+                      isDark: isDark,
+                      labelColor: textColor,
+                      onTap: _isLoading ? null : _onAppleTap,
+                    ),
+                  ],
 
                   const SizedBox(height: 32),
 

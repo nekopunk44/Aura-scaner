@@ -1,8 +1,6 @@
-// save_success_screen.dart (БЕЗ ИЗМЕНЕНИЙ, кроме импорта)
-
 import 'package:flutter/material.dart';
 import 'main_screen/app_tabs_screen.dart';
-import 'passport/save_options_passport.dart'; 
+import '../../models/save_format.dart';
 
 class SaveSuccessScreen extends StatelessWidget {
   final String filePath;
@@ -14,54 +12,67 @@ class SaveSuccessScreen extends StatelessWidget {
     required this.format,
   });
 
-  String get _formatText {
-    return format == SaveFormat.pdf ? 'PDF-файл' : 'Фото/Изображение';
-  }
+  String get _formatText =>
+      format == SaveFormat.pdf ? 'PDF-файл' : 'Фото/Изображение';
 
   @override
   Widget build(BuildContext context) {
-   
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white60 : const Color(0xFF6B7A99);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: scaffoldBg,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.check_circle, color: Colors.green, size: 100),
-              const SizedBox(height: 20),
-              const Text(
-                'Документ сохранен!',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              Container(
+                width: 96,
+                height: 96,
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_rounded, color: Colors.green, size: 52),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Документ сохранён!',
+                style: TextStyle(
+                    fontSize: 24, fontWeight: FontWeight.bold, color: textColor),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 10),
               Text(
-                '$_formatText успешно сохранено и доступно в разделе "Мои файлы".',
-                style: const TextStyle(fontSize: 16, color: Colors.black54),
+                '$_formatText успешно сохранён и доступен в разделе "Мои файлы".',
+                style: TextStyle(fontSize: 15, color: subColor, height: 1.45),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 40),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pushAndRemoveUntil(
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pushAndRemoveUntil(
                     context,
-                    MaterialPageRoute(builder: (_) => MainScreen()),
-                        (route) => false,
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    MaterialPageRoute(builder: (_) => const MainScreen()),
+                    (route) => false,
                   ),
-                ),
-                child: const Text(
-                  'Перейти в "Мои файлы"',
-                  style: TextStyle(color: Colors.white, fontSize: 16),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2CA5E0),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: const Text(
+                    'Перейти в "Мои файлы"',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
                 ),
               ),
             ],

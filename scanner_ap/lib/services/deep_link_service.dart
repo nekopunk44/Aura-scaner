@@ -35,12 +35,26 @@ class DeepLinkService with WidgetsBindingObserver {
     }
   }
 
-  Future<Uri> waitForLink({Duration timeout = const Duration(minutes: 5)}) {
-    _pendingCompleter = Completer<Uri>();
-    return _pendingCompleter!.future.timeout(
+  Future<Uri> waitForLink({Duration timeout = const Duration(minutes: 2)}) {
+    // Если уже есть незавершённый ожидающий вызов (например, юзер нажал
+    // Google, потом сразу VK), отменяем старый чтобы не потерять его навсегда
+    // и не дать ему получить чужой результат.
+    final prev = _pendingCompleter;
+    if (prev != null && !prev.isCompleted) {
+      prev.completeError(
+        StateError('Авторизация прервана новым запросом входа.'),
+      );
+    }
+
+    final completer = Completer<Uri>();
+    _pendingCompleter = completer;
+
+    return completer.future.timeout(
       timeout,
       onTimeout: () {
-        _pendingCompleter = null;
+        if (identical(_pendingCompleter, completer)) {
+          _pendingCompleter = null;
+        }
         throw TimeoutException('Deep link timeout', timeout);
       },
     );

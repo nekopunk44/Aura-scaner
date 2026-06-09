@@ -1,17 +1,6 @@
-//Главный экран хранилища документов.
-//
-//Отображает список всех сохранённых файлов с превью-миниатюрами.
-//Пути к файлам хранятся в SharedPreferences по ключу 'documents'.
-//
-//Поддерживаемые форматы: PDF, DOCX, DOC, TXT, JPG, JPEG, PNG.
-//
-//Операции с файлами:
-//- Просмотр (открывает подходящий viewer)
-//- Переименование (диалог с текстовым полем)
-//- Удаление (с подтверждением, удаляет файл с диска)
-//- Экспорт (в галерею для изображений, через FilePicker для остальных)
-//
-//Превью генерируются асинхронно через миксин DocumentUtils и кэшируются.
+// ignore_for_file: use_build_context_synchronously
+import 'dart:async';
+import 'dart:collection';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
@@ -25,6 +14,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../services/document_sync_service.dart';
 import '../../../services/document_registry.dart';
+import '../../../utils/app_notification.dart';
 import 'pdf_viewer_screen.dart';
 import 'docx_viewer_screen.dart';
 import 'text_file_viewer_screen.dart';
@@ -52,25 +42,49 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
   final List<String> _filteredDocumentPaths = [];
   bool _isSearching = false;
 
-  final Map<String, Future<Uint8List?>> _previewFutures = {};
+  static const int _kMaxPreviewFutures = 80;
+  final LinkedHashMap<String, Future<Uint8List?>> _previewFutures =
+      LinkedHashMap<String, Future<Uint8List?>>();
+
+  Timer? _searchDebounce;
 
   @override
   void initState() {
     super.initState();
     _loadDocuments();
-
     _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
+    _previewFutures.clear();
     super.dispose();
   }
 
-  void _onSearchChanged() {
-    final query = _searchController.text.trim().toLowerCase();
+  Future<Uint8List?> _previewFutureFor(String filePath) {
+    final existing = _previewFutures.remove(filePath);
+    if (existing != null) {
+      _previewFutures[filePath] = existing;
+      return existing;
+    }
+    final future = _loadPreviewFuture(filePath);
+    _previewFutures[filePath] = future;
+    while (_previewFutures.length > _kMaxPreviewFutures) {
+      _previewFutures.remove(_previewFutures.keys.first);
+    }
+    return future;
+  }
 
+  void _onSearchChanged() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 250), _applySearchFilter);
+  }
+
+  void _applySearchFilter() {
+    if (!mounted) return;
+    final query = _searchController.text.trim().toLowerCase();
     if (query.isEmpty) {
       setState(() {
         _isSearching = false;
@@ -79,13 +93,10 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     } else {
       setState(() {
         _isSearching = true;
-        _filteredDocumentPaths.clear();
-        _filteredDocumentPaths.addAll(
-            _documentPaths.where((path) {
-              final fileName = getFileNameFromPath(path).toLowerCase();
-              return fileName.contains(query);
-            })
-        );
+        _filteredDocumentPaths
+          ..clear()
+          ..addAll(_documentPaths.where((path) =>
+              getFileNameFromPath(path).toLowerCase().contains(query)));
       });
     }
   }
@@ -98,20 +109,22 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     });
   }
 
-  List<String> get _displayedDocumentPaths {
-    return _isSearching ? _filteredDocumentPaths : _documentPaths;
-  }
+  List<String> get _displayedDocumentPaths =>
+      _isSearching ? _filteredDocumentPaths : _documentPaths;
 
   Future<void> _loadDocuments() async {
     setState(() => _isLoading = true);
-
     final registry = DocumentRegistry();
     await registry.load();
 
-    // Сначала показываем локальные файлы
-    final localEntries = registry.entries
-        .where((e) => File(e.localPath).existsSync())
-        .toList();
+    // Используем асинхронную проверку чтобы не блокировать UI поток
+    final checks = await Future.wait(
+      registry.entries.map((e) async {
+        final exists = await File(e.localPath).exists();
+        return exists ? e : null;
+      }),
+    );
+    final localEntries = checks.whereType<DocEntry>().toList();
 
     if (mounted) {
       setState(() {
@@ -122,7 +135,6 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
       });
     }
 
-    // Фоновая синхронизация с облаком
     _syncWithCloud(registry);
   }
 
@@ -134,24 +146,29 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
           .whereType<String>()
           .toSet();
 
-      // Скачиваем облачные документы, которых нет локально
       for (final remote in remoteList) {
         if (!localRemoteIds.contains(remote.id)) {
           await _downloadAndRegister(remote, registry);
         }
       }
 
-      // Повторяем загрузку для файлов без remoteId (failed upload)
-      for (final entry in registry.entries.where((e) =>
-          e.remoteId == null && File(e.localPath).existsSync())) {
-        _retryUpload(entry);
+      final unsynced = registry.entries
+          .where((e) => e.remoteId == null)
+          .toList();
+      for (final entry in unsynced) {
+        if (await File(entry.localPath).exists()) {
+          await _retryUpload(entry);
+        }
       }
 
-      // Обновляем список после скачивания
       await registry.load();
-      final updatedEntries = registry.entries
-          .where((e) => File(e.localPath).existsSync())
-          .toList();
+      final checks = await Future.wait(
+        registry.entries.map((e) async {
+          final exists = await File(e.localPath).exists();
+          return exists ? e : null;
+        }),
+      );
+      final updatedEntries = checks.whereType<DocEntry>().toList();
 
       if (!mounted) return;
       setState(() {
@@ -159,8 +176,8 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
           ..clear()
           ..addAll(updatedEntries.map((e) => e.localPath));
       });
-    } catch (_) {
-      // Оффлайн — работаем с локальными файлами
+    } catch (e) {
+      debugPrint('Cloud sync error: $e');
     }
   }
 
@@ -170,7 +187,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
       final dir = await getApplicationDocumentsDirectory();
       var finalPath = '${dir.path}/${remote.name}.${remote.format}';
       var counter = 1;
-      while (File(finalPath).existsSync()) {
+      while (await File(finalPath).exists()) {
         finalPath = '${dir.path}/${remote.name}_$counter.${remote.format}';
         counter++;
       }
@@ -185,22 +202,22 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     }
   }
 
-  void _retryUpload(DocEntry entry) {
-    () async {
-      try {
-        final remote = await DocumentSyncService()
-            .upload(File(entry.localPath), name: entry.name);
-        await DocumentRegistry().updateRemoteId(entry.localPath, remote.id);
-      } catch (e) {
-        debugPrint('Retry upload failed: $e');
-      }
-    }();
+  Future<void> _retryUpload(DocEntry entry) async {
+    try {
+      final remote = await DocumentSyncService()
+          .upload(File(entry.localPath), name: entry.name);
+      await DocumentRegistry().updateRemoteId(entry.localPath, remote.id);
+    } catch (e) {
+      debugPrint('Retry upload failed: $e');
+    }
   }
 
   Future<Uint8List?> _loadPreviewFuture(String filePath) async {
     final fileName = getFileNameFromPath(filePath).toLowerCase();
     try {
-      if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png')) {
+      if (fileName.endsWith('.jpg') ||
+          fileName.endsWith('.jpeg') ||
+          fileName.endsWith('.png')) {
         return await File(filePath).readAsBytes();
       } else if (fileName.endsWith('.pdf')) {
         return await generatePdfPreview(filePath);
@@ -210,23 +227,21 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
         final content = await File(filePath).readAsString();
         return await _createTextPreview(content);
       }
-      // fallback: пробуем прочитать как изображение (файл без расширения)
       try {
         return await File(filePath).readAsBytes();
       } catch (_) {
         return null;
       }
     } catch (e) {
-      debugPrint('Ошибка загрузки превью для $filePath: $e');
+      debugPrint('Preview error for $filePath: $e');
       return null;
     }
   }
 
   Future<Uint8List?> _createTextPreview(String content) async {
     try {
-      final text = content.length > 100
-          ? '${content.substring(0, 100)}...'
-          : content;
+      final text =
+          content.length > 100 ? '${content.substring(0, 100)}...' : content;
       return await _textToImage(text);
     } catch (e) {
       return null;
@@ -238,184 +253,156 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     const double h = 150;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));
-
     canvas.drawRect(
       const Rect.fromLTWH(0, 0, w, h),
-      Paint()..color = const Color(0xFFF5F5F5),
+      Paint()..color = const Color(0xFF1a2535),
     );
-
-    final paragraphBuilder = ui.ParagraphBuilder(ui.ParagraphStyle(
-      fontSize: 10,
-      textDirection: TextDirection.ltr,
-    ))
-      ..pushStyle(ui.TextStyle(color: const Color(0xFF333333), fontSize: 10))
+    final paragraphBuilder = ui.ParagraphBuilder(
+      ui.ParagraphStyle(fontSize: 10, textDirection: TextDirection.ltr),
+    )
+      ..pushStyle(ui.TextStyle(color: const Color(0xFFCCCCCC), fontSize: 10))
       ..addText(text);
-
     final paragraph = paragraphBuilder.build()
       ..layout(const ui.ParagraphConstraints(width: w - 8));
     canvas.drawParagraph(paragraph, const Offset(4, 4));
-
     final picture = recorder.endRecording();
     final image = await picture.toImage(w.toInt(), h.toInt());
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     return byteData?.buffer.asUint8List();
   }
 
-  Widget _buildFilePreview(String filePath) {
+  Widget _buildFilePreview(String filePath, bool isDark, {double size = 52}) {
     final fileName = getFileNameFromPath(filePath).toLowerCase();
-    final future = _previewFutures.putIfAbsent(filePath, () => _loadPreviewFuture(filePath));
+    final future = _previewFutureFor(filePath);
 
     return FutureBuilder<Uint8List?>(
       future: future,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Center(
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          );
+          return _previewShimmer(isDark, size: size);
         }
 
         final previewBytes = snapshot.data;
         if (previewBytes != null) {
           return ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
             child: SizedBox(
-              width: 56,
-              height: 56,
+              width: size,
+              height: size,
               child: Image.memory(
                 previewBytes,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => _buildFileIcon(fileName),
+                errorBuilder: (_, __, ___) => _buildFileIcon(fileName, isDark, size: size),
               ),
             ),
           );
         }
 
-        return _buildFileIcon(fileName);
+        return _buildFileIcon(fileName, isDark, size: size);
       },
     );
   }
 
-  Widget _buildFileIcon(String fileName) {
+  Widget _previewShimmer(bool isDark, {double size = 52}) {
     return Container(
-      width: 56,
-      height: 56,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
-        color: _getFileColor(fileName),
-        borderRadius: BorderRadius.circular(8),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.07)
+            : const Color(0xFFF0F4FA),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Center(
-        child: Icon(
-          _getFileIcon(fileName),
-          color: Colors.white,
-          size: 24,
+        child: SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: isDark ? Colors.white24 : const Color(0xFFCCD3E0),
+          ),
         ),
       ),
     );
   }
 
-  Color _getFileColor(String fileName) {
-    if (fileName.endsWith('.pdf')) return Colors.red;
-    if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) return Colors.blue;
-    if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') ||
-        fileName.endsWith('.png')) {
-      return Colors.green;
-    }
-    if (fileName.endsWith('.txt')) return Colors.grey;
-    return Colors.orange;
+  Widget _buildFileIcon(String fileName, bool isDark, {double size = 52}) {
+    final (color, icon) = _fileStyle(fileName);
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDark ? 0.2 : 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+            color: color.withValues(alpha: isDark ? 0.35 : 0.25), width: 1),
+      ),
+      child: Center(child: Icon(icon, color: color, size: size * 0.42)),
+    );
   }
 
-  IconData _getFileIcon(String fileName) {
-    if (fileName.endsWith('.pdf')) return Icons.picture_as_pdf;
-    if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) return Icons.description;
-    if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') ||
-        fileName.endsWith('.png')) {
-      return Icons.image;
+  (Color, IconData) _fileStyle(String fileName) {
+    if (fileName.endsWith('.pdf')) {
+      return (const Color(0xFFEF5350), Icons.picture_as_pdf_outlined);
     }
-    if (fileName.endsWith('.txt')) return Icons.text_fields;
-    return Icons.insert_drive_file;
+    if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
+      return (const Color(0xFF2CA5E0), Icons.description_outlined);
+    }
+    if (fileName.endsWith('.jpg') ||
+        fileName.endsWith('.jpeg') ||
+        fileName.endsWith('.png')) {
+      return (const Color(0xFF26C060), Icons.image_outlined);
+    }
+    if (fileName.endsWith('.txt')) {
+      return (const Color(0xFF9E9E9E), Icons.text_fields_rounded);
+    }
+    return (const Color(0xFFFF9800), Icons.insert_drive_file_outlined);
   }
 
   void _exportDocument(String fullPath) async {
     if (!mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
-
-    if (!(await _requestPermissions())) {
-      return;
-    }
+    if (!(await _requestPermissions())) return;
 
     final fileToExport = File(fullPath);
     final fileName = getFileNameFromPath(fullPath);
-    final lowerCaseFileName = fileName.toLowerCase();
-    String destination = '';
-    bool success = false;
+    final lower = fileName.toLowerCase();
 
     try {
       if (!await fileToExport.exists()) {
-        throw Exception('Файл не найден по пути: $fullPath');
+        throw Exception('Файл не найден: $fullPath');
       }
 
-      if (lowerCaseFileName.endsWith('.jpg') ||
-          lowerCaseFileName.endsWith('.png') ||
-          lowerCaseFileName.endsWith('.jpeg')) {
+      if (lower.endsWith('.jpg') ||
+          lower.endsWith('.png') ||
+          lower.endsWith('.jpeg')) {
         final bytes = await fileToExport.readAsBytes();
-        final result = await ImageGallerySaverPlus.saveImage(
-            bytes, name: fileName);
-
-        if (result is Map &&
-            (result['isSuccess'] == true || result['isSuccess'] == 1)) {
-          destination = 'Галерее';
-          success = true;
-        } else if (result == true) {
-          destination = 'Галерее';
-          success = true;
-        } else {
-          throw Exception('Не удалось сохранить фото в Галерею.');
+        final result =
+            await ImageGallerySaverPlus.saveImage(bytes, name: fileName);
+        final ok = result is Map
+            ? result['isSuccess'] == true || result['isSuccess'] == 1
+            : result == true;
+        if (!ok) throw Exception('Не удалось сохранить в Галерею.');
+        if (mounted) {
+          AppNotification.show(context,
+              message: 'Сохранено в Галерею', type: NotificationType.success);
         }
       } else {
-        final Uint8List fileBytes = await fileToExport.readAsBytes();
-        final String? newPath = await FilePicker.platform.saveFile(
+        final bytes = await fileToExport.readAsBytes();
+        final newPath = await FilePicker.platform.saveFile(
           fileName: fileName,
-          bytes: fileBytes,
+          bytes: bytes,
         );
-
-        if (newPath != null) {
-          destination = 'в выбранной папке';
-          success = true;
-        } else {
-          throw Exception('Сохранение отменено пользователем или не удалось.');
+        if (newPath == null) throw Exception('Сохранение отменено.');
+        if (mounted) {
+          AppNotification.show(context,
+              message: 'Файл сохранён', type: NotificationType.success);
         }
-      }
-
-      if (mounted && success) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Файл "$fileName" успешно сохранен в $destination.'),
-            duration: const Duration(seconds: 4),
-          ),
-        );
       }
     } catch (e) {
       if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-                'Ошибка сохранения файла "$fileName": ${e.toString()}'),
-            duration: const Duration(seconds: 7),
-          ),
-        );
+        AppNotification.show(context,
+            message: e.toString().replaceFirst('Exception: ', ''));
       }
     }
   }
@@ -434,18 +421,17 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
 
     final fileName = getFileNameFromPath(filePath);
     _previewFutures.remove(filePath);
-
     setState(() {});
 
-    // Удаляем локальный файл
-    try {
-      File(filePath).deleteSync();
-    } catch (e) {
-      debugPrint('Ошибка удаления файла с диска: $e');
-    }
-
-    // Удаляем из реестра и с сервера
+    // fire-and-forget: удаление локального файла + удаление из реестра/облака.
+    // Не блокируем UI; список уже обновлён через setState() выше.
     () async {
+      try {
+        await File(filePath).delete();
+      } catch (e) {
+        debugPrint('Delete error: $e');
+      }
+
       final remoteId = DocumentRegistry().getRemoteId(filePath);
       await DocumentRegistry().remove(filePath);
       if (remoteId != null) {
@@ -458,9 +444,8 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     }();
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Документ "$fileName" удалён.')),
-      );
+      AppNotification.show(context,
+          message: '"$fileName" удалён', type: NotificationType.info);
     }
   }
 
@@ -479,7 +464,6 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     }
 
     final currentFullName = getFileNameFromPath(currentPath);
-
     String fileName = currentFullName;
     String? fileExtension;
 
@@ -490,122 +474,171 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     }
 
     final controller = TextEditingController(text: fileName);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Переименовать файл'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: controller,
-                decoration: InputDecoration(hintText: fileName),
-                autofocus: true,
-              ),
-              if (fileExtension != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Расширение: $fileExtension',
-                      style: TextStyle(color: Colors.grey[600]),
+      builder: (dialogCtx) {
+        final dialogBg =
+            isDark ? const Color(0xFF1a2535) : Colors.white;
+        final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+        final subtextColor =
+            isDark ? Colors.white54 : const Color(0xFF8A94A6);
+        return Dialog(
+          backgroundColor: dialogBg,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Переименовать',
+                  style: TextStyle(
+                      color: textColor,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  style: TextStyle(color: textColor),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: isDark
+                        ? Colors.white.withValues(alpha: 0.07)
+                        : const Color(0xFFF2F6FC),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
                     ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                          color: Color(0xFF2CA5E0), width: 1.5),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
                   ),
                 ),
-            ],
+                if (fileExtension != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Расширение: $fileExtension',
+                    style: TextStyle(color: subtextColor, fontSize: 12),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(dialogCtx),
+                        style: TextButton.styleFrom(
+                          foregroundColor: subtextColor,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: const Text('Отмена'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          final nav = Navigator.of(dialogCtx);
+                          String newBaseName = controller.text.trim();
+                          if (newBaseName.isEmpty) {
+                            AppNotification.show(context,
+                                message: 'Имя не может быть пустым');
+                            return;
+                          }
+
+                          if (fileExtension != null &&
+                              newBaseName
+                                  .toLowerCase()
+                                  .endsWith(fileExtension.toLowerCase())) {
+                            newBaseName = newBaseName.substring(
+                                0, newBaseName.length - fileExtension.length);
+                          }
+
+                          final newFullName =
+                              newBaseName + (fileExtension ?? '');
+                          if (newFullName == currentFullName) {
+                            nav.pop();
+                            return;
+                          }
+
+                          final newPath =
+                              currentPath.replaceAll(currentFullName, newFullName);
+
+                          try {
+                            if (await File(newPath).exists()) {
+                              AppNotification.show(context,
+                                  message: '"$newFullName" уже существует');
+                              nav.pop();
+                              return;
+                            }
+
+                            await File(currentPath).rename(newPath);
+                            await DocumentRegistry()
+                                .updateLocalPath(currentPath, newPath, newBaseName);
+
+                            final remoteId =
+                                DocumentRegistry().getRemoteId(newPath);
+                            if (remoteId != null) {
+                              try {
+                                await DocumentSyncService()
+                                    .rename(remoteId, newBaseName);
+                              } catch (e) {
+                                debugPrint('Cloud rename failed: $e');
+                              }
+                            }
+
+                            final future = _previewFutures.remove(currentPath);
+                            if (future != null) _previewFutures[newPath] = future;
+
+                            setState(() {
+                              _documentPaths[originalIndex] = newPath;
+                              if (_isSearching) {
+                                _filteredDocumentPaths[index] = newPath;
+                              }
+                            });
+
+                            if (mounted) {
+                              AppNotification.show(context,
+                                  message: 'Переименовано в "$newFullName"',
+                                  type: NotificationType.success);
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              AppNotification.show(context,
+                                  message: 'Ошибка: ${e.toString()}');
+                            }
+                          }
+                          nav.pop();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2CA5E0),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: const Text('Готово',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Отмена'),
-            ),
-            TextButton(
-              onPressed: () async {
-                final dialogMessenger = ScaffoldMessenger.of(context);
-                final dialogNavigator = Navigator.of(context);
-                String newBaseName = controller.text.trim();
-                if (newBaseName.isEmpty) {
-                  dialogMessenger.showSnackBar(
-                    const SnackBar(
-                        content: Text('Имя файла не может быть пустым.')),
-                  );
-                  return;
-                }
-
-                if (fileExtension != null && newBaseName.toLowerCase().endsWith(
-                    fileExtension.toLowerCase())) {
-                  newBaseName = newBaseName.substring(
-                      0, newBaseName.length - fileExtension.length);
-                }
-
-                final newFullName = newBaseName + (fileExtension ?? '');
-
-                if (newFullName == currentFullName) {
-                  dialogNavigator.pop();
-                  return;
-                }
-
-                final newPath = currentPath.replaceAll(
-                    currentFullName, newFullName);
-
-                try {
-                  if (await File(newPath).exists()) {
-                    if (mounted) {
-                      dialogMessenger.showSnackBar(
-                        SnackBar(content: Text(
-                            'Ошибка переименования: Файл "$newFullName" уже существует.')),
-                      );
-                    }
-                    dialogNavigator.pop();
-                    return;
-                  }
-
-                  await File(currentPath).rename(newPath);
-
-                  // Обновляем реестр
-                  await DocumentRegistry().updateLocalPath(currentPath, newPath, newBaseName);
-
-                  // Переименовываем на сервере если есть remoteId
-                  final remoteId = DocumentRegistry().getRemoteId(newPath);
-                  if (remoteId != null) {
-                    try {
-                      await DocumentSyncService().rename(remoteId, newBaseName);
-                    } catch (e) {
-                      debugPrint('Cloud rename failed: $e');
-                    }
-                  }
-
-                  final future = _previewFutures.remove(currentPath);
-                  if (future != null) _previewFutures[newPath] = future;
-
-                  setState(() {
-                    _documentPaths[originalIndex] = newPath;
-                    if (_isSearching) {
-                      _filteredDocumentPaths[index] = newPath;
-                    }
-                  });
-
-                  if (mounted) {
-                    dialogMessenger.showSnackBar(
-                      SnackBar(
-                          content: Text('Файл переименован в "$newFullName".')),
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    dialogMessenger.showSnackBar(
-                      SnackBar(content: Text('Ошибка переименования: $e')),
-                    );
-                  }
-                }
-                dialogNavigator.pop();
-              },
-              child: const Text('Переименовать'),
-            ),
-          ],
         );
       },
     );
@@ -616,11 +649,20 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
         ? _filteredDocumentPaths[index]
         : _documentPaths[index];
     final fileName = getFileNameFromPath(fullPath);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final sheetBg = isDark ? const Color(0xFF152030) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subtextColor = isDark ? Colors.white38 : const Color(0xFFAAB4C8);
+    final dividerColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : const Color(0xFFEEF2F8);
 
     showModalBottomSheet(
       context: context,
+      backgroundColor: sheetBg,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
         return SafeArea(
@@ -630,67 +672,75 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 40,
+                  width: 36,
                   height: 4,
-                  margin: const EdgeInsets.only(bottom: 12),
+                  margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: subtextColor,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                  child: Text(
-                    fileName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          fileName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                            color: textColor,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const Divider(),
-                ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: Color(0xFFE3F0FF),
-                    child: Icon(Icons.edit_outlined, color: Colors.blue, size: 20),
-                  ),
-                  title: const Text('Переименовать'),
+                const SizedBox(height: 12),
+                Divider(color: dividerColor, height: 1),
+                _SheetAction(
+                  icon: Icons.edit_outlined,
+                  iconColor: const Color(0xFF2CA5E0),
+                  iconBg: const Color(0xFF2CA5E0).withValues(alpha: 0.12),
+                  label: 'Переименовать',
+                  textColor: textColor,
                   onTap: () {
                     Navigator.pop(ctx);
                     _renameDocument(index);
                   },
                 ),
-                ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: Color(0xFFE8F5E9),
-                    child: Icon(Icons.save_alt, color: Colors.green, size: 20),
-                  ),
-                  title: const Text('Сохранить / Экспорт'),
+                _SheetAction(
+                  icon: Icons.save_alt_outlined,
+                  iconColor: const Color(0xFF26C060),
+                  iconBg: const Color(0xFF26C060).withValues(alpha: 0.12),
+                  label: 'Сохранить / Экспорт',
+                  textColor: textColor,
                   onTap: () {
                     Navigator.pop(ctx);
                     _exportDocument(fullPath);
                   },
                 ),
-                ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: Color(0xFFFFF3E0),
-                    child: Icon(Icons.share_outlined, color: Colors.orange, size: 20),
-                  ),
-                  title: const Text('Поделиться'),
+                _SheetAction(
+                  icon: Icons.share_outlined,
+                  iconColor: const Color(0xFFFF9800),
+                  iconBg: const Color(0xFFFF9800).withValues(alpha: 0.12),
+                  label: 'Поделиться',
+                  textColor: textColor,
                   onTap: () {
                     Navigator.pop(ctx);
                     _shareDocument(fullPath);
                   },
                 ),
-                ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: Color(0xFFFFEBEE),
-                    child: Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                  ),
-                  title: const Text('Удалить',
-                      style: TextStyle(color: Colors.red)),
+                Divider(color: dividerColor, height: 1),
+                _SheetAction(
+                  icon: Icons.delete_outline,
+                  iconColor: const Color(0xFFEF5350),
+                  iconBg: const Color(0xFFEF5350).withValues(alpha: 0.12),
+                  label: 'Удалить',
+                  textColor: const Color(0xFFEF5350),
                   onTap: () {
                     Navigator.pop(ctx);
                     _confirmAndDelete(index);
@@ -706,73 +756,125 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
   }
 
   Future<void> _confirmAndDelete(int index) async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dialogBg = isDark ? const Color(0xFF1a2535) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subtextColor = isDark ? Colors.white60 : const Color(0xFF6B7A99);
+
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Удалить файл?'),
-        content: const Text('Файл будет удалён без возможности восстановления.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Отмена'),
+      builder: (ctx) => Dialog(
+        backgroundColor: dialogBg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF5350).withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.delete_outline,
+                    color: Color(0xFFEF5350), size: 28),
+              ),
+              const SizedBox(height: 16),
+              Text('Удалить файл?',
+                  style: TextStyle(
+                      color: textColor,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Text(
+                'Файл будет удалён без возможности восстановления.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: subtextColor, fontSize: 14),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      style: TextButton.styleFrom(
+                        foregroundColor: subtextColor,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: const Text('Отмена'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFEF5350),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: const Text('Удалить',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Удалить', style: TextStyle(color: Colors.red)),
-          ),
-        ],
+        ),
       ),
     );
     if (confirmed == true) _deleteDocument(index);
   }
 
   Future<void> _shareDocument(String fullPath) async {
-    final messenger = ScaffoldMessenger.of(context);
     final file = File(fullPath);
     if (!await file.exists()) {
-      messenger.showSnackBar(const SnackBar(content: Text('Файл не найден')));
+      if (mounted) {
+        AppNotification.show(context, message: 'Файл не найден');
+      }
       return;
     }
-    final fileName = getFileNameFromPath(fullPath);
     await Share.shareXFiles(
       [XFile(fullPath)],
-      subject: fileName,
+      subject: getFileNameFromPath(fullPath),
     );
   }
 
   void _addDocument(String fullPath) {
     if (_documentPaths.contains(fullPath)) return;
-
     setState(() {
       _documentPaths.add(fullPath);
       if (_isSearching) {
         final query = _searchController.text.trim().toLowerCase();
-        if (query.isNotEmpty) {
-          final fileName = getFileNameFromPath(fullPath).toLowerCase();
-          if (fileName.contains(query)) {
-            _filteredDocumentPaths.add(fullPath);
-          }
+        if (query.isNotEmpty &&
+            getFileNameFromPath(fullPath).toLowerCase().contains(query)) {
+          _filteredDocumentPaths.add(fullPath);
         }
       }
     });
 
-    _previewFutures.putIfAbsent(fullPath, () => _loadPreviewFuture(fullPath));
+    _previewFutures.putIfAbsent(
+        fullPath, () => _loadPreviewFuture(fullPath));
 
-    // Регистрируем и загружаем на сервер
     () async {
       final entryName = () {
-        final fileName = fullPath.split('/').last;
-        final dot = fileName.lastIndexOf('.');
-        return dot != -1 ? fileName.substring(0, dot) : fileName;
+        final name = fullPath.split('/').last;
+        final dot = name.lastIndexOf('.');
+        return dot != -1 ? name.substring(0, dot) : name;
       }();
-      await DocumentRegistry().add(DocEntry(
-        localPath: fullPath,
-        remoteId: null,
-        name: entryName,
-      ));
+      await DocumentRegistry()
+          .add(DocEntry(localPath: fullPath, remoteId: null, name: entryName));
       try {
-        final remote = await DocumentSyncService()
-            .upload(File(fullPath), name: entryName);
+        final remote =
+            await DocumentSyncService().upload(File(fullPath), name: entryName);
         await DocumentRegistry().updateRemoteId(fullPath, remote.id);
       } catch (e) {
         debugPrint('Import upload failed: $e');
@@ -781,87 +883,102 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
   }
 
   void _importDocument(FileType fileType) async {
-    final messenger = ScaffoldMessenger.of(context);
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: fileType,
-      allowMultiple: false,
-    );
+    final result = await FilePicker.platform
+        .pickFiles(type: fileType, allowMultiple: false);
 
     if (result != null && result.files.first.path != null) {
       final fullPath = result.files.first.path!;
       final fileName = getFileNameFromPath(fullPath);
-
       _addDocument(fullPath);
-
       if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Документ "$fileName" импортирован.'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        AppNotification.show(context,
+            message: '"$fileName" импортирован',
+            type: NotificationType.success);
       }
     }
   }
 
   void _showImportOptions(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final sheetBg = isDark ? const Color(0xFF152030) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subtextColor =
+        isDark ? Colors.white38 : const Color(0xFFAAB4C8);
+
     showModalBottomSheet(
       context: context,
+      backgroundColor: sheetBg,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (BuildContext context) {
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Text(
-                'Импортировать документ',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+      builder: (BuildContext ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: subtextColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text(
+                    'Импорт документа',
+                    style: TextStyle(
+                        color: textColor,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _SheetAction(
+                  icon: Icons.image_outlined,
+                  iconColor: const Color(0xFF26C060),
+                  iconBg: const Color(0xFF26C060).withValues(alpha: 0.12),
+                  label: 'Выбрать фото',
+                  textColor: textColor,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _importDocument(FileType.image);
+                  },
+                ),
+                _SheetAction(
+                  icon: Icons.folder_outlined,
+                  iconColor: const Color(0xFF2CA5E0),
+                  iconBg: const Color(0xFF2CA5E0).withValues(alpha: 0.12),
+                  label: 'Выбрать файл',
+                  textColor: textColor,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _importDocument(FileType.any);
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
             ),
-            ListTile(
-              leading: const Icon(Icons.image, color: Colors.green),
-              title: const Text('Выбрать фото'),
-              onTap: () {
-                Navigator.pop(context);
-                _importDocument(FileType.image);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.folder, color: Colors.blue),
-              title: const Text('Выбрать файл '),
-              onTap: () {
-                Navigator.pop(context);
-                _importDocument(FileType.any);
-              },
-            ),
-            const SizedBox(height: 20),
-          ],
+          ),
         );
       },
     );
   }
 
   Future<bool> _requestPermissions() async {
-    final messenger = ScaffoldMessenger.of(context);
     final storageStatus = await Permission.storage.request();
     final photosStatus = await Permission.photos.request();
 
-    if (storageStatus.isGranted || photosStatus.isGranted) {
-      return true;
-    } else
+    if (storageStatus.isGranted || photosStatus.isGranted) return true;
+
     if (storageStatus.isPermanentlyDenied || photosStatus.isPermanentlyDenied) {
       if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: const Text(
-                'Разрешение на хранение отклонено. Откройте настройки приложения.'),
-            action: SnackBarAction(
-                label: 'Настройки', onPressed: openAppSettings),
-          ),
-        );
+        AppNotification.show(context,
+            message: 'Разрешение отклонено. Откройте настройки.');
       }
     }
     return false;
@@ -869,74 +986,45 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
 
   void _navigateToDocumentView(String fullPath) async {
     if (!mounted) return;
-
-    final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
     final fileName = getFileNameFromPath(fullPath);
-    final lowerCaseFileName = fileName.toLowerCase();
+    final lower = fileName.toLowerCase();
 
-    if (lowerCaseFileName.endsWith('.jpg') ||
-        lowerCaseFileName.endsWith('.png') ||
-        lowerCaseFileName.endsWith('.jpeg')) {
+    if (lower.endsWith('.jpg') || lower.endsWith('.png') || lower.endsWith('.jpeg')) {
       await OpenFilex.open(fullPath);
-    } else if (lowerCaseFileName.endsWith('.pdf')) {
-      navigator.push(
-        MaterialPageRoute(
-          builder: (context) =>
-              PdfViewerScreen(filePath: fullPath, fileName: fileName),
-        ),
-      );
-    } else if (lowerCaseFileName.endsWith('.docx') ||
-        lowerCaseFileName.endsWith('.doc')) {
-      navigator.push(
-        MaterialPageRoute(
-          builder: (context) =>
-              DocxViewerScreen(filePath: fullPath, fileName: fileName),
-        ),
-      );
-    } else if (lowerCaseFileName.endsWith('.txt')) {
-      navigator.push(
-        MaterialPageRoute(
-          builder: (context) =>
-              TextFileViewerScreen(filePath: fullPath, fileName: fileName),
-        ),
-      );
+    } else if (lower.endsWith('.pdf')) {
+      navigator.push(MaterialPageRoute(
+        builder: (_) => PdfViewerScreen(filePath: fullPath, fileName: fileName),
+      ));
+    } else if (lower.endsWith('.docx') || lower.endsWith('.doc')) {
+      navigator.push(MaterialPageRoute(
+        builder: (_) =>
+            DocxViewerScreen(filePath: fullPath, fileName: fileName),
+      ));
+    } else if (lower.endsWith('.txt')) {
+      navigator.push(MaterialPageRoute(
+        builder: (_) =>
+            TextFileViewerScreen(filePath: fullPath, fileName: fileName),
+      ));
     } else {
       try {
         final file = File(fullPath);
         if (await file.exists()) {
           final result = await OpenFilex.open(fullPath);
-
           if (result.type != ResultType.done && mounted) {
-            messenger.showSnackBar(
-              SnackBar(
-                content: Text(
-                    'Не удалось открыть файл. Убедитесь, что у вас установлено приложение для формата ${fileName
-                        .split('.')
-                        .last
-                        .toUpperCase()}.'),
-                duration: const Duration(seconds: 3),
-              ),
-            );
+            AppNotification.show(context,
+                message:
+                    'Не удалось открыть файл формата .${fileName.split('.').last.toUpperCase()}');
           }
         } else {
           if (mounted) {
-            messenger.showSnackBar(
-              SnackBar(
-                content: Text('Файл не найден: $fileName'),
-                duration: const Duration(seconds: 3),
-              ),
-            );
+            AppNotification.show(context, message: 'Файл не найден: $fileName');
           }
         }
       } catch (e) {
         if (mounted) {
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text('Ошибка открытия файла: $e'),
-              duration: const Duration(seconds: 3),
-            ),
-          );
+          AppNotification.show(context,
+              message: 'Ошибка открытия файла: $e');
         }
       }
     }
@@ -946,163 +1034,418 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
   Widget build(BuildContext context) {
     super.build(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        toolbarHeight: 70,
-        title: const Text(
-          'Мои файлы',
-          style: TextStyle(
-              color: Colors.black, fontWeight: FontWeight.w500, fontSize: 24),
-        ),
-        centerTitle: true,
-      ),
-      backgroundColor: Colors.white,
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                color: const Color.fromRGBO(245, 245, 245, 1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.search, color: Colors.grey),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: 'Поиск по названию файла',
-                        hintStyle: const TextStyle(color: Colors.grey),
-                        border: InputBorder.none,
-                        suffixIcon: _searchController.text.isNotEmpty
-                            ? IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          onPressed: _clearSearch,
-                        )
-                            : null,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor =
+        isDark ? const Color(0xFF0f1923) : const Color(0xFFF5F9FF);
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subtextColor =
+        isDark ? Colors.white38 : const Color(0xFFAAB4C8);
+    final searchFill = isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.white;
+    final searchBorder = isDark
+        ? Colors.white.withValues(alpha: 0.1)
+        : const Color(0xFFE8EDF5);
+    final cardBg = isDark
+        ? Colors.white.withValues(alpha: 0.05)
+        : Colors.white;
+    final cardBorder = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : const Color(0xFFEEF2F8);
+
+    return Container(
+      color: bgColor,
+      child: Column(
+        children: [
+          // Section title + search
+          Padding(
+            padding:
+                const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Мои файлы',
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  decoration: BoxDecoration(
+                    color: searchFill,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: searchBorder, width: 1),
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 12),
+                      Icon(Icons.search_rounded,
+                          color: subtextColor, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          style:
+                              TextStyle(color: textColor, fontSize: 14),
+                          decoration: InputDecoration(
+                            hintText: 'Поиск',
+                            hintStyle: TextStyle(
+                                color: subtextColor, fontSize: 14),
+                            border: InputBorder.none,
+                            suffixIcon: _searchController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: Icon(Icons.close_rounded,
+                                        size: 18, color: subtextColor),
+                                    onPressed: _clearSearch,
+                                  )
+                                : null,
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
+                  ),
+                ),
+                if (_isSearching) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _filteredDocumentPaths.isEmpty
+                        ? 'Ничего не найдено'
+                        : 'Найдено: ${_filteredDocumentPaths.length}',
+                    style: TextStyle(color: subtextColor, fontSize: 12),
                   ),
                 ],
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+
+          // File list
+          Expanded(
+            child: _isLoading
+                ? _buildSkeletonList(isDark)
+                : _displayedDocumentPaths.isEmpty
+                    ? _buildEmptyState(isDark, subtextColor)
+                    : Builder(builder: (ctx) {
+                      final isCompact = MediaQuery.of(ctx).size.width < 360;
+                      final previewSize = isCompact ? 44.0 : 52.0;
+                      final gap = isCompact ? 10.0 : 14.0;
+                      final hPad = isCompact ? 10.0 : 14.0;
+                      return ListView.builder(
+                        padding: EdgeInsets.fromLTRB(isCompact ? 14 : 20, 0, isCompact ? 14 : 20, 120),
+                        itemCount: _displayedDocumentPaths.length,
+                        itemBuilder: (context, index) {
+                          final filePath = _displayedDocumentPaths[index];
+                          final fileName =
+                              getFileNameFromPath(filePath);
+                          final ext = fileName.contains('.')
+                              ? fileName
+                                  .split('.')
+                                  .last
+                                  .toUpperCase()
+                              : '–';
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () =>
+                                    _navigateToDocumentView(filePath),
+                                borderRadius:
+                                    BorderRadius.circular(16),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: cardBg,
+                                    borderRadius:
+                                        BorderRadius.circular(16),
+                                    border: Border.all(
+                                        color: cardBorder, width: 1),
+                                    boxShadow: isDark
+                                        ? null
+                                        : [
+                                            BoxShadow(
+                                              color: Colors.black
+                                                  .withValues(alpha: 0.04),
+                                              blurRadius: 8,
+                                              offset: const Offset(0, 2),
+                                            )
+                                          ],
+                                  ),
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: hPad, vertical: 12),
+                                  child: Row(
+                                    children: [
+                                      _buildFilePreview(
+                                          filePath, isDark, size: previewSize),
+                                      SizedBox(width: gap),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              fileName,
+                                              maxLines: isCompact ? 2 : 1,
+                                              overflow:
+                                                  TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: textColor,
+                                                fontSize: isCompact ? 13 : 14,
+                                                fontWeight:
+                                                    FontWeight.w500,
+                                                height: 1.2,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              ext,
+                                              style: TextStyle(
+                                                color: subtextColor,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: Icon(
+                                            Icons.more_vert_rounded,
+                                            color: subtextColor,
+                                            size: 20),
+                                        onPressed: () =>
+                                            _showDocumentMenu(
+                                                context, index),
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(
+                                            minWidth: 32,
+                                            minHeight: 32),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    }),
+          ),
+
+          // Import button
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: () => _showImportOptions(context),
+                icon: const Icon(Icons.add_rounded, size: 20),
+                label: const Text(
+                  'Импорт',
+                  style: TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : const Color(0xFF2CA5E0).withValues(alpha: 0.1),
+                  foregroundColor: isDark
+                      ? Colors.white70
+                      : const Color(0xFF2CA5E0),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.12)
+                          : const Color(0xFF2CA5E0)
+                              .withValues(alpha: 0.3),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSkeletonList(bool isDark) {
+    final baseColor = isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : const Color(0xFFE8EDF5);
+    final highlightColor = isDark
+        ? Colors.white.withValues(alpha: 0.12)
+        : const Color(0xFFF7F9FC);
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 6,
+      itemBuilder: (_, __) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: _SkeletonRow(baseColor: baseColor, highlightColor: highlightColor),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(bool isDark, Color subtextColor) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                color: const Color(0xFF2CA5E0).withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.description_outlined,
+                size: 44,
+                color: Color(0xFF2CA5E0),
               ),
             ),
             const SizedBox(height: 20),
-
-            if (_isSearching && _filteredDocumentPaths.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                child: Text(
-                  'Ничего не найдено по запросу "${_searchController.text}"',
-                  style: const TextStyle(color: Colors.grey, fontSize: 16),
-                  textAlign: TextAlign.center,
-                ),
-              )
-            else
-              if (_isSearching)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(
-                    'Найдено: ${_filteredDocumentPaths.length} файлов',
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                ),
-
-            if (_isLoading)
-              const Expanded(
-                child: Center(
-                  child: CircularProgressIndicator(),
-                ),
-              )
-            else
-              if (_displayedDocumentPaths.isEmpty)
-                Expanded(
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.document_scanner,
-                          size: 100,
-                          color: Colors.grey.shade300,
-                        ),
-                        const SizedBox(height: 20),
-
-                        if (_isSearching) ...[
-                          const Text(
-                            textAlign: TextAlign.center,
-                            'Попробуйте изменить запрос поиска',
-                            style: TextStyle(color: Colors.grey, fontSize: 16),
-                          ),
-                        ] else
-                          ...[
-                            const Text(
-                              textAlign: TextAlign.center,
-                              'Сюда будут добавлены все файлы после операций из вкладки "Действия"',
-                              style: TextStyle(
-                                  color: Colors.grey, fontSize: 16),
-                            ),
-                          ],
-                        const SizedBox(height: 20),
-                      ],
-                    ),
-                  ),
-                )
-              else
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: _displayedDocumentPaths.length,
-                    itemBuilder: (context, index) {
-                      final filePath = _displayedDocumentPaths[index];
-                      final fileName = getFileNameFromPath(filePath);
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        elevation: 1,
-                        child: ListTile(
-                          leading: _buildFilePreview(filePath),
-                          title: Text(fileName),
-                          trailing: Builder(
-                            builder: (innerContext) {
-                              return IconButton(
-                                icon: const Icon(Icons.more_vert),
-                                onPressed: () =>
-                                    _showDocumentMenu(innerContext, index),
-                              );
-                            },
-                          ),
-                          onTap: () {
-                            _navigateToDocumentView(filePath);
-                          },
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-            SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: OutlinedButton.icon(
-                onPressed: () => _showImportOptions(context),
-                icon: const Icon(Icons.folder_open, color: Colors.black),
-                label: const Text('Импорт',
-                    style: TextStyle(fontSize: 16, color: Colors.black)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.black,
-                  side: const BorderSide(color: Colors.black),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
+            Text(
+              _isSearching
+                  ? 'Ничего не найдено'
+                  : 'Файлов пока нет',
+              style: TextStyle(
+                color: isDark ? Colors.white70 : const Color(0xFF1A1A2E),
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
               ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _isSearching
+                  ? 'Попробуйте изменить запрос'
+                  : 'Отсканируйте документ или импортируйте файл',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: subtextColor, fontSize: 14, height: 1.5),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SheetAction extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final Color iconBg;
+  final String label;
+  final Color textColor;
+  final VoidCallback onTap;
+
+  const _SheetAction({
+    required this.icon,
+    required this.iconColor,
+    required this.iconBg,
+    required this.label,
+    required this.textColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+        child: Icon(icon, color: iconColor, size: 18),
+      ),
+      title: Text(label,
+          style: TextStyle(
+              color: textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+      onTap: onTap,
+    );
+  }
+}
+
+class _SkeletonRow extends StatefulWidget {
+  final Color baseColor;
+  final Color highlightColor;
+  const _SkeletonRow({required this.baseColor, required this.highlightColor});
+
+  @override
+  State<_SkeletonRow> createState() => _SkeletonRowState();
+}
+
+class _SkeletonRowState extends State<_SkeletonRow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    duration: const Duration(milliseconds: 1100),
+    vsync: this,
+  )..repeat();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        final t = _ctrl.value;
+        final color = Color.lerp(widget.baseColor, widget.highlightColor, (t < 0.5 ? t : 1 - t) * 2)!;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: widget.highlightColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      height: 12, width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: widget.highlightColor,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 10, width: 120,
+                      decoration: BoxDecoration(
+                        color: widget.highlightColor,
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

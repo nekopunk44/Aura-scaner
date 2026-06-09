@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../ui_screens/main_screen/app_tabs_screen.dart';
 import '../../services/api_service.dart';
+import '../../services/premium_service.dart';
 import '../auth/login_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -20,16 +21,28 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   void _checkCameras() async {
-    final camera = await availableCameras();
-    debugPrint('Доступно камер: ${camera.length}');
+    try {
+      final cameras = await availableCameras();
+      debugPrint('Доступно камер: ${cameras.length}');
+    } catch (e) {
+      debugPrint('Ошибка инициализации камер: $e');
+    }
   }
 
   void _navigateWithDelay() async {
     await Future.delayed(const Duration(seconds: 3));
     if (!mounted) return;
 
-    await ApiService().syncBaseUrl();
-    final isLoggedIn = await ApiService().isLoggedIn();
+    bool isLoggedIn = false;
+    try {
+      await ApiService().syncBaseUrl();
+      isLoggedIn = await ApiService().isLoggedIn();
+      if (isLoggedIn) {
+        await PremiumService().syncWithServer();
+      }
+    } catch (e) {
+      debugPrint('Ошибка инициализации: $e');
+    }
     if (!mounted) return;
 
     Navigator.pushReplacement(

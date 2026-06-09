@@ -10,6 +10,7 @@ final List<Map<String, dynamic>> cameraFeatures = [
   },
   {
     'name': 'Удостоверение личности',
+    'label': 'ID-карта',
     'icon': Icons.face,
     'description': 'Выбран режим "Удостоверение личности"',
     'isDocument': true,
@@ -24,8 +25,9 @@ final List<Map<String, dynamic>> cameraFeatures = [
   },
   {
     'name': 'Сканер qr-код',
+    'label': 'QR-код',
     'icon': Icons.qr_code,
-    'description': 'Мгновенный сканер qr-кода',
+    'description': 'Мгновенный сканер QR-кода',
     'isDocument': false
   },
   {
@@ -43,12 +45,14 @@ final List<Map<String, dynamic>> cameraFeatures = [
   },
   {
     'name': 'Знак / Подпись',
+    'label': 'Подпись',
     'icon': Icons.edit,
     'description': 'Добавление электронной подписи',
     'isDocument': false
   },
   {
     'name': 'Восстановить фото',
+    'label': 'Восстановить',
     'icon': Icons.restore,
     'description': 'Улучшение качества и восстановление изображений',
     'isDocument': false
@@ -61,6 +65,7 @@ final List<Map<String, dynamic>> cameraFeatures = [
   },
   {
     'name': 'Подсветка текста',
+    'label': 'Подсветка',
     'icon': Icons.highlight,
     'description': 'Выделение важной информации цветом',
     'isDocument': false
@@ -74,25 +79,29 @@ final List<Map<String, dynamic>> cameraFeatures = [
   },
   {
     'name': 'Удалить водяной знак',
+    'label': 'Без водзнака',
     'icon': Icons.delete_forever_outlined,
     'description': 'Удаление водяных знаков',
     'isDocument': false
   },
   {
     'name': 'Ключевые моменты',
+    'label': 'Моменты',
     'icon': Icons.vpn_key_outlined,
     'description': 'Выделение ключевых моментов в тексте',
     'isDocument': false
   },
   {
     'name': 'Эко упаковка',
+    'label': 'Эко',
     'icon': Icons.eco,
     'description': 'Оптимизация файла для экологичной печати',
     'isDocument': false
   },
   {
     'name': 'Импорт документов',
-    'icon': Icons.file_upload, 
-    'isDocument': false, 
+    'label': 'Импорт',
+    'icon': Icons.file_upload,
+    'isDocument': false,
   },
 ];

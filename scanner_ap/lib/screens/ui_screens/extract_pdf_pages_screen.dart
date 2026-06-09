@@ -111,6 +111,9 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
 
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dialogBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
     try {
       setState(() => _isProcessing = true);
@@ -118,12 +121,13 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => const AlertDialog(
+        builder: (_) => AlertDialog(
+          backgroundColor: dialogBg,
           content: Row(
             children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('Извлечение страниц...'),
+              const CircularProgressIndicator(color: Color(0xFF2CA5E0)),
+              const SizedBox(width: 16),
+              Text('Извлечение страниц...', style: TextStyle(color: textColor)),
             ],
           ),
         ),
@@ -131,9 +135,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
 
       final selectedPageNumbers = <int>[];
       for (int i = 0; i < _selectedPages.length; i++) {
-        if (_selectedPages[i]) {
-          selectedPageNumbers.add(i + 1);
-        }
+        if (_selectedPages[i]) selectedPageNumbers.add(i + 1);
       }
 
       final extractedBytes = await PdfService.extractPages(
@@ -172,81 +174,113 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
         SnackBar(content: Text('Ошибка: $e')),
       );
     } finally {
-      if (mounted) {
-        setState(() => _isProcessing = false);
-      }
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+    final dividerColor = isDark ? Colors.white12 : const Color(0xFFE8EDF5);
+
     return Scaffold(
+      backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: const Text('Извлечь страницы PDF'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        title: Text('Извлечь страницы', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        backgroundColor: appBarBg,
+        iconTheme: IconThemeData(color: textColor),
         elevation: 0,
       ),
       body: _pdfInfo == null
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator(color: const Color(0xFF2CA5E0)))
           : Column(
               children: [
                 Container(
-                  color: Colors.grey[100],
-                  padding: const EdgeInsets.all(12),
+                  color: cardBg,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _pdfInfo!.fileName,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            '${_pdfInfo!.pageCount} страниц, ${_pdfInfo!.fileSizeMB} MB',
-                            style: const TextStyle(fontSize: 12, color: Colors.grey),
-                          ),
-                        ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _pdfInfo!.fileName,
+                              style: TextStyle(fontWeight: FontWeight.w600, color: textColor, fontSize: 14),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${_pdfInfo!.pageCount} страниц · ${_pdfInfo!.fileSizeMB} MB',
+                              style: TextStyle(fontSize: 12, color: subColor),
+                            ),
+                          ],
+                        ),
                       ),
-                      Text(
-                        '${_selectedPages.where((p) => p).length}/${_pdfInfo!.pageCount}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue,
-                          fontSize: 16,
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2CA5E0).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${_selectedPages.where((p) => p).length}/${_pdfInfo!.pageCount}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF2CA5E0),
+                            fontSize: 14,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
+                Divider(height: 1, color: dividerColor),
                 Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Введите номера страниц:',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                      Text(
+                        'Введите номера страниц',
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: textColor),
                       ),
                       const SizedBox(height: 8),
                       TextField(
                         onChanged: _parseRangeInput,
+                        style: TextStyle(color: textColor),
                         decoration: InputDecoration(
-                          hintText: 'Примеры: 1,3,5 или 1-5 или 1,3-5',
+                          hintText: 'Например: 1,3,5 или 1-5',
+                          hintStyle: TextStyle(color: subColor),
+                          filled: true,
+                          fillColor: cardBg,
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: dividerColor),
                           ),
-                          contentPadding: const EdgeInsets.all(12),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: dividerColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFF2CA5E0)),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Форматы: 1,3,5 (отдельные) или 1-5 (диапазон) или комбинация',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Форматы: 1,3,5 (отдельные) · 1-5 (диапазон) · комбинация',
+                        style: TextStyle(fontSize: 11, color: subColor),
                       ),
                     ],
                   ),
@@ -258,65 +292,86 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: _selectAll,
-                          icon: const Icon(Icons.check_box),
-                          label: const Text('Всё'),
+                          icon: const Icon(Icons.check_box, size: 16),
+                          label: const Text('Все'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
+                            backgroundColor: const Color(0xFF2CA5E0),
                             foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: ElevatedButton.icon(
+                        child: OutlinedButton.icon(
                           onPressed: _deselectAll,
-                          icon: const Icon(Icons.check_box_outline_blank),
+                          icon: const Icon(Icons.check_box_outline_blank, size: 16),
                           label: const Text('Очистить'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey,
-                            foregroundColor: Colors.white,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: subColor,
+                            side: BorderSide(color: dividerColor),
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
                 Expanded(
                   child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                     itemCount: _pdfInfo!.pageCount,
                     itemBuilder: (ctx, idx) {
                       return CheckboxListTile(
-                        title: Text('Страница ${idx + 1}'),
+                        title: Text(
+                          'Страница ${idx + 1}',
+                          style: TextStyle(fontSize: 14, color: textColor),
+                        ),
                         value: _selectedPages[idx],
-                        onChanged: (val) {
-                          setState(() => _selectedPages[idx] = val ?? false);
-                        },
+                        onChanged: (val) => setState(() => _selectedPages[idx] = val ?? false),
+                        activeColor: const Color(0xFF2CA5E0),
+                        checkColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                        dense: true,
                       );
                     },
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
+                Container(
+                  color: cardBg,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                   child: Row(
                     children: [
                       Expanded(
-                        child: ElevatedButton.icon(
+                        child: OutlinedButton.icon(
                           onPressed: _isProcessing ? null : _pickPdf,
-                          icon: const Icon(Icons.folder_open),
-                          label: const Text('Выбрать другой'),
+                          icon: const Icon(Icons.folder_open, size: 18),
+                          label: const Text('Другой файл'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF2CA5E0),
+                            side: const BorderSide(color: Color(0xFF2CA5E0)),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: _isProcessing ? null : _extractPages,
-                          icon: const Icon(Icons.content_cut),
+                          icon: const Icon(Icons.content_cut, size: 18),
                           label: const Text('Извлечь'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
+                            backgroundColor: Colors.green.shade600,
+                            disabledBackgroundColor: Colors.green.shade600.withValues(alpha: 0.4),
                             foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                         ),
                       ),

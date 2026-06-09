@@ -22,9 +22,7 @@ import 'document_camera_edit.dart';
 import '../main_screen/app_tabs_screen.dart';
 import '../../../services/document_sync_service.dart';
 import '../../../services/document_registry.dart';
-
-
-enum SaveFormat { img, pdf }
+import '../../../models/save_format.dart';
 
 class SaveOptionsScreen extends StatefulWidget {
   final List<String> sourceFilePaths;
@@ -86,34 +84,43 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
 
   // --- Диалоговое окно для переименования ---
   Future<String?> _showRenameDialog(BuildContext context, String currentFileName) async {
-    TextEditingController controller = TextEditingController(text: currentFileName);
+    final controller = TextEditingController(text: currentFileName);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dialogBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
 
     return showDialog<String>(
       context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Переименовать файл'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Имя файла',
-              hintText: 'Введите новое имя',
-            ),
-            onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: dialogBg,
+        title: Text('Имя файла', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: TextStyle(color: textColor),
+          decoration: InputDecoration(
+            labelText: 'Имя файла',
+            labelStyle: TextStyle(color: subColor),
+            hintText: 'Введите имя',
+            hintStyle: TextStyle(color: subColor),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE8EDF5))),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF2CA5E0))),
           ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Отмена'),
-              onPressed: () => Navigator.of(dialogContext).pop(null),
-            ),
-            ElevatedButton(
-              child: const Text('Сохранить'),
-              onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
-            ),
-          ],
-        );
-      },
+          onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(null),
+            child: Text('Отмена', style: TextStyle(color: subColor)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2CA5E0), foregroundColor: Colors.white, elevation: 0),
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -283,65 +290,74 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isSaving) {
-      return _buildSavingInProgressScreen();
-    }
-    if (_finalPath != null && _finalFormat != null) {
-      return _buildSaveSuccessScreen();
-    }
-    if (_errorMessage != null) {
-      return _buildErrorScreen();
-    }
+    if (_isSaving) return _buildSavingInProgressScreen(context);
+    if (_finalPath != null && _finalFormat != null) return _buildSaveSuccessScreen(context);
+    if (_errorMessage != null) return _buildErrorScreen(context);
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Сохранение документа')),
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: _buildOptionsScreen(),
+      backgroundColor: scaffoldBg,
+      appBar: AppBar(
+        title: Text('Сохранение документа', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        backgroundColor: appBarBg,
+        iconTheme: IconThemeData(color: textColor),
+        elevation: 0,
       ),
+      body: SafeArea(child: _buildOptionsScreen(context)),
     );
   }
 
-  Widget _buildOptionsScreen() {
+  Widget _buildOptionsScreen(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
     final int pageCount = widget.editStates?.length ?? widget.sourceFilePaths.length;
     final bool isMultiPage = pageCount > 1;
 
     return Padding(
-      padding: const EdgeInsets.all(24.0),
+      padding: const EdgeInsets.all(24),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Icon(
-              isMultiPage ? Icons.description : Icons.drive_file_rename_outline,
-              color: Colors.blue,
-              size: 80
+            isMultiPage ? Icons.description : Icons.drive_file_rename_outline,
+            color: const Color(0xFF2CA5E0),
+            size: 72,
           ),
-          const SizedBox(height: 20),
-          const Text(
+          const SizedBox(height: 16),
+          Text(
             'Выберите формат сохранения',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 40),
-
+          const SizedBox(height: 6),
+          Text(
+            '$pageCount ${pageCount == 1 ? 'страница' : 'страниц(ы)'}',
+            style: TextStyle(fontSize: 14, color: subColor),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 36),
           _buildOptionButton(
             context,
-            icon: Icons.image,
-            text: 'Сохранить как IMG (Изображение)',
-            color: Colors.lightBlue,
-            subText: pageCount > 0 ? '(1 фото)' : '',
+            icon: Icons.image_outlined,
+            text: 'Сохранить как изображение',
+            color: const Color(0xFF2CA5E0),
+            subText: '(JPG)',
             onTap: () => _handleSave(SaveFormat.img),
             enable: pageCount == 1,
           ),
-          const SizedBox(height: 16),
-
+          const SizedBox(height: 14),
           _buildOptionButton(
             context,
             icon: Icons.picture_as_pdf,
-            text: 'Сохранить в PDF (Документ)',
-            color: Colors.red,
-            subText: pageCount > 0 ? '($pageCount фото)' : '',
+            text: 'Сохранить в PDF',
+            color: Colors.red.shade600,
+            subText: '($pageCount стр.)',
             onTap: () => _handleSave(SaveFormat.pdf),
           ),
         ],
@@ -349,74 +365,77 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
     );
   }
 
+  Widget _buildSavingInProgressScreen(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
 
-  Widget _buildSavingInProgressScreen() {
-    return const Scaffold(
-      backgroundColor: Colors.white,
+    return Scaffold(
+      backgroundColor: scaffoldBg,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 20),
-            Text('Сохранение документа...', style: TextStyle(fontSize: 18)),
+            const CircularProgressIndicator(color: Color(0xFF2CA5E0)),
+            const SizedBox(height: 20),
+            Text('Сохранение документа...', style: TextStyle(fontSize: 16, color: subColor)),
           ],
         ),
       ),
     );
   }
 
-
   String get formatText {
     return _finalFormat == SaveFormat.pdf ? 'PDF-файл' : 'Фото/Изображение';
   }
 
-  Widget _buildSaveSuccessScreen() {
-
-    final String savedFormatText = formatText;
+  Widget _buildSaveSuccessScreen(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white60 : const Color(0xFF6B7A99);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: scaffoldBg,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.check_circle, color: Colors.green, size: 100),
-              const SizedBox(height: 20),
-              const Text(
-                'Документ сохранен!',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              Container(
+                width: 96, height: 96,
+                decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.12), shape: BoxShape.circle),
+                child: const Icon(Icons.check_rounded, color: Colors.green, size: 52),
+              ),
+              const SizedBox(height: 24),
+              Text('Документ сохранён!',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: textColor),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 10),
               Text(
-                '$savedFormatText успешно сохранено и доступно в разделе "Мои файлы".',
-                style: const TextStyle(fontSize: 16, color: Colors.black54),
+                '$formatText успешно сохранён и доступен в разделе "Мои файлы".',
+                style: TextStyle(fontSize: 15, color: subColor, height: 1.45),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 40),
-              ElevatedButton(
-                onPressed: () {
-
-                  Navigator.pushAndRemoveUntil(
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pushAndRemoveUntil(
                     context,
-
                     MaterialPageRoute(builder: (_) => const MainScreen()),
-                        (route) => false,
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    (route) => false,
                   ),
-                ),
-                child: const Text(
-                  'Перейти в "Мои файлы"',
-                  style: TextStyle(color: Colors.white, fontSize: 16),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2CA5E0),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: const Text('Перейти в "Мои файлы"', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                 ),
               ),
             ],
@@ -426,31 +445,42 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
     );
   }
 
-  Widget _buildErrorScreen() {
+  Widget _buildErrorScreen(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Ошибка!')),
+      backgroundColor: scaffoldBg,
+      appBar: AppBar(
+        title: Text('Ошибка', style: TextStyle(color: textColor)),
+        backgroundColor: appBarBg,
+        iconTheme: IconThemeData(color: textColor),
+        elevation: 0,
+      ),
       body: Center(
         child: Padding(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, color: Colors.red, size: 80),
+              const Icon(Icons.error_outline, color: Colors.red, size: 72),
               const SizedBox(height: 20),
-              const Text(
-                'Не удалось сохранить файл:',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+              Text('Не удалось сохранить файл:', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: textColor)),
               const SizedBox(height: 10),
-              Text(_errorMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red)),
+              Text(_errorMessage!, textAlign: TextAlign.center, style: TextStyle(color: Colors.red.shade400, fontSize: 14)),
               const SizedBox(height: 40),
               ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _errorMessage = null;
-                  });
-                },
-                child: const Text('Повторить/Назад'),
+                onPressed: () => setState(() => _errorMessage = null),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2CA5E0),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Повторить'),
               ),
             ],
           ),
@@ -462,53 +492,38 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
 
 
   Widget _buildOptionButton(
-      BuildContext context, {
-        required IconData icon,
-        required String text,
-        required Color color,
-        required VoidCallback onTap,
-        String subText = '',
-        bool enable = true,
-      }) {
-    return ElevatedButton(
-      onPressed: enable ? onTap : null,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: enable ? color : Colors.grey.shade400,
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 15),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+    BuildContext context, {
+    required IconData icon,
+    required String text,
+    required Color color,
+    required VoidCallback onTap,
+    String subText = '',
+    bool enable = true,
+  }) {
+    final effectiveColor = enable ? color : color.withValues(alpha: 0.4);
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: enable ? onTap : null,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: effectiveColor,
+          disabledBackgroundColor: effectiveColor,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: Colors.white),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: Text(
-                    text,
-                    style: const TextStyle(color: Colors.white, fontSize: 16),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ),
-              ],
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
             ),
-          ),
-
-          if (subText.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(left: 8.0),
-              child: Text(
-                subText,
-                style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w300),
-              ),
-            ),
-        ],
+            if (subText.isNotEmpty)
+              Text(subText, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+          ],
+        ),
       ),
     );
   }

@@ -21,9 +21,9 @@ class _OcrScreenState extends State<OcrScreen> {
   final ImagePicker _picker = ImagePicker();
 
   Future<void> _pickImage(ImageSource source) async {
-    Navigator.of(context).pop();
     final XFile? image = await _picker.pickImage(source: source);
     if (image == null) return;
+    if (!mounted) return;
 
     setState(() {
       _selectedImage = File(image.path);
@@ -63,20 +63,31 @@ class _OcrScreenState extends State<OcrScreen> {
   }
 
   void _showPickerSheet() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
+      backgroundColor: isDark ? const Color(0xFF1E2A3A) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) => SafeArea(
         child: Wrap(
           children: [
             ListTile(
-              leading: const Icon(Icons.camera_alt),
+              leading: const Icon(Icons.camera_alt, color: Color(0xFF2CA5E0)),
               title: const Text('Сделать фото'),
-              onTap: () => _pickImage(ImageSource.camera),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickImage(ImageSource.camera);
+              },
             ),
             ListTile(
-              leading: const Icon(Icons.photo),
+              leading: const Icon(Icons.photo, color: Color(0xFF2CA5E0)),
               title: const Text('Выбрать из галереи'),
-              onTap: () => _pickImage(ImageSource.gallery),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickImage(ImageSource.gallery);
+              },
             ),
           ],
         ),
@@ -86,6 +97,10 @@ class _OcrScreenState extends State<OcrScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Распознавание текста'),
@@ -99,33 +114,36 @@ class _OcrScreenState extends State<OcrScreen> {
             ),
         ],
       ),
-      body: _selectedImage == null ? _buildEmptyState() : _buildResult(),
+      body: _selectedImage == null
+          ? _buildEmptyState(subColor)
+          : _buildResult(subColor, cardBg, isDark),
       floatingActionButton: FloatingActionButton(
         onPressed: _showPickerSheet,
-        child: const Icon(Icons.add_a_photo),
+        backgroundColor: const Color(0xFF2CA5E0),
+        child: const Icon(Icons.add_a_photo, color: Colors.white),
       ),
     );
   }
 
-  Widget _buildEmptyState() {
-    return const Center(
+  Widget _buildEmptyState(Color subColor) {
+    return Center(
       child: Padding(
-        padding: EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.text_fields, size: 72, color: Colors.grey),
-            SizedBox(height: 16),
+            Icon(Icons.text_fields, size: 72, color: subColor),
+            const SizedBox(height: 16),
             Text(
               'Выберите фото для извлечения текста',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: Colors.grey),
+              style: TextStyle(fontSize: 16, color: subColor),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text(
               'Поддерживаются латиница и кириллица',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Colors.grey),
+              style: TextStyle(fontSize: 13, color: subColor),
             ),
           ],
         ),
@@ -133,7 +151,7 @@ class _OcrScreenState extends State<OcrScreen> {
     );
   }
 
-  Widget _buildResult() {
+  Widget _buildResult(Color subColor, Color cardBg, bool isDark) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -145,12 +163,14 @@ class _OcrScreenState extends State<OcrScreen> {
           ),
           const SizedBox(height: 16),
           if (_isProcessing)
-            const Center(child: CircularProgressIndicator())
-          else if (_recognizedText == null || _recognizedText!.isEmpty)
             const Center(
+              child: CircularProgressIndicator(color: Color(0xFF2CA5E0)),
+            )
+          else if (_recognizedText == null || _recognizedText!.isEmpty)
+            Center(
               child: Text(
                 'Текст не обнаружен',
-                style: TextStyle(color: Colors.grey, fontSize: 16),
+                style: TextStyle(color: subColor, fontSize: 16),
               ),
             )
           else ...[
@@ -172,8 +192,13 @@ class _OcrScreenState extends State<OcrScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
+                color: cardBg,
                 borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : const Color(0xFFE8EDF5),
+                ),
               ),
               child: SelectableText(
                 _recognizedText!,

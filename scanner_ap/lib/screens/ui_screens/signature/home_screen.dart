@@ -34,91 +34,149 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+    final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+
     return Scaffold(
+      backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: const Text('Подпись'),
+        title: Text('Подпись', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        backgroundColor: appBarBg,
+        elevation: 0,
+        iconTheme: IconThemeData(color: textColor),
         actions: [
           if (savedPath != null)
             Padding(
-              padding: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.only(right: 16),
               child: Center(
-                child: Text(
-                  'Сохранено',
-                  style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle, size: 16, color: Colors.green.shade400),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Сохранено',
+                      style: TextStyle(
+                          color: Colors.green.shade400, fontWeight: FontWeight.w600),
+                    ),
+                  ],
                 ),
               ),
             ),
         ],
       ),
-      body: Center(
+      body: Padding(
+        padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             if (signatureImage == null)
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Добавьте свою подпись',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: cardBg,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: const Color(0xFF2CA5E0).withValues(alpha: 0.2),
+                    style: BorderStyle.solid,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Icon(Icons.draw_outlined, size: 52,
+                        color: const Color(0xFF2CA5E0).withValues(alpha: 0.6)),
+                    const SizedBox(height: 12),
+                    Text('Добавьте свою подпись',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 18,
+                            color: textColor)),
+                    const SizedBox(height: 4),
+                    Text('Нарисуйте подпись пальцем',
+                        style: TextStyle(fontSize: 13, color: subColor)),
+                  ],
                 ),
               )
             else
-              Image.memory(
-                signatureImage!,
-                height: MediaQuery.of(context).size.width,
-                width: MediaQuery.of(context).size.width,
-                fit: BoxFit.contain,
+              Container(
+                decoration: BoxDecoration(
+                  color: cardBg,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.memory(
+                    signatureImage!,
+                    height: MediaQuery.of(context).size.width - 40,
+                    width: double.infinity,
+                    fit: BoxFit.contain,
+                  ),
+                ),
               ),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.edit, color: Colors.white),
-              label: Text(
-                signatureImage == null ? 'Добавить подпись' : 'Изменить подпись',
-                style: const TextStyle(color: Colors.white),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton.icon(
+                icon: Icon(
+                    signatureImage == null ? Icons.draw : Icons.edit, size: 18),
+                label: Text(
+                    signatureImage == null ? 'Добавить подпись' : 'Изменить подпись'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2CA5E0),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SignatureScreen()),
+                  );
+                  if (!mounted || result == null) return;
+                  setState(() {
+                    signatureImage = result as Uint8List;
+                    savedPath = null;
+                  });
+                },
               ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () async {
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const SignatureScreen()),
-                );
-                if (!mounted || result == null) return;
-                setState(() {
-                  signatureImage = result as Uint8List;
-                  savedPath = null;
-                });
-              },
             ),
             if (signatureImage != null) ...[
               const SizedBox(height: 12),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.save, color: Colors.white),
-                label: const Text('Сохранить в файлы', style: TextStyle(color: Colors.white)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: savedPath != null
-                    ? null
-                    : () async {
-                        final messenger = ScaffoldMessenger.of(context);
-                        await _saveSignatureToFile(signatureImage!);
-                        if (!mounted) return;
-                        messenger.showSnackBar(
-                          const SnackBar(
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.save_outlined, size: 18),
+                  label: const Text('Сохранить в файлы'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade600,
+                    disabledBackgroundColor:
+                        Colors.green.shade600.withValues(alpha: 0.4),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: savedPath != null
+                      ? null
+                      : () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          await _saveSignatureToFile(signatureImage!);
+                          if (!mounted) return;
+                          messenger.showSnackBar(const SnackBar(
                             content: Text('Подпись сохранена в "Мои файлы"'),
                             backgroundColor: Colors.green,
-                          ),
-                        );
-                      },
+                          ));
+                        },
+                ),
               ),
             ],
-            const SizedBox(height: 20),
           ],
         ),
       ),
