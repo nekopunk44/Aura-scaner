@@ -3,8 +3,99 @@ import https from 'https';
 import crypto from 'crypto';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
+import { loginOrCreateUserAndIssueCode } from './social.auth.controller';
 
 const CALLBACK_SCHEME = 'aurascanner';
+
+interface TelegramData {
+  id: string;
+  hash: string;
+  auth_date: string;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  photo_url?: string;
+}
+
+/**
+ * Проверяет подпись Telegram Login Widget и свежесть auth_date.
+ * Возвращает true если данные валидны.
+ */
+function verifyTelegramData(data: TelegramData): boolean {
+  if (!env.telegramBotToken) return true; // dev режим
+
+  const fields: Record<string, string> = {
+    id: data.id,
+    auth_date: data.auth_date,
+  };
+  if (data.first_name) fields['first_name'] = data.first_name;
+  if (data.last_name) fields['last_name'] = data.last_name;
+  if (data.username) fields['username'] = data.username;
+  if (data.photo_url) fields['photo_url'] = data.photo_url;
+
+  const checkString = Object.entries(fields)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('\n');
+
+  const secretKey = crypto.createHash('sha256').update(env.telegramBotToken).digest();
+  const expectedHash = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
+
+  if (expectedHash !== data.hash) return false;
+
+  // auth_date не должна быть старше 1 часа
+  const age = Math.floor(Date.now() / 1000) - parseInt(data.auth_date, 10);
+  return age <= 3600;
+}
+
+function buildTelegramName(data: TelegramData): string {
+  const fullName = [data.first_name, data.last_name].filter(Boolean).join(' ');
+  return fullName || data.username || `tg_${data.id}`;
+}
+
+/**
+ * POST /api/auth/telegram/exchange
+ * Body: { id, hash, auth_date, first_name?, last_name?, username? }
+ *
+ * Используется когда oauth.telegram.org возвращает данные через URL fragment —
+ * JS читает фрагмент и POST-ом отправляет сюда. Сервер верифицирует, создаёт
+ * пользователя и возвращает одноразовый OAuth-code (без токенов в URL).
+ */
+export async function telegramExchange(req: Request, res: Response): Promise<void> {
+  const { id, hash, auth_date, first_name, last_name, username } = req.body as Partial<TelegramData>;
+
+  if (!id || !hash || !auth_date) {
+    res.status(400).json({ message: 'Поля id, hash, auth_date обязательны' });
+    return;
+  }
+
+  const data: TelegramData = {
+    id: String(id),
+    hash,
+    auth_date: String(auth_date),
+    ...(first_name && { first_name }),
+    ...(last_name && { last_name }),
+    ...(username && { username }),
+  };
+
+  if (!verifyTelegramData(data)) {
+    res.status(401).json({ message: 'Недействительная или устаревшая подпись Telegram' });
+    return;
+  }
+
+  try {
+    const email = `tg_${data.id}@telegram.placeholder`;
+    const code = await loginOrCreateUserAndIssueCode({
+      email,
+      name: buildTelegramName(data),
+    });
+    logger.info(`[telegramExchange] Success: tg_id=${data.id}`);
+    res.json({ code });
+  } catch (err) {
+    logger.error('[telegramExchange] Error:', { err });
+    res.status(500).json({ message: 'Ошибка авторизации Telegram' });
+  }
+}
 
 // GET /auth/telegram/login
 // Перенаправляет напрямую на oauth.telegram.org, минуя промежуточную страницу с виджетом.
@@ -36,7 +127,7 @@ export function telegramLoginPage(req: Request, res: Response): void {
 //   2. oauth.telegram.org: ?tgAuthResult=BASE64_JSON  (query)
 //   3. oauth.telegram.org: #tgAuthResult=BASE64_JSON  (fragment — сервер не видит,
 //      поэтому отдаём JS-страницу, которая читает fragment и делает редирект)
-export function telegramCallback(req: Request, res: Response): void {
+export async function telegramCallback(req: Request, res: Response): Promise<void> {
   let { id, hash, auth_date, first_name, last_name, username, photo_url } =
     req.query as Record<string, string | undefined>;
 
@@ -60,11 +151,13 @@ export function telegramCallback(req: Request, res: Response): void {
     }
   }
 
-  // Формат 3: данных нет в query → возможно, tgAuthResult в fragment или
-  // oauth.telegram.org вернул пустой callback. Отдаём JS-страницу для диагностики и редиректа.
+  // Формат 3: данных нет в query → tgAuthResult, скорее всего, в fragment.
+  // Отдаём JS-страницу: она читает фрагмент, POST-ит данные на /telegram/exchange
+  // и редиректит в приложение с одноразовым OAuth-кодом (без токенов в URL).
   if (!id || !hash || !auth_date) {
     logger.warn('[telegramCallback] No params in query. url=%s', req.url);
     const nonce = crypto.randomBytes(16).toString('base64');
+    const exchangeUrl = `${req.protocol}://${req.headers.host}/api/auth/telegram/exchange`;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Content-Security-Policy', `script-src 'nonce-${nonce}'`);
     res.send(`<!DOCTYPE html>
@@ -80,60 +173,75 @@ export function telegramCallback(req: Request, res: Response): void {
          justify-content:center;min-height:100vh;padding:24px;text-align:center}
     #btn{display:none;margin-top:24px;padding:14px 32px;background:#2CA5E0;
          color:#fff;text-decoration:none;border-radius:14px;font-size:16px;font-weight:600}
-    pre{background:rgba(255,255,255,.08);padding:12px;border-radius:8px;margin-top:16px;
-        font-size:11px;text-align:left;max-width:100%;word-break:break-all;white-space:pre-wrap}
+    #err{color:#ff6b6b;font-size:13px;margin-top:12px;display:none}
   </style>
 </head>
 <body>
 <p id="status">Обработка данных Telegram...</p>
 <a id="btn" href="#">Открыть приложение</a>
-<pre id="debug"></pre>
+<div id="err"></div>
 <script nonce="${nonce}">
 (function () {
-  var dbg = document.getElementById('debug');
   var st  = document.getElementById('status');
   var btn = document.getElementById('btn');
+  var err = document.getElementById('err');
 
   function getParam(str, key) { return new URLSearchParams(str).get(key); }
 
   var raw = getParam(location.search.slice(1), 'tgAuthResult')
          || getParam(location.hash.slice(1),   'tgAuthResult');
 
-  dbg.textContent = 'search: ' + location.search + '\\nhash: ' + location.hash.substring(0,40);
-
   if (!raw) {
     st.textContent = 'Данные не найдены. Попробуйте снова.';
     return;
   }
 
+  var d;
   try {
     var b64 = raw.replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4) b64 += '=';
-    var d = JSON.parse(atob(b64));
+    d = JSON.parse(atob(b64));
+  } catch (e) {
+    st.textContent = 'Ошибка разбора данных Telegram.';
+    return;
+  }
 
-    var p = new URLSearchParams();
-    p.set('id',        String(d.id));
-    p.set('hash',      d.hash);
-    p.set('auth_date', String(d.auth_date));
-    if (d.first_name) p.set('first_name', d.first_name);
-    if (d.last_name)  p.set('last_name',  d.last_name);
-    if (d.username)   p.set('username',   d.username);
+  fetch(${JSON.stringify(exchangeUrl)}, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      id:         String(d.id),
+      hash:       d.hash,
+      auth_date:  String(d.auth_date),
+      first_name: d.first_name,
+      last_name:  d.last_name,
+      username:   d.username
+    })
+  })
+  .then(function(r){return r.json().then(function(j){return {ok:r.ok,data:j};});})
+  .then(function(res){
+    if(!res.ok || !res.data.code){throw new Error(res.data.message||'Ошибка авторизации');}
+    var uri = 'aurascanner://oauth2redirect?code=' + encodeURIComponent(res.data.code);
+    var isAndroid = /Android/i.test(navigator.userAgent);
+    var intentUri = 'intent://oauth2redirect?code=' + encodeURIComponent(res.data.code)
+                  + '#Intent;scheme=aurascanner;package=com.example.scanner_ap;end';
+    var target = isAndroid ? intentUri : uri;
 
-    var uri = 'aurascanner://oauth2redirect?' + p.toString();
-
-    btn.href = uri;
+    btn.href = target;
     btn.style.display = 'inline-block';
     st.textContent = 'Возврат в приложение...';
 
-    // Самый надёжный способ: JS channel напрямую в Flutter
     if (typeof FlutterAuth !== 'undefined') {
       FlutterAuth.postMessage(uri);
     } else {
-      window.location.href = uri;
+      window.location.href = target;
     }
-  } catch (e) {
-    st.textContent = 'Ошибка разбора: ' + e.message;
-  }
+  })
+  .catch(function(e){
+    st.textContent = 'Ошибка авторизации.';
+    err.textContent = e.message;
+    err.style.display = 'block';
+  });
 })();
 </script>
 </body>
@@ -141,45 +249,38 @@ export function telegramCallback(req: Request, res: Response): void {
     return;
   }
 
-  // Верификация hash
-  if (env.telegramBotToken) {
-    const fields: Record<string, string> = { id, auth_date };
-    if (first_name) fields['first_name'] = first_name;
-    if (last_name) fields['last_name'] = last_name;
-    if (username) fields['username'] = username;
-    if (photo_url) fields['photo_url'] = photo_url;
-
-    const checkString = Object.entries(fields)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `${k}=${v}`)
-      .join('\n');
-
-    const secretKey = crypto.createHash('sha256').update(env.telegramBotToken).digest();
-    const expectedHash = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
-
-    if (expectedHash !== hash) {
-      logger.warn('[telegramCallback] Invalid hash');
-      res.status(401).send('<h3>Недействительная подпись Telegram</h3>');
-      return;
-    }
-
-    // auth_date не должна быть старше 1 часа
-    const age = Math.floor(Date.now() / 1000) - parseInt(auth_date, 10);
-    if (age > 3600) {
-      res.status(401).send('<h3>Данные авторизации устарели. Попробуйте снова.</h3>');
-      return;
-    }
+  // Верификация hash + свежести auth_date
+  const tgData: TelegramData = {
+    id,
+    hash,
+    auth_date,
+    ...(first_name && { first_name }),
+    ...(last_name && { last_name }),
+    ...(username && { username }),
+    ...(photo_url && { photo_url }),
+  };
+  if (!verifyTelegramData(tgData)) {
+    logger.warn('[telegramCallback] Invalid or expired hash');
+    res.status(401).send('<h3>Недействительная или устаревшая подпись Telegram</h3>');
+    return;
   }
 
-  // Собираем параметры для redirect в приложение
-  const params = new URLSearchParams({ id, hash, auth_date });
-  if (first_name) params.set('first_name', first_name);
-  if (last_name) params.set('last_name', last_name);
-  if (username) params.set('username', username);
+  // Создаём пользователя + одноразовый OAuth-код. Токены НЕ попадают в URL.
+  let oneTimeCode: string;
+  try {
+    oneTimeCode = await loginOrCreateUserAndIssueCode({
+      email: `tg_${id}@telegram.placeholder`,
+      name: buildTelegramName(tgData),
+    });
+  } catch (err) {
+    logger.error('[telegramCallback] Error issuing OAuth code:', { err });
+    res.status(500).send('<h3>Внутренняя ошибка сервера</h3>');
+    return;
+  }
 
-  const deepLink = `${CALLBACK_SCHEME}://oauth2redirect?${params.toString()}`;
-  const afterScheme = deepLink.replace(/^aurascanner:\/\//, '');
-  const intentUri = `intent://${afterScheme}#Intent;scheme=aurascanner;package=com.example.scanner_ap;end`;
+  const codeParam = `code=${encodeURIComponent(oneTimeCode)}`;
+  const deepLink = `${CALLBACK_SCHEME}://oauth2redirect?${codeParam}`;
+  const intentUri = `intent://oauth2redirect?${codeParam}#Intent;scheme=aurascanner;package=com.example.scanner_ap;end`;
 
   logger.info(`[telegramCallback] Redirecting to app: tg_id=${id}`);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');

@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { register, login, changePassword, refreshAccessToken } from '../controllers/auth.controller';
-import { socialLogin, googleCallback } from '../controllers/social.auth.controller';
+import { socialLogin, googleCallback, exchangeOAuthCode } from '../controllers/social.auth.controller';
 import { getProfile, updateProfile, logout } from '../controllers/profile.controller';
-import { telegramLoginPage, telegramCallback } from '../controllers/telegram.controller';
-import { vkLoginPage, vkCallback } from '../controllers/vk.controller';
+import { telegramLoginPage, telegramCallback, telegramExchange } from '../controllers/telegram.controller';
+import { vkLoginPage } from '../controllers/vk.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -13,16 +13,20 @@ router.post('/login', login);
 router.post('/social', socialLogin);
 router.post('/refresh', refreshAccessToken);
 
+// Обмен одноразового OAuth-кода на JWT (deep link не несёт сами токены)
+router.post('/oauth/exchange', exchangeOAuthCode);
+
 // Telegram Login Widget flow (public endpoints)
 router.get('/telegram/login', telegramLoginPage);
 router.get('/telegram/callback', telegramCallback);
+router.post('/telegram/exchange', telegramExchange);
 
 // Google server-side OAuth callback
 router.get('/google/callback', googleCallback);
 
-// VK server-side OAuth flow
+// VK ID OAuth — login entrypoint (callback регистрируется на /vk_id_redirect в app.ts,
+// потому что должен совпадать с Android Universal Link и iOS associated domain)
 router.get('/vk/login', vkLoginPage);
-router.get('/vk/callback', vkCallback);
 
 // Профиль и logout — требуют авторизации
 router.get('/profile', authMiddleware, getProfile);

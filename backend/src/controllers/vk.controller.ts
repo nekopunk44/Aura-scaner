@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import https from 'https';
 import crypto from 'crypto';
 import { env } from '../config/env';
+import { loginOrCreateUserAndIssueCode } from './social.auth.controller';
+import { logger } from '../utils/logger';
 
 const CALLBACK_SCHEME = 'aurascanner';
 
@@ -124,45 +126,20 @@ export function vkCallback(req: Request, res: Response): void {
             return;
           }
 
-          const email = tokenData.email ?? vkUser.email
-            ?? `vk_${vkUser.user_id}@vk.placeholder`;
+          const email = (tokenData.email ?? vkUser.email
+            ?? `vk_${vkUser.user_id}@vk.placeholder`).toLowerCase().trim();
           const name = [vkUser.first_name, vkUser.last_name].filter(Boolean).join(' ') || `vk_${vkUser.user_id}`;
 
-          // Вызываем socialLogin через внутренний fetch не доступен — делаем прямой запрос
-          const socialBody = JSON.stringify({
-            provider: 'vk',
-            token: tokenData.access_token,
-            email,
-            name,
-          });
+          // Создаём пользователя и одноразовый OAuth-код на сервере — токены НЕ попадают в URL
+          loginOrCreateUserAndIssueCode({ email, name })
+            .then((oneTimeCode) => {
+              logger.info(`[vkCallback] Success: email=${email}`);
+              const params = `code=${encodeURIComponent(oneTimeCode)}`;
+              const deepLink = `${CALLBACK_SCHEME}://oauth2redirect?${params}`;
+              const intentUri = `intent://oauth2redirect?${params}#Intent;scheme=${CALLBACK_SCHEME};package=com.example.scanner_ap;end`;
 
-          const socialOpts = {
-            hostname: req.hostname,
-            port: (req.socket as { localPort?: number }).localPort ?? 3000,
-            path: '/api/auth/social',
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Content-Length': Buffer.byteLength(socialBody),
-            },
-          };
-
-          const makeDeepLink = (jwtToken: string, refreshToken?: string, userId?: string, userEmail?: string, userName?: string) => {
-            const p = new URLSearchParams({ token: jwtToken });
-            if (refreshToken) p.set('refreshToken', refreshToken);
-            if (userId)       p.set('userId', userId);
-            if (userEmail)    p.set('email', userEmail);
-            if (userName)     p.set('name', userName);
-            return `${CALLBACK_SCHEME}://oauth2redirect?${p.toString()}`;
-          };
-
-          const nonce = crypto.randomBytes(16).toString('base64');
-          const serverOrigin = `${req.protocol}://${req.headers.host}`;
-
-          // Отдаём HTML с JS, который вызывает /api/auth/social и редиректит в приложение
-          res.setHeader('Content-Type', 'text/html; charset=utf-8');
-          res.setHeader('Content-Security-Policy', `script-src 'nonce-${nonce}'`);
-          res.send(`<!DOCTYPE html>
+              res.setHeader('Content-Type', 'text/html; charset=utf-8');
+              res.send(`<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
@@ -184,54 +161,27 @@ export function vkCallback(req: Request, res: Response): void {
     a.btn{display:inline-flex;align-items:center;gap:8px;padding:14px 28px;
           background:#0077FF;color:#fff;text-decoration:none;border-radius:14px;
           font-size:15px;font-weight:600;box-shadow:0 6px 20px rgba(0,119,255,.35)}
-    #err{color:#ff6b6b;font-size:13px;margin-top:12px;display:none}
   </style>
 </head>
 <body>
   <div class="card">
     <div class="icon">ВК</div>
     <h1>Авторизация выполнена</h1>
-    <p id="msg">Открываем приложение...</p>
-    <a id="btn" class="btn" href="#" style="display:none">Открыть Aura Scanner</a>
-    <div id="err"></div>
+    <p>Нажмите кнопку ниже чтобы вернуться в приложение:</p>
+    <a id="btn" class="btn" href="${deepLink}">Открыть Aura Scanner</a>
   </div>
-  <script nonce="${nonce}">
-(function(){
-  var msg = document.getElementById('msg');
-  var btn = document.getElementById('btn');
-  var err = document.getElementById('err');
-  fetch('${serverOrigin}/api/auth/social', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({provider:'vk', token:${JSON.stringify(tokenData.access_token)}, email:${JSON.stringify(email)}, name:${JSON.stringify(name)}})
-  })
-  .then(function(r){return r.json();})
-  .then(function(data){
-    if(!data.token){throw new Error(data.message||'Ошибка авторизации');}
-    var p = new URLSearchParams({token:data.token});
-    if(data.refreshToken) p.set('refreshToken',data.refreshToken);
-    if(data.userId) p.set('userId',data.userId);
-    if(data.email) p.set('email',data.email);
-    if(data.name) p.set('name',data.name);
-    var params = p.toString();
-    var uri = '${CALLBACK_SCHEME}://oauth2redirect?'+params;
-    var intentUri = 'intent://oauth2redirect?'+params+'#Intent;scheme=${CALLBACK_SCHEME};package=com.example.scanner_ap;end';
-    btn.href = intentUri;
-    btn.style.display = 'inline-flex';
-    msg.textContent = 'Нажмите кнопку ниже чтобы вернуться в приложение:';
-    if(typeof FlutterAuth!=='undefined'){
-      FlutterAuth.postMessage(uri);
-    }
-  })
-  .catch(function(e){
-    msg.textContent='Ошибка авторизации.';
-    err.textContent=e.message;
-    err.style.display='block';
-  });
-})();
+  <script>
+    var isAndroid = /Android/i.test(navigator.userAgent);
+    var target = isAndroid ? ${JSON.stringify(intentUri)} : ${JSON.stringify(deepLink)};
+    document.getElementById('btn').href = target;
   </script>
 </body>
 </html>`);
+            })
+            .catch((e: Error) => {
+              logger.error('[vkCallback] Error issuing OAuth code:', { err: e });
+              res.status(500).send(`<h3>Ошибка авторизации: ${e.message}</h3>`);
+            });
         });
       });
 

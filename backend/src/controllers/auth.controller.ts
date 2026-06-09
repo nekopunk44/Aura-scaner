@@ -126,16 +126,22 @@ export async function refreshAccessToken(req: Request, res: Response): Promise<v
   }
   try {
     const payload = verifyRefreshToken(refreshToken);
-    const stored = await RefreshToken.findOne({ token: refreshToken, userId: payload.id });
-    if (!stored) {
+    // Один JOIN-запрос вместо двух round-trip'ов: лучше для p99 на mongo.
+    const stored = await RefreshToken.findOne({
+      token: refreshToken,
+      userId: payload.id,
+    }).populate<{ userId: { _id: string; email: string; name: string } }>(
+      'userId',
+      '_id email name',
+    );
+
+    if (!stored || !stored.userId) {
       res.status(401).json({ message: 'Refresh token не найден или истёк' });
       return;
     }
-    const user = await User.findById(payload.id).select('_id email name');
-    if (!user) {
-      res.status(401).json({ message: 'Пользователь не найден' });
-      return;
-    }
+
+    const user = stored.userId;
+
     // Ротация: удаляем старый, выдаём новый
     await stored.deleteOne();
     const newRefreshToken = signRefreshToken(String(user._id));
