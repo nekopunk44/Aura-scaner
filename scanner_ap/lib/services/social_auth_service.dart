@@ -46,37 +46,6 @@ class SocialAuthService {
     return code;
   }
 
-  /// Обрабатывает результат OAuth-редиректа. Сначала пробует новый flow
-  /// (`?code=<one-time>`); если его нет — fallback на legacy формат от
-  /// текущего задеплоенного backend'а (`?token=...&refreshToken=...`).
-  /// TODO: убрать legacy ветку после деплоя нового backend на Railway.
-  Future<AuthUser> _processOAuthRedirect(Uri resultUri) async {
-    final params = resultUri.queryParameters;
-    final error = params['error'];
-    if (error != null && error.isNotEmpty) {
-      if (error == 'access_denied') throw 'Вход отменён.';
-      throw 'Ошибка авторизации: $error';
-    }
-
-    final code = params['code'];
-    if (code != null && code.isNotEmpty) {
-      return _exchangeCodeForTokens(code);
-    }
-
-    final token = params['token'];
-    if (token != null && token.isNotEmpty) {
-      final refreshToken = params['refreshToken'];
-      await _authService.saveTokens(token, refreshToken);
-      return AuthUser(
-        id: params['userId'] ?? '',
-        email: params['email'] ?? '',
-        name: params['name'] ?? '',
-      );
-    }
-
-    throw 'Сервер не вернул код авторизации.';
-  }
-
   Future<AuthUser> _exchangeCodeForTokens(String code) async {
     final response = await ApiService()
         .dio
@@ -111,7 +80,8 @@ class SocialAuthService {
       throw 'Время ожидания авторизации истекло. Попробуйте ещё раз.';
     }
 
-    return _processOAuthRedirect(resultUri);
+    final code = extractOAuthCode(resultUri);
+    return _exchangeCodeForTokens(code);
   }
 
   static String buildTelegramLoginUrl(String baseUrl) =>
@@ -182,10 +152,8 @@ class SocialAuthService {
 
     if (resultUri == null) throw 'Авторизация Telegram отменена.';
 
-    // Backend (новый) редиректит в `aurascanner://oauth2redirect?code=<one-time>`
-    // — обмен через POST /auth/oauth/exchange. Legacy backend кладёт
-    // token/refreshToken прямо в URL; _processOAuthRedirect поддерживает оба.
-    return _processOAuthRedirect(resultUri);
+    final code = extractOAuthCode(resultUri);
+    return _exchangeCodeForTokens(code);
   }
 
 }
