@@ -1106,7 +1106,11 @@ class _CameraScreenState extends State<CameraScreen>
           ),
           Positioned.fill(child: currentCameraView),
           Positioned(
-            bottom: 130,
+            // controls в child-views сидят на SafeArea.bottom + ~85 (capture
+            // button + side buttons + padding). Сажаем селектор вплотную над
+            // ними, чтобы не было чёрной полосы между селектором и controls,
+            // и чтобы он сам не уезжал под gesture-bar на Android-устройствах.
+            bottom: MediaQuery.of(context).padding.bottom + 100,
             left: 0,
             right: 0,
             child: _buildFeatureSelector(),
