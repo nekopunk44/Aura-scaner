@@ -159,18 +159,9 @@ class _TranslateCameraState extends State<TranslateCamera> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // Камера
-          if (widget.cameraController != null &&
-              widget.cameraController!.value.isInitialized)
-            SizedBox(
-              width: double.infinity,
-              height: double.infinity,
-              child: CameraPreview(widget.cameraController!),
-            ),
-
           // Кнопка Назад
           Positioned(
             top: 50,

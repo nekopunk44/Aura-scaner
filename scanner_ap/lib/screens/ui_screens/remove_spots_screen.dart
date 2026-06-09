@@ -33,7 +33,14 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
+    // Ограничиваем размер на этапе выбора: фильтры обрабатываются попиксельно
+    // в Dart, а 12MP фото даёт >10с задержки.
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 2000,
+      maxHeight: 2000,
+      imageQuality: 88,
+    );
     if (picked == null) {
       if (mounted) Navigator.pop(context);
       return;
@@ -79,7 +86,7 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
       setState(() => _isProcessing = true);
 
       final dir = await getApplicationDocumentsDirectory();
-      final fileName = 'cleaned_${DateTime.now().millisecondsSinceEpoch}.png';
+      final fileName = 'cleaned_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final filePath = '${dir.path}/$fileName';
 
       await File(filePath).writeAsBytes(_previewImage!);
@@ -97,7 +104,7 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text('Сохранено: $fileName'),
-          backgroundColor: Colors.green,
+          backgroundColor: const Color(0xFF2CA5E0),
         ),
       );
       navigator.pop();
@@ -115,23 +122,32 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+    final previewBg = isDark ? const Color(0xFF0A1118) : const Color(0xFFE8EDF5);
+
     return Scaffold(
+      backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: const Text('Убрать метки и пятна'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        title: Text('Убрать пятна', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        backgroundColor: appBarBg,
+        iconTheme: IconThemeData(color: textColor),
         elevation: 0,
       ),
       body: _originalImage == null
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator(color: const Color(0xFF2CA5E0)))
           : Column(
               children: [
                 Expanded(
                   child: Container(
-                    color: Colors.grey[200],
+                    color: previewBg,
                     child: Center(
                       child: _isProcessing
-                          ? const CircularProgressIndicator()
+                          ? const CircularProgressIndicator(color: Color(0xFF2CA5E0))
                           : _previewImage != null
                               ? Image.memory(_previewImage!)
                               : const SizedBox.shrink(),
@@ -139,57 +155,70 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
                   ),
                 ),
                 Container(
-                  color: Colors.white,
+                  color: cardBg,
                   padding: const EdgeInsets.all(16),
                   child: RadioGroup<int>(
                     groupValue: _selectedFilter,
                     onChanged: (value) {
-                      if (value == null) return;
+                      if (value == null || _isProcessing) return;
                       setState(() => _selectedFilter = value);
                       _applyFilter();
                     },
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Выберите фильтр:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        Text('Выберите фильтр:', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: textColor)),
+                        const SizedBox(height: 8),
+                        RadioListTile<int>(
+                          title: Text('Медианный фильтр', style: TextStyle(color: textColor, fontSize: 14)),
+                          subtitle: Text('Лучший для пятен и артефактов', style: TextStyle(color: subColor, fontSize: 12)),
+                          value: 0,
+                          activeColor: const Color(0xFF2CA5E0),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        RadioListTile<int>(
+                          title: Text('Размытие Гаусса', style: TextStyle(color: textColor, fontSize: 14)),
+                          subtitle: Text('Мягче, для деликатных документов', style: TextStyle(color: subColor, fontSize: 12)),
+                          value: 1,
+                          activeColor: const Color(0xFF2CA5E0),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        RadioListTile<int>(
+                          title: Text('Комбинированный', style: TextStyle(color: textColor, fontSize: 14)),
+                          subtitle: Text('Медиана + размытие — рекомендуется', style: TextStyle(color: subColor, fontSize: 12)),
+                          value: 2,
+                          activeColor: const Color(0xFF2CA5E0),
+                          contentPadding: EdgeInsets.zero,
                         ),
                         const SizedBox(height: 12),
-                        const RadioListTile<int>(
-                          title: Text('Медианный фильтр'),
-                          subtitle: Text('Лучший для пятен и артефактов'),
-                          value: 0,
-                        ),
-                        const RadioListTile<int>(
-                          title: Text('Размытие Гаусса'),
-                          subtitle: Text('Мягче, подходит для деликатных документов'),
-                          value: 1,
-                        ),
-                        const RadioListTile<int>(
-                          title: Text('Комбинированный (рекомендуется)'),
-                          subtitle: Text('Медиана + размытие для лучшего результата'),
-                          value: 2,
-                        ),
-                        const SizedBox(height: 16),
                         Row(
                           children: [
                             Expanded(
-                              child: ElevatedButton.icon(
+                              child: OutlinedButton.icon(
                                 onPressed: _isProcessing ? null : _pickImage,
-                                icon: const Icon(Icons.image),
-                                label: const Text('Выбрать другое'),
+                                icon: const Icon(Icons.image, size: 18),
+                                label: const Text('Другое фото'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF2CA5E0),
+                                  side: const BorderSide(color: Color(0xFF2CA5E0)),
+                                  padding: const EdgeInsets.symmetric(vertical: 13),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: ElevatedButton.icon(
                                 onPressed: _isProcessing ? null : _saveImage,
-                                icon: const Icon(Icons.check),
+                                icon: const Icon(Icons.check, size: 18),
                                 label: const Text('Сохранить'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
+                                  backgroundColor: const Color(0xFF2CA5E0),
+                                  disabledBackgroundColor: const Color(0xFF2CA5E0).withValues(alpha: 0.4),
                                   foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(vertical: 13),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
                               ),
                             ),

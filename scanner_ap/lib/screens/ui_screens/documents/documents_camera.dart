@@ -269,35 +269,10 @@ class MultiPageDocumentView extends StatelessWidget {
         ? 'Страница ${currentBatchPageCount + 1} из $maxPages'
         : 'Максимальное количество страниц ($maxPages) достигнуто';
 
-    final cameraFullHeight = size.width / cameraController!.value.aspectRatio;
-
-    final limitedCameraPreview = ClipRect(
-      child: OverflowBox(
-        alignment: Alignment.center,
-        child: FittedBox(
-          fit: BoxFit.fill,
-          child: SizedBox(
-            width: size.width,
-            height: cameraFullHeight,
-            child: CameraPreview(cameraController!),
-          ),
-        ),
-      ),
-    );
-
     return Container(
-      color: Colors.black, 
+      color: Colors.transparent,
       child: Stack(
         children: [
-          Align(
-            alignment: const Alignment(0, -0.85),
-            child: SizedBox(
-              height: cameraHeightLimit, 
-              width: size.width,
-              child: limitedCameraPreview,
-            ),
-          ),
-
           if (isAutoMode)
             Align(
               alignment: const Alignment(0, -0.75),

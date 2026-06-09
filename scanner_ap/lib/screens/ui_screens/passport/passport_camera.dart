@@ -245,10 +245,6 @@ class PassportCameraView extends StatelessWidget {
 
     return Stack(
       children: [
-        Positioned.fill(
-          child: CameraPreview(cameraController!),
-        ),
-
         if (isAutoMode)
           _buildDocumentFrameOverlay(),
 

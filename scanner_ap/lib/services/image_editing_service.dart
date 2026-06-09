@@ -10,6 +10,18 @@ Uint8List _removeSpotsWork(List<dynamic> params) {
   img.Image? image = img.decodeImage(imageBytes);
   if (image == null) throw Exception('Не удаётся декодировать изображение');
 
+  // Подстраховка: если изображение всё ещё крупное (>1600px по длинной стороне),
+  // даунскейлим перед свёрткой — иначе gaussianBlur на 12MP занимает >10с.
+  const int maxSide = 1600;
+  final longest = image.width > image.height ? image.width : image.height;
+  if (longest > maxSide) {
+    if (image.width >= image.height) {
+      image = img.copyResize(image, width: maxSide);
+    } else {
+      image = img.copyResize(image, height: maxSide);
+    }
+  }
+
   if (filterType == 0) {
     image = img.gaussianBlur(image, radius: 3);
   } else if (filterType == 1) {
@@ -19,7 +31,7 @@ Uint8List _removeSpotsWork(List<dynamic> params) {
     image = img.gaussianBlur(image, radius: 1);
   }
 
-  return Uint8List.fromList(img.encodePng(image));
+  return Uint8List.fromList(img.encodeJpg(image, quality: 92));
 }
 
 Uint8List _adjustColorsWork(List<dynamic> params) {

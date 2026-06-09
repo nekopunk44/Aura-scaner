@@ -39,6 +39,10 @@ import 'ocr/ocr_screen.dart';
 import 'signature/home_screen.dart' as sig;
 import 'color_adjustment_screen.dart';
 import 'remove_spots_screen.dart';
+import 'highlight_screen.dart';
+import 'add_password_screen.dart';
+import 'remove_watermark_screen.dart';
+import 'document_ai_screen.dart';
 
 
 class CameraScreen extends StatefulWidget {
@@ -139,9 +143,11 @@ class _CameraScreenState extends State<CameraScreen>
     WidgetsBinding.instance.removeObserver(this);
 
     unawaited(_disposeCameraController());
+
     _qrController = null;
 
     captureModeController.detectionTimer?.cancel();
+    captureModeController.detectionTimer = null;
     _detectionAnimationController.dispose();
     super.dispose();
   }
@@ -175,11 +181,18 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_selectedFeature != 'Сканер qr-код') {
-      if (_cameraController == null || !_cameraController!.value.isInitialized) return;
-      if (state == AppLifecycleState.inactive) {
-        unawaited(_disposeCameraController());
+      if (state == AppLifecycleState.inactive ||
+          state == AppLifecycleState.paused ||
+          state == AppLifecycleState.hidden) {
+        if (_cameraController != null && _cameraController!.value.isInitialized) {
+          unawaited(_disposeCameraController());
+        }
       } else if (state == AppLifecycleState.resumed) {
-        unawaited(_initializeCamera());
+        // Камера могла быть выгружена, когда системная галерея/share/etc.
+        // перевели приложение в фон. На resumed всегда восстанавливаем.
+        if (_cameraController == null && !_isInitializingCamera) {
+          unawaited(_initializeCamera());
+        }
       }
     }
     if (_selectedFeature == 'Сканер qr-код' && _qrController != null) {
@@ -189,6 +202,16 @@ class _CameraScreenState extends State<CameraScreen>
         _qrController?.pauseCamera();
       }
     }
+  }
+
+  /// Гарантирует, что камера готова к использованию. Вызывается после
+  /// возврата из инструментальных экранов — там image_picker открывал
+  /// системную галерею и мог уронить контроллер.
+  Future<void> _ensureCameraReady() async {
+    if (_selectedFeature == 'Сканер qr-код') return;
+    if (_cameraController != null && _cameraController!.value.isInitialized) return;
+    if (_isInitializingCamera) return;
+    await _initializeCamera();
   }
 
   Future<void> _initializeCamera() async {
@@ -215,6 +238,7 @@ class _CameraScreenState extends State<CameraScreen>
       }
 
       final cameras = await availableCameras();
+      if (cameras.isEmpty) return;
       final backCamera = cameras.firstWhere(
             (camera) => camera.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
@@ -263,7 +287,10 @@ class _CameraScreenState extends State<CameraScreen>
   void _startDocumentDetectionStream() {
     if (_selectedFeature == 'Сканер qr-код') return;
 
-    final feature = _features.firstWhere((f) => f['name'] == _selectedFeature);
+    final feature = _features.firstWhere(
+      (f) => f['name'] == _selectedFeature,
+      orElse: () => _features.first,
+    );
     final bool isDocumentMode = feature['isDocument'] == true;
 
     if (captureModeController.captureMode == 'Вручную') {
@@ -282,24 +309,18 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   void _resetTwoPageState() {
-    setState(() {
-      _firstCapturedImage = null;
-      _secondCapturedImage = null;
-    });
+    _firstCapturedImage = null;
+    _secondCapturedImage = null;
   }
 
   void _resetIdCardState() {
-    setState(() {
-      _idCardFrontImage = null;
-      _idCardBackImage = null;
-      _currentSide = 'Лицевая';
-    });
+    _idCardFrontImage = null;
+    _idCardBackImage = null;
+    _currentSide = 'Лицевая';
   }
 
   void _resetMultiPageState() {
-    setState(() {
-      _multiPageBatch = [];
-    });
+    _multiPageBatch = [];
   }
 
   Future<void> _onFinishBatch() async {
@@ -362,7 +383,10 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
 
-    final currentFeature = _features.firstWhere((f) => f['name'] == _selectedFeature);
+    final currentFeature = _features.firstWhere(
+      (f) => f['name'] == _selectedFeature,
+      orElse: () => _features.first,
+    );
     final bool isDocumentMode = currentFeature['isDocument'] == true;
     final bool isMultiPageLimited = _selectedFeature == "Документ";
     final bool isMultiPageUnlimited = _selectedFeature == "+10 страниц";
@@ -378,14 +402,12 @@ class _CameraScreenState extends State<CameraScreen>
     }
 
     captureModeController.resetDetectionState();
+    // Устанавливаем флаг синхронно до первого await, чтобы исключить race condition
+    _isScanning = true;
+    captureModeController.isScanning = true;
     setState(() => _isDocumentDetected = false);
 
     try {
-      setState(() {
-        _isScanning = true;
-        captureModeController.isScanning = true;
-      });
-
       XFile file = await _cameraController!.takePicture();
       if (!mounted) return;
 
@@ -623,7 +645,7 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
 
-  void _launchInBrowser(String string) async {
+  Future<void> _launchInBrowser(String string) async {
     String urlString = string;
 
 
@@ -668,7 +690,7 @@ class _CameraScreenState extends State<CameraScreen>
           _qrResult = scanData;
         });
 
-        _launchInBrowser(code);
+        unawaited(_launchInBrowser(code));
 
         Future.delayed(const Duration(seconds: 3), () {
           if (mounted && _selectedFeature == 'Сканер qr-код') {
@@ -680,6 +702,11 @@ class _CameraScreenState extends State<CameraScreen>
     });
   }
 
+  void _afterToolReturn(_) {
+    widget.onScanCompleted?.call('');
+    unawaited(_ensureCameraReady());
+  }
+
   bool _openToolFeature(Map<String, dynamic> feature) {
     final String name = feature['name'] as String;
     final IconData? icon = feature['icon'] as IconData?;
@@ -688,7 +715,7 @@ class _CameraScreenState extends State<CameraScreen>
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const OcrScreen()),
-      );
+      ).then(_afterToolReturn);
       return true;
     }
 
@@ -696,7 +723,7 @@ class _CameraScreenState extends State<CameraScreen>
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const sig.HomeScreen()),
-      ).then((_) => widget.onScanCompleted?.call(''));
+      ).then(_afterToolReturn);
       return true;
     }
 
@@ -708,7 +735,7 @@ class _CameraScreenState extends State<CameraScreen>
             onImageSaved: () => widget.onScanCompleted?.call(''),
           ),
         ),
-      ).then((_) => widget.onScanCompleted?.call(''));
+      ).then(_afterToolReturn);
       return true;
     }
 
@@ -720,17 +747,45 @@ class _CameraScreenState extends State<CameraScreen>
             onImageSaved: () => widget.onScanCompleted?.call(''),
           ),
         ),
-      ).then((_) => widget.onScanCompleted?.call(''));
+      ).then(_afterToolReturn);
       return true;
     }
 
-    if (icon == Icons.highlight ||
-        icon == Icons.delete_forever_outlined ||
-        icon == Icons.vpn_key_outlined ||
-        icon == Icons.eco) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Функция "$name" пока недоступна')),
-      );
+    if (icon == Icons.highlight) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HighlightScreen(onSaved: () => widget.onScanCompleted?.call('')),
+        ),
+      ).then(_afterToolReturn);
+      return true;
+    }
+
+    if (icon == Icons.vpn_key_outlined) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AddPasswordScreen(onSaved: () => widget.onScanCompleted?.call('')),
+        ),
+      ).then(_afterToolReturn);
+      return true;
+    }
+
+    if (icon == Icons.delete_forever_outlined) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RemoveWatermarkScreen(onSaved: () => widget.onScanCompleted?.call('')),
+        ),
+      ).then(_afterToolReturn);
+      return true;
+    }
+
+    if (icon == Icons.eco) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => DocumentAiScreen.eco()),
+      ).then(_afterToolReturn);
       return true;
     }
 
@@ -761,8 +816,15 @@ class _CameraScreenState extends State<CameraScreen>
   }
   
   Widget _buildFeatureSelector() {
+    final mq = MediaQuery.of(context);
+    final isCompact = mq.size.width < 360;
+    final tileWidth = isCompact ? 72.0 : 84.0;
+    final fontSize = isCompact ? 10.5 : 11.5;
+    final iconSize = isCompact ? 20.0 : 24.0;
+    final horizontalPad = isCompact ? 8.0 : 10.0;
+
     return SizedBox(
-      height: 90,
+      height: isCompact ? 82 : 90,
       child: ListView.builder(
         controller: _featureScrollController,
         scrollDirection: Axis.horizontal,
@@ -823,12 +885,12 @@ class _CameraScreenState extends State<CameraScreen>
                 captureModeController.resetDetectionState();
                 setState(() => _isDocumentDetected = false);
               } else {
-                
+                // Останавливаем камеру QR перед сменой режима
+                _qrController?.pauseCamera();
                 _qrController = null;
 
-                
                 if (_cameraController == null) {
-                  unawaited(_initializeCamera()); 
+                  unawaited(_initializeCamera());
                 }
 
                 
@@ -848,34 +910,45 @@ class _CameraScreenState extends State<CameraScreen>
                 }
               });
             },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: isSelected ? Colors.white : Colors.black54,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: isSelected ? Colors.white : Colors.white24,
-                  width: 1,
+            child: SizedBox(
+              width: tileWidth,
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: horizontalPad, vertical: 10),
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.white : Colors.black54,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: isSelected ? Colors.white : Colors.white24,
+                    width: 1,
+                  ),
                 ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    feature['icon'] ?? Icons.circle,
-                    color: isSelected ? Colors.black : Colors.white,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    feature['name']!,
-                    style: TextStyle(
-                      fontSize: 12,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      feature['icon'] ?? Icons.circle,
+                      size: iconSize,
                       color: isSelected ? Colors.black : Colors.white,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        (feature['label'] ?? feature['name']) as String,
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                        softWrap: false,
+                        style: TextStyle(
+                          fontSize: fontSize,
+                          height: 1.15,
+                          color: isSelected ? Colors.black : Colors.white,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
@@ -1015,10 +1088,22 @@ class _CameraScreenState extends State<CameraScreen>
           ),
         );
 
+    final bool showPersistentPreview = _isCameraInitialized
+        && _cameraController != null
+        && _selectedFeature != 'Сканер qr-код';
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
+          // Стабильный, всегда смонтированный слой превью — не пересоздаётся
+          // при переключении режимов, чтобы камера не мерцала.
+          Positioned.fill(
+            key: const ValueKey('persistentCameraPreview'),
+            child: showPersistentPreview
+                ? CameraPreview(_cameraController!)
+                : const ColoredBox(color: Colors.black),
+          ),
           Positioned.fill(child: currentCameraView),
           Positioned(
             bottom: 130,

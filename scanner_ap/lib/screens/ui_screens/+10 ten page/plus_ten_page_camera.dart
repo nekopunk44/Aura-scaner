@@ -275,38 +275,10 @@ class UnlimitedDocumentView extends StatelessWidget {
     // const int maxPages = 10;
     final String pageStatus = 'Страница ${currentBatchPageCount + 1}'; // Без ограничения
 
-    // 2. Логика отображения CameraPreview с обрезкой
-    final cameraFullHeight = size.width / cameraController!.value.aspectRatio;
-
-    final limitedCameraPreview = ClipRect(
-      child: OverflowBox(
-        alignment: Alignment.center,
-        child: FittedBox(
-          fit: BoxFit.fill,
-          child: SizedBox(
-            width: size.width,
-            height: cameraFullHeight,
-            child: CameraPreview(cameraController!),
-          ),
-        ),
-      ),
-    );
-
     return Container(
-      color: Colors.black, // Весь фон - черный
+      color: Colors.transparent,
       child: Stack(
         children: [
-          // 1. Ограниченный видоискатель
-          Align(
-            
-            alignment: const Alignment(0, -0.85),
-            child: SizedBox(
-              height: cameraHeightLimit, // ограничение высоты
-              width: size.width,
-              child: limitedCameraPreview,
-            ),
-          ),
-
           // 2. Рамка детекции
           if (isAutoMode)
             Align(
