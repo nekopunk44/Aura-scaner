@@ -60,25 +60,40 @@ class TranslationApi {
         return null;
       }
 
-      if (_isAlreadyEnglish(cleanedText)) {
-        debugPrint('\nТекст уже на английском, возвращаем очищенный вариант');
-        return _formatOutput(cleanedText, isEnglish: true);
-      }
-
       debugPrint('\n=== ОПРЕДЕЛЕНИЕ ЯЗЫКА ===');
-      final sourceLanguage = await _determineSourceLanguage(cleanedText);
+      String sourceLanguage = await _determineSourceLanguage(cleanedText);
       debugPrint('Определенный язык: $sourceLanguage');
 
-      if (sourceLanguage == 'en' || sourceLanguage == 'und' || sourceLanguage.isEmpty) {
-        debugPrint('Язык английский или не определен, перевод не требуется');
-        return _formatOutput(cleanedText, isEnglish: true);
+      // Fallback: если язык не определён, но визуально текст английский —
+      // считаем его английским, чтобы перевести в русский (а не возвращать
+      // оригинал, как было раньше).
+      if (sourceLanguage == 'und' || sourceLanguage.isEmpty) {
+        sourceLanguage = _isAlreadyEnglish(cleanedText) ? 'en' : 'en';
+        debugPrint('Язык не определён, fallback: $sourceLanguage');
       }
 
-   
-      debugPrint('\n=== ВЫПОЛНЕНИЕ ПЕРЕВОДА ===');
-      debugPrint('Исходный текст ($sourceLanguage): ${_getPreview(cleanedText)}');
+      // Выбор целевого языка:
+      // - English source → Russian target
+      // - Russian source → English target
+      // - Anything else  → English target
+      final String targetLanguage;
+      if (sourceLanguage == 'en') {
+        targetLanguage = 'ru';
+      } else if (sourceLanguage == 'ru') {
+        targetLanguage = 'en';
+      } else {
+        targetLanguage = 'en';
+      }
 
-      final translatedText = await _performTranslation(cleanedText, sourceLanguage);
+      if (sourceLanguage == targetLanguage) {
+        debugPrint('Source == target, перевод не нужен');
+        return _formatOutput(cleanedText);
+      }
+
+      debugPrint('\n=== ВЫПОЛНЕНИЕ ПЕРЕВОДА ===');
+      debugPrint('Исходный текст ($sourceLanguage → $targetLanguage): ${_getPreview(cleanedText)}');
+
+      final translatedText = await _performTranslation(cleanedText, sourceLanguage, targetLanguage);
 
       if (translatedText == null) {
         debugPrint('Перевод не удался, возвращаем оригинал');
@@ -376,19 +391,35 @@ class TranslationApi {
   }
 
   
-  static Future<String?> _performTranslation(String text, String sourceLangCode) async {
+  static Future<String?> _performTranslation(
+    String text,
+    String sourceLangCode,
+    String targetLangCode,
+  ) async {
     try {
       final sourceLanguage = _mapLanguageCode(sourceLangCode);
-      if (sourceLanguage == null) {
-        debugPrint('Язык $sourceLangCode не поддерживается для перевода');
+      final targetLanguage = _mapLanguageCode(targetLangCode);
+      if (sourceLanguage == null || targetLanguage == null) {
+        debugPrint('Языковая пара $sourceLangCode→$targetLangCode не поддерживается');
         return null;
       }
 
-      debugPrint('Создаем переводчик: $sourceLanguage -> английский');
+      // ML Kit требует, чтобы языковые модели были скачаны на устройство.
+      // При первом запуске качаем (~30 MB на язык), потом используется кэш.
+      final modelManager = OnDeviceTranslatorModelManager();
+      for (final lang in [sourceLanguage, targetLanguage]) {
+        final downloaded = await modelManager.isModelDownloaded(lang.bcpCode);
+        if (!downloaded) {
+          debugPrint('Скачиваем модель для ${lang.bcpCode}…');
+          await modelManager.downloadModel(lang.bcpCode);
+        }
+      }
+
+      debugPrint('Создаем переводчик: $sourceLanguage → $targetLanguage');
 
       final translator = OnDeviceTranslator(
         sourceLanguage: sourceLanguage,
-        targetLanguage: TranslateLanguage.english,
+        targetLanguage: targetLanguage,
       );
 
       final startTime = DateTime.now();
@@ -449,7 +480,7 @@ class TranslationApi {
     return true;
   }
 
-  static String _formatOutput(String text, {bool isEnglish = false}) {
+  static String _formatOutput(String text) {
     if (text.isEmpty) return '';
 
     String formatted = text.trim();
