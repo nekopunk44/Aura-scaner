@@ -10,6 +10,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   gtk
   printing
   record_linux
+  sentry_flutter
   url_launcher_linux
   window_to_front
 )

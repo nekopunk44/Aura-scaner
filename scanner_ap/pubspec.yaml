@@ -79,6 +79,7 @@ dependencies:
   printing: ^5.14.2
   in_app_purchase: ^3.2.0
   sign_in_with_apple: ^6.1.4
+  sentry_flutter: ^8.13.0
 
 
 

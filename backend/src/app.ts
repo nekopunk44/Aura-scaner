@@ -1,4 +1,10 @@
+// Sentry должен инициализироваться до импорта express и контроллеров,
+// чтобы автоинструментация подтянулась корректно.
+import { initSentry } from './utils/sentry';
+initSentry();
+
 import express from 'express';
+import * as Sentry from '@sentry/node';
 import cors from 'cors';
 import helmet from 'helmet';
 import mongoose from 'mongoose';
@@ -119,6 +125,10 @@ app.use('/api/premium', apiLimiter, premiumRoutes);
 // VK ID callback на корне (требование VK + соответствие Universal Link /
 // associated domain для возврата в приложение)
 app.get('/vk_id_redirect', authLimiter, vkCallback);
+
+// Sentry перехватывает ошибки контроллеров до нашего хендлера. setupExpressErrorHandler
+// внутри проверяет init() и тихо ноупит, если DSN не задан.
+Sentry.setupExpressErrorHandler(app);
 
 // Глобальный error handler — перехватывает всё что вылетело из контроллеров
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

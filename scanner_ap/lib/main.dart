@@ -2,14 +2,17 @@ import 'package:flutter/material.dart';
 import 'screens/ui_screens/splash_screen.dart';
 import 'services/deep_link_service.dart';
 import 'services/premium_service.dart';
+import 'config/sentry_config.dart';
 import 'config/theme_config.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  DeepLinkService().init();
-  await ThemeNotifier().load();
-  await PremiumService().load();
-  runApp(const ScannerApp());
+  await bootstrapSentry(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    DeepLinkService().init();
+    await ThemeNotifier().load();
+    await PremiumService().load();
+    runApp(const ScannerApp());
+  });
 }
 
 class ScannerApp extends StatelessWidget {

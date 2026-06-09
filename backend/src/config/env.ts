@@ -34,6 +34,8 @@ export const env = {
   // Google Play Developer API (для проверки receipt)
   googlePlayPackageName: process.env.GOOGLE_PLAY_PACKAGE_NAME || '',
   googlePlayServiceAccountJson: process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON || '',
+  // Sentry — мониторинг ошибок (опционально)
+  sentryDsn: process.env.SENTRY_DSN || '',
 };
 
 function validateEnv(): void {
