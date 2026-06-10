@@ -38,10 +38,38 @@ import 'hot_zone_screen.dart';
 
 const _documentKey = 'saved_document_paths';
 
-class AllActionsScreen extends StatelessWidget {
+class AllActionsScreen extends StatefulWidget {
   final VoidCallback? onDocumentImported;
 
   const AllActionsScreen({super.key, this.onDocumentImported});
+
+  @override
+  State<AllActionsScreen> createState() => _AllActionsScreenState();
+}
+
+class _AllActionsScreenState extends State<AllActionsScreen>
+    with TickerProviderStateMixin {
+  static const _categories = [
+    ('Скан', Icons.camera_alt_outlined),
+    ('Правка', Icons.tune),
+    ('Поделиться', Icons.ios_share_outlined),
+    ('Импорт', Icons.file_download_outlined),
+    ('AI', Icons.auto_awesome_outlined),
+  ];
+
+  late final TabController _tabCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabCtrl = TabController(length: _categories.length, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabCtrl.dispose();
+    super.dispose();
+  }
 
   void _showPremiumPaywall(BuildContext context, String featureName) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -124,15 +152,14 @@ class AllActionsScreen extends StatelessWidget {
     );
   }
 
-  Widget buildTile(
-      BuildContext context,
-      String title,
-      IconData icon, {
-        bool isPremium = false,
-        String? subtitle,
-        VoidCallback? onTap,
-        Color iconColor = Colors.blue,
-      }) {
+  Widget _tile(
+    String title,
+    IconData icon, {
+    bool isPremium = false,
+    String? subtitle,
+    VoidCallback? onTap,
+    Color iconColor = const Color(0xFF2CA5E0),
+  }) {
     final effectiveTap = (isPremium && !PremiumService().isPremium)
         ? () => _showPremiumPaywall(context, title)
         : onTap ?? () => ScaffoldMessenger.of(context).showSnackBar(
@@ -150,602 +177,643 @@ class AllActionsScreen extends StatelessWidget {
     );
   }
 
+  /// Большая карточка-«фичеред» во всю ширину. Привлекает внимание к
+  /// флагманской функции категории; визуально разбивает однообразие
+  /// 2-колоночного grid'а.
+  Widget _featuredTile(
+    String title,
+    String subtitle,
+    IconData icon, {
+    required VoidCallback onTap,
+    required List<Color> gradient,
+    bool isPremium = false,
+  }) {
+    final effectiveTap = (isPremium && !PremiumService().isPremium)
+        ? () => _showPremiumPaywall(context, title)
+        : onTap;
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: effectiveTap,
+        splashColor: Colors.white.withValues(alpha: 0.08),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: gradient,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: gradient.last.withValues(alpha: 0.35),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(icon, size: 32, color: Colors.white),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        if (isPremium) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Text(
+                              'PRO',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: Colors.white.withValues(alpha: 0.92),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.arrow_forward_rounded,
+                  color: Colors.white, size: 22),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pairRow(Widget left, Widget right) {
+    return Row(
+      children: [
+        Expanded(child: left),
+        const SizedBox(width: 12),
+        Expanded(child: right),
+      ],
+    );
+  }
+
+  Widget _singleRow(Widget child) {
+    return Row(
+      children: [
+        Expanded(child: child),
+        const SizedBox(width: 12),
+        const Expanded(child: SizedBox.shrink()),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-    final accentColor = isDark
-        ? const Color(0xFF2CA5E0)
-        : const Color(0xFF2CA5E0).withValues(alpha: 0.8);
+    final bg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final tabBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+    final tabActive = const Color(0xFF2CA5E0);
+    final tabInactive = isDark ? Colors.white54 : const Color(0xFF8A94A6);
 
-    Widget buildSectionHeader(String title, IconData icon) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 20, bottom: 10),
-        child: Row(
-          children: [
-            Container(
-              width: 4,
-              height: 18,
-              decoration: BoxDecoration(
-                color: accentColor,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Icon(icon, size: 18, color: accentColor),
-            const SizedBox(width: 6),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: titleColor,
-                letterSpacing: 0.2,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+    return Container(
+      color: bg,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          buildSectionHeader('Сканировать', Icons.camera_alt_outlined),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Документ',
-                  Icons.description,
-                  iconColor: Colors.purple,
-                  subtitle: 'Сканирование нескольких листов',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CameraScreen(initialFeature: 'Документ'),
-                      ),
-                    );
-                  },
-                ),
+          // Featured banner — флагманская AI-фича.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: _featuredTile(
+              'AI-анализ документа',
+              'Сфотографируйте и получите ключевые тезисы за 10 секунд',
+              Icons.auto_awesome,
+              gradient: const [Color(0xFF6FCFF5), Color(0xFF2CA5E0), Color(0xFF1565C0)],
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => DocumentAiScreen.camera()),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Удостоверение личности',
-                  Icons.add_card,
-                  subtitle: 'Снимок обоих сторон',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CameraScreen(initialFeature: 'Удостоверение личности'),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
 
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Паспорт',
-                  Icons.man,
-                  subtitle: 'Сканирование страниц данных',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CameraScreen(initialFeature: 'Паспорт'),
+          // Sticky tab bar категорий.
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: tabBg,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: isDark
+                  ? null
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
                       ),
-                    );
-                  },
-                ),
+                    ],
+            ),
+            child: TabBar(
+              controller: _tabCtrl,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              labelColor: Colors.white,
+              unselectedLabelColor: tabInactive,
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicator: BoxDecoration(
+                color: tabActive,
+                borderRadius: BorderRadius.circular(12),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  '+10 страниц',
-                  Icons.library_books,
-                  isPremium: true,
-                  subtitle: 'Сканирование в пакетном режиме',
-                  iconColor: Colors.black,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CameraScreen(initialFeature: '+10 страниц'),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Перевод',
-                  Icons.translate,
-                  isPremium: false,
-                  subtitle: 'Мгновенный перевод текста',
-                  iconColor: Colors.black,
-                  onTap: () async {
-                    await availableCameras();
-                    if (!context.mounted) return;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CameraScreen(initialFeature: 'Перевод'),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Сканер qr-код',
-                  Icons.qr_code_2,
-                  isPremium: false,
-                  subtitle: 'Мгновенный сканер qr-кода',
-                  iconColor: Colors.teal,
-                  onTap: () async {
-                    await availableCameras();
-                    if (!context.mounted) return;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const QrCodeScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          buildSectionHeader('Редактировать', Icons.tune),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Изменение цвета',
-                  Icons.color_lens,
-                  iconColor: Colors.red,
-                  subtitle: 'Цвет бумаги, букв',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ColorAdjustmentScreen(
-                        onImageSaved: onDocumentImported,
+              indicatorPadding: const EdgeInsets.all(6),
+              labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+              unselectedLabelStyle:
+                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              dividerColor: Colors.transparent,
+              splashFactory: NoSplash.splashFactory,
+              overlayColor: WidgetStateProperty.all(Colors.transparent),
+              padding: const EdgeInsets.all(4),
+              tabs: [
+                for (final (label, icon) in _categories)
+                  Tab(
+                    height: 44,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(icon, size: 16),
+                          const SizedBox(width: 6),
+                          Text(label),
+                        ],
                       ),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Местоположение и время',
-                  Icons.punch_clock_rounded,
-                  subtitle: 'Геолокация и время',
-                  onTap: () => _addTimestamp(context),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
 
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Обрезать, повернуть',
-                  Icons.crop,
-                  subtitle: 'Изменение соотношения сторон, 90° / 180° градусов',
-                  onTap: () => _cropAndRotate(context),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Знак (подпись)',
-                  Icons.edit_note,
-                  iconColor: Colors.green,
-                  subtitle: 'Рисование подписи',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const sig.HomeScreen()),
-                  ),
-                ),
-              ),
-            ],
+          // Контент: TabBarView со списком инструментов для каждой
+          // категории. Asymmetric: первая карточка в каждой вкладке —
+          // во всю ширину (выделенная), остальные — по 2 в ряд.
+          Expanded(
+            child: TabBarView(
+              controller: _tabCtrl,
+              children: [
+                _buildScanTab(),
+                _buildEditTab(),
+                _buildShareTab(),
+                _buildImportTab(),
+                _buildAiTab(),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Восстановить фото',
-                  Icons.auto_fix_high,
-                  isPremium: true,
-                  subtitle: 'Улучшение качества и четкости',
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => RestorePhotoScreen(onSaved: onDocumentImported),
-                  )),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Убрать метки/пятна',
-                  Icons.layers_clear,
-                  subtitle: 'Удаление дефектов документа',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => RemoveSpotsScreen(
-                        onImageSaved: onDocumentImported,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Объединить файлы',
-                  Icons.merge_type,
-                  iconColor: Colors.purple,
-                  subtitle: 'PDF и изображения в один PDF',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => MergeDocumentsScreen(
-                        onMergeComplete: onDocumentImported,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Извлечь страницы PDF',
-                  Icons.auto_delete,
-                  isPremium: false,
-                  subtitle: 'Извлечение отдельных страниц',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ExtractPdfPagesScreen(
-                        onPdfSaved: onDocumentImported,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'OCR',
-                  Icons.text_fields_outlined,
-                  iconColor: Colors.black45,
-                  subtitle: 'Извлечение текста из файла + копирование',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const OcrScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Сжать PDF',
-                  Icons.leak_remove_sharp,
-                  isPremium: false,
-                  subtitle: 'Сжатие документа PDF',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CompressPdfScreen(
-                        onPdfSaved: onDocumentImported,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Выделять',
-                  Icons.auto_fix_high,
-                  isPremium: true,
-                  subtitle: 'Подсветка важного текста',
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => HighlightScreen(onSaved: onDocumentImported),
-                  )),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Изменение порядка страниц',
-                  Icons.layers_clear,
-                  subtitle: 'Редактирование порядка страниц',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ReorderPdfPagesScreen(
-                        onPdfSaved: onDocumentImported,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          buildSectionHeader('Делиться', Icons.ios_share_outlined),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Конвертировать в PDF',
-                  Icons.picture_as_pdf,
-                  subtitle: 'Изображения → один PDF',
-                  iconColor: Colors.red.shade700,
-                  onTap: () => _convertToPdf(context),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Конвертировать в JPEG',
-                  Icons.image,
-                  subtitle: 'PDF страницы → изображения',
-                  iconColor: Colors.green.shade700,
-                  onTap: () => _convertToJpeg(context),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Добавить пароль',
-                  Icons.lock,
-                  subtitle: 'Защитите свой документ',
-                  isPremium: true,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => AddPasswordScreen(onSaved: onDocumentImported),
-                  )),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Печать',
-                  Icons.print,
-                  subtitle: 'Распечатайте документ',
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const PrintScreen(),
-                  )),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Удалить водяной знак',
-                  Icons.auto_fix_normal,
-                  isPremium: true,
-                  subtitle: 'Выделите и сотрите водяной знак',
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => RemoveWatermarkScreen(onSaved: onDocumentImported),
-                  )),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Электронная почта',
-                  Icons.mail_outline,
-                  subtitle: 'Отправить файл по почте',
-                  onTap: () => _shareByEmail(context),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          buildSectionHeader('Импорты', Icons.file_download_outlined),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Импорт документов',
-                  Icons.file_download,
-                  subtitle: 'Импорт файлов',
-                  iconColor: Colors.greenAccent,
-                  onTap: () {
-                    _showImportOptions(context);
-                  },
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Импорт изображений',
-                  Icons.image,
-                  subtitle: 'Импорт фото',
-                  iconColor: Colors.blueAccent,
-                  onTap: () {
-                    _importImage(context);
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          buildSectionHeader('AI-инструменты', Icons.auto_awesome_outlined),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Извлекает суть и действия',
-                  Icons.mobile_friendly,
-                  subtitle: 'Для договора - выделяет ключевые моменты',
-                  iconColor: Colors.red.shade700,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => DocumentAiScreen.analyze(),
-                  )),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Наведите камеру на документ',
-                  Icons.camera_alt,
-                  subtitle: 'Сфотографируйте — ИИ мгновенно выделит суть',
-                  iconColor: Colors.green.shade700,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => DocumentAiScreen.camera(),
-                  )),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Голосовая заметка',
-                  Icons.voice_chat,
-                  subtitle: 'Можете оставить голосовой комментарий прямо в конкретном пункте документа',
-                  isPremium: true,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => VoiceNoteScreen(onSaved: onDocumentImported),
-                  )),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Горячая зона',
-                  Icons.hot_tub,
-                  subtitle: 'Нажав на подпись, вы увидите визитку человека',
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const HotZoneScreen(),
-                  )),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: buildTile(
-                  context,
-                  'Эко упаковка',
-                  Icons.eco,
-                  subtitle: 'Рассказывает про упаковку',
-                  isPremium: true,
-                  iconColor: Colors.green.shade500,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => DocumentAiScreen.eco(),
-                  )),
-                ),
-              ),
-              const SizedBox(width: 16),
-              const Expanded(child: SizedBox.shrink()),
-            ],
-          ),
-          const SizedBox(height: 20),
         ],
       ),
     );
   }
+
+  // ------------------------------------------------------------------
+  // Категории
+  // ------------------------------------------------------------------
+
+  Widget _buildScanTab() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+      children: [
+        _tile(
+          'Документ',
+          Icons.description,
+          iconColor: Colors.purple,
+          subtitle: 'Сканирование нескольких листов',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => CameraScreen(initialFeature: 'Документ'),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _pairRow(
+          _tile(
+            'Удостоверение',
+            Icons.add_card,
+            subtitle: 'Снимок обоих сторон',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CameraScreen(initialFeature: 'Удостоверение личности'),
+              ),
+            ),
+          ),
+          _tile(
+            'Паспорт',
+            Icons.man,
+            subtitle: 'Сканирование страниц данных',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => CameraScreen(initialFeature: 'Паспорт')),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _pairRow(
+          _tile(
+            '+10 страниц',
+            Icons.library_books,
+            isPremium: true,
+            subtitle: 'Пакетный режим',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => CameraScreen(initialFeature: '+10 страниц')),
+            ),
+          ),
+          _tile(
+            'Перевод',
+            Icons.translate,
+            subtitle: 'Мгновенный перевод текста',
+            iconColor: const Color(0xFFE67E22),
+            onTap: () async {
+              await availableCameras();
+              if (!mounted) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => CameraScreen(initialFeature: 'Перевод')),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        _singleRow(
+          _tile(
+            'QR-код',
+            Icons.qr_code_2,
+            subtitle: 'Мгновенный сканер',
+            iconColor: Colors.teal,
+            onTap: () async {
+              await availableCameras();
+              if (!mounted) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const QrCodeScreen()),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEditTab() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+      children: [
+        _tile(
+          'Изменение цвета',
+          Icons.color_lens,
+          iconColor: Colors.red,
+          subtitle: 'Яркость, контраст, оттенок документа',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ColorAdjustmentScreen(
+                onImageSaved: widget.onDocumentImported,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _pairRow(
+          _tile(
+            'Обрезать, повернуть',
+            Icons.crop,
+            subtitle: '90° / 180° или произвольно',
+            onTap: () => _cropAndRotate(context),
+          ),
+          _tile(
+            'Подпись',
+            Icons.edit_note,
+            iconColor: Colors.green,
+            subtitle: 'Рисование подписи',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const sig.HomeScreen()),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _pairRow(
+          _tile(
+            'Восстановить фото',
+            Icons.auto_fix_high,
+            isPremium: true,
+            subtitle: 'Улучшение качества',
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => RestorePhotoScreen(onSaved: widget.onDocumentImported),
+            )),
+          ),
+          _tile(
+            'Убрать пятна',
+            Icons.layers_clear,
+            subtitle: 'Удаление дефектов',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => RemoveSpotsScreen(
+                  onImageSaved: widget.onDocumentImported,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _pairRow(
+          _tile(
+            'Объединить файлы',
+            Icons.merge_type,
+            iconColor: Colors.purple,
+            subtitle: 'PDF и изображения в один PDF',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MergeDocumentsScreen(
+                  onMergeComplete: widget.onDocumentImported,
+                ),
+              ),
+            ),
+          ),
+          _tile(
+            'Извлечь страницы',
+            Icons.auto_delete,
+            subtitle: 'Отдельные страницы из PDF',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ExtractPdfPagesScreen(
+                  onPdfSaved: widget.onDocumentImported,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _pairRow(
+          _tile(
+            'OCR',
+            Icons.text_fields_outlined,
+            iconColor: const Color(0xFF6B7A99),
+            subtitle: 'Текст из файла + копирование',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const OcrScreen()),
+            ),
+          ),
+          _tile(
+            'Сжать PDF',
+            Icons.compress,
+            subtitle: 'Уменьшить размер',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CompressPdfScreen(
+                  onPdfSaved: widget.onDocumentImported,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _pairRow(
+          _tile(
+            'Выделить текст',
+            Icons.highlight,
+            isPremium: true,
+            subtitle: 'Подсветка важного',
+            iconColor: const Color(0xFFE8A317),
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => HighlightScreen(onSaved: widget.onDocumentImported),
+            )),
+          ),
+          _tile(
+            'Порядок страниц',
+            Icons.swap_vert,
+            subtitle: 'Изменение порядка PDF',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ReorderPdfPagesScreen(
+                  onPdfSaved: widget.onDocumentImported,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _singleRow(
+          _tile(
+            'Местоположение и время',
+            Icons.punch_clock_rounded,
+            subtitle: 'Печать геолокации/времени на фото',
+            onTap: () => _addTimestamp(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildShareTab() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+      children: [
+        _tile(
+          'Конвертировать в PDF',
+          Icons.picture_as_pdf,
+          subtitle: 'Изображения → один PDF-документ',
+          iconColor: Colors.red.shade700,
+          onTap: () => _convertToPdf(context),
+        ),
+        const SizedBox(height: 12),
+        _pairRow(
+          _tile(
+            'PDF → JPEG',
+            Icons.image,
+            subtitle: 'Страницы PDF в изображения',
+            iconColor: Colors.green.shade700,
+            onTap: () => _convertToJpeg(context),
+          ),
+          _tile(
+            'Печать',
+            Icons.print,
+            subtitle: 'Распечатать документ',
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => const PrintScreen(),
+            )),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _pairRow(
+          _tile(
+            'Добавить пароль',
+            Icons.lock,
+            subtitle: 'Защита PDF',
+            isPremium: true,
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => AddPasswordScreen(onSaved: widget.onDocumentImported),
+            )),
+          ),
+          _tile(
+            'Удалить водяной знак',
+            Icons.auto_fix_normal,
+            isPremium: true,
+            subtitle: 'Стереть лого/знак',
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => RemoveWatermarkScreen(onSaved: widget.onDocumentImported),
+            )),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _singleRow(
+          _tile(
+            'Электронная почта',
+            Icons.mail_outline,
+            subtitle: 'Отправить файл по почте',
+            onTap: () => _shareByEmail(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImportTab() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+      children: [
+        _tile(
+          'Импорт документов',
+          Icons.file_download,
+          subtitle: 'PDF, Word, TXT и другие форматы',
+          iconColor: const Color(0xFFE67E22),
+          onTap: () => _showImportOptions(context),
+        ),
+        const SizedBox(height: 12),
+        _singleRow(
+          _tile(
+            'Импорт изображений',
+            Icons.image_outlined,
+            subtitle: 'Фото из галереи',
+            iconColor: Colors.blueAccent,
+            onTap: () => _importImage(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAiTab() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+      children: [
+        _tile(
+          'Извлечь суть и действия',
+          Icons.mobile_friendly,
+          subtitle: 'AI выделяет ключевые моменты договора',
+          iconColor: Colors.red.shade700,
+          onTap: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => DocumentAiScreen.analyze(),
+          )),
+        ),
+        const SizedBox(height: 12),
+        _pairRow(
+          _tile(
+            'AI-сканер документа',
+            Icons.camera_alt,
+            subtitle: 'Снимок → мгновенный анализ',
+            iconColor: Colors.green.shade700,
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => DocumentAiScreen.camera(),
+            )),
+          ),
+          _tile(
+            'Голосовая заметка',
+            Icons.voice_chat,
+            subtitle: 'Аудио-комментарий',
+            isPremium: true,
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => VoiceNoteScreen(onSaved: widget.onDocumentImported),
+            )),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _pairRow(
+          _tile(
+            'Горячая зона',
+            Icons.hot_tub,
+            subtitle: 'Визитка из подписи',
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => const HotZoneScreen(),
+            )),
+          ),
+          _tile(
+            'Эко упаковка',
+            Icons.eco,
+            subtitle: 'Анализ материалов',
+            isPremium: true,
+            iconColor: Colors.green.shade500,
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => DocumentAiScreen.eco(),
+            )),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // Действия (без изменений)
+  // ------------------------------------------------------------------
 
   void _showImportOptions(BuildContext context) {
     showModalBottomSheet(
@@ -822,7 +890,7 @@ class AllActionsScreen extends StatelessWidget {
         await prefs.setStringList(_documentKey, paths);
       }
 
-      onDocumentImported?.call();
+      widget.onDocumentImported?.call();
       messenger.showSnackBar(
         SnackBar(content: Text('Импортировано: $fileName')),
       );
@@ -865,7 +933,7 @@ class AllActionsScreen extends StatelessWidget {
       paths.add(destPath);
       await prefs.setStringList(_documentKey, paths);
     }
-    onDocumentImported?.call();
+    widget.onDocumentImported?.call();
     messenger.showSnackBar(SnackBar(content: Text('Сохранено: $fileName')));
   }
 
@@ -926,7 +994,7 @@ class AllActionsScreen extends StatelessWidget {
       paths.add(destPath);
       await prefs.setStringList(_documentKey, paths);
     }
-    onDocumentImported?.call();
+    widget.onDocumentImported?.call();
     messenger.showSnackBar(SnackBar(content: Text('Сохранено с меткой: $fileName')));
   }
 
@@ -980,7 +1048,7 @@ class AllActionsScreen extends StatelessWidget {
         paths.add(outputPath);
         await prefs.setStringList(_documentKey, paths);
       }
-      onDocumentImported?.call();
+      widget.onDocumentImported?.call();
 
       if (context.mounted) Navigator.pop(context);
       messenger.showSnackBar(
@@ -1056,7 +1124,7 @@ class AllActionsScreen extends StatelessWidget {
       }
 
       await prefs.setStringList(_documentKey, paths);
-      onDocumentImported?.call();
+      widget.onDocumentImported?.call();
 
       if (context.mounted) Navigator.pop(context);
       messenger.showSnackBar(
@@ -1105,7 +1173,7 @@ class AllActionsScreen extends StatelessWidget {
         await prefs.setStringList(_documentKey, paths);
       }
 
-      onDocumentImported?.call();
+      widget.onDocumentImported?.call();
       messenger.showSnackBar(
         SnackBar(content: Text('Изображение импортировано: $fileName')),
       );
