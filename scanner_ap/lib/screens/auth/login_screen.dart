@@ -27,7 +27,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isLoading = false;
   bool _obscurePassword = true;
-  int _logoTapCount = 0;
 
   @override
   void dispose() {
@@ -37,7 +36,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _toggleTheme() {
-    setState(() => _logoTapCount++);
     ThemeNotifier().toggle();
   }
 
@@ -242,21 +240,15 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 16),
 
                   // Logo — tap to toggle theme. Hero обеспечивает плавный
-                  // переход логотипа со splash на эту позицию.
+                  // переход логотипа со splash на эту позицию. Никаких
+                  // конкурирующих scale-анимаций вокруг — иначе они бы
+                  // конфликтовали с интерполяцией Hero.
                   Center(
                     child: GestureDetector(
                       onTap: _toggleTheme,
-                      child: TweenAnimationBuilder<double>(
-                        key: ValueKey(_logoTapCount),
-                        tween: Tween(begin: 0.82, end: 1.0),
-                        duration: const Duration(milliseconds: 450),
-                        curve: Curves.elasticOut,
-                        builder: (context, scale, child) =>
-                            Transform.scale(scale: scale, child: child),
-                        child: Hero(
-                          tag: kAuraLogoHeroTag,
-                          child: const AuraLogo(size: 88),
-                        ),
+                      child: Hero(
+                        tag: kAuraLogoHeroTag,
+                        child: const AuraLogo(size: 88),
                       ),
                     ),
                   ),

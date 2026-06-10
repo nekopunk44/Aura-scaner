@@ -86,20 +86,16 @@ class _SplashScreenState extends State<SplashScreen>
       next = const LoginScreen();
     }
 
-    // FadeTransition для контента, Hero сам анимирует логотип между
-    // splash и login. Получается бесшовный переход: логотип «уезжает» в
-    // финальную позицию, а вокруг него проявляются поля и кнопки.
+    // Не оборачиваем переход в FadeTransition: фон splash и фон login
+    // — один и тот же LinearGradient, поэтому видимого «появления»
+    // нового экрана быть не должно. Hero сам интерполирует положение
+    // и размер логотипа поверх стабильного фона.
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => next,
-        transitionsBuilder: (_, animation, __, child) {
-          return FadeTransition(
-            opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
-            child: child,
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 700),
+        transitionsBuilder: (_, __, ___, child) => child,
+        transitionDuration: const Duration(milliseconds: 800),
         reverseTransitionDuration: const Duration(milliseconds: 400),
       ),
     );
