@@ -214,9 +214,12 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
           ),
           // Плавающий «+» над bottomNavigationBar. Виден только на
           // вкладке «Файлы»; AnimatedScale прячет/показывает плавно.
+          // bottom отсчитывается от верхнего края bottomNavigationBar
+          // (Scaffold вырезает место под бар из body), поэтому 16 даёт
+          // отступ от bottom-bar'а, а не от низа экрана.
           Positioned(
             right: 20,
-            bottom: 120,
+            bottom: 16,
             child: AnimatedScale(
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutBack,
