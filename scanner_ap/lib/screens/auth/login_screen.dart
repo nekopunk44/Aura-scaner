@@ -6,7 +6,9 @@ import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/social_auth_service.dart';
 import '../../utils/app_notification.dart';
+import '../../widgets/aura_logo.dart';
 import '../ui_screens/main_screen/app_tabs_screen.dart';
+import '../ui_screens/splash_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -214,8 +216,6 @@ class _LoginScreenState extends State<LoginScreen> {
     final cardBorder = isDark ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFE8EDF5);
     final inputFill = isDark ? Colors.white.withValues(alpha: 0.07) : const Color(0xFFF2F6FC);
     final inputBorder = isDark ? Colors.white.withValues(alpha: 0.15) : const Color(0xFFE8EDF5);
-    final iconBg = isDark ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFDCEBFF);
-    final iconColor = isDark ? Colors.white : const Color(0xFF2CA5E0);
     final dividerColor = isDark ? Colors.white.withValues(alpha: 0.15) : const Color(0xFFDDE3ED);
     final prefixColor = isDark ? Colors.white54 : const Color(0xFFAAB4C8);
 
@@ -241,7 +241,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   const SizedBox(height: 16),
 
-                  // Logo — tap to toggle theme
+                  // Logo — tap to toggle theme. Hero обеспечивает плавный
+                  // переход логотипа со splash на эту позицию.
                   Center(
                     child: GestureDetector(
                       onTap: _toggleTheme,
@@ -252,24 +253,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         curve: Curves.elasticOut,
                         builder: (context, scale, child) =>
                             Transform.scale(scale: scale, child: child),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 400),
-                          curve: Curves.easeInOut,
-                          width: 72,
-                          height: 72,
-                          decoration: BoxDecoration(
-                            color: iconBg,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: iconColor.withValues(alpha: 0.35),
-                              width: 1.5,
-                            ),
-                          ),
-                          child: Icon(
-                            Icons.document_scanner,
-                            size: 36,
-                            color: iconColor,
-                          ),
+                        child: Hero(
+                          tag: kAuraLogoHeroTag,
+                          child: const AuraLogo(size: 88),
                         ),
                       ),
                     ),
