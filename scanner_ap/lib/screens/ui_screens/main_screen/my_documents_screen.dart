@@ -1084,11 +1084,16 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
       color: bgColor,
       child: Column(
         children: [
-          // Search
+          // Search — на широком экране (landscape, tablet) ограничен
+          // max-width 560 и центрирован, чтобы поле не растягивалось во
+          // весь экран и казалось «балконом».
           Padding(
             padding:
                 const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: Column(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
@@ -1137,6 +1142,8 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                 ],
                 const SizedBox(height: 16),
               ],
+            ),
+              ),
             ),
           ),
 
@@ -1284,47 +1291,56 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
   }
 
   Widget _buildEmptyState(bool isDark, Color subtextColor) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                color: const Color(0xFF2CA5E0).withValues(alpha: 0.1),
-                shape: BoxShape.circle,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Адаптивные размеры под landscape / низкие высоты —
+        // на portrait иконка 96, на широком landscape 64.
+        final isCompact = constraints.maxHeight < 360;
+        final iconBox = isCompact ? 64.0 : 96.0;
+        final iconSize = isCompact ? 30.0 : 44.0;
+        final gap1 = isCompact ? 12.0 : 20.0;
+        final gap2 = isCompact ? 4.0 : 8.0;
+        final titleSize = isCompact ? 15.0 : 17.0;
+
+        return SingleChildScrollView(
+          padding: EdgeInsets.symmetric(horizontal: 40, vertical: isCompact ? 12 : 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: iconBox,
+                height: iconBox,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2CA5E0).withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.description_outlined,
+                  size: iconSize,
+                  color: const Color(0xFF2CA5E0),
+                ),
               ),
-              child: const Icon(
-                Icons.description_outlined,
-                size: 44,
-                color: Color(0xFF2CA5E0),
+              SizedBox(height: gap1),
+              Text(
+                _isSearching ? 'Ничего не найдено' : 'Файлов пока нет',
+                style: TextStyle(
+                  color: isDark ? Colors.white70 : const Color(0xFF1A1A2E),
+                  fontSize: titleSize,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              _isSearching
-                  ? 'Ничего не найдено'
-                  : 'Файлов пока нет',
-              style: TextStyle(
-                color: isDark ? Colors.white70 : const Color(0xFF1A1A2E),
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
+              SizedBox(height: gap2),
+              Text(
+                _isSearching
+                    ? 'Попробуйте изменить запрос'
+                    : 'Отсканируйте документ или импортируйте файл',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: subtextColor, fontSize: 13.5, height: 1.45),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _isSearching
-                  ? 'Попробуйте изменить запрос'
-                  : 'Отсканируйте документ или импортируйте файл',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: subtextColor, fontSize: 14, height: 1.5),
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

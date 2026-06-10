@@ -244,7 +244,13 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
           final borderAlpha = isDark ? 0.06 + sine * 0.18 : 0.04 + sine * 0.10;
           return Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-            child: Container(
+            // На широком landscape таб-бар не должен растягиваться во
+            // всю ширину — иначе scan-кнопка по центру теряется среди
+            // пустоты. Ограничиваем 520 и центрируем.
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Container(
               height: 76,
               decoration: BoxDecoration(
                 color: navBg,
@@ -294,6 +300,8 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
                     ),
                   ),
                 ],
+              ),
+                ),
               ),
             ),
           );

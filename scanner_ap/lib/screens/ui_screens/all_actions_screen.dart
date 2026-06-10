@@ -348,29 +348,50 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     final tabActive = const Color(0xFF2CA5E0);
     final tabInactive = isDark ? Colors.white54 : const Color(0xFF8A94A6);
 
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+
     return Container(
       color: bg,
       child: Column(
         children: [
-          // Featured banner — флагманская AI-фича.
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: _featuredTile(
-              'AI-анализ документа',
-              'Сфотографируйте и получите ключевые тезисы за 10 секунд',
-              Icons.auto_awesome,
-              gradient: const [Color(0xFF6FCFF5), Color(0xFF2CA5E0), Color(0xFF1565C0)],
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => DocumentAiScreen.camera()),
+          // Featured banner — флагманская AI-фича. На landscape прячем,
+          // потому что высота сильно ограничена и banner+tabs+content
+          // не помещаются без скролла; иконка в табах сама направит.
+          if (!isLandscape) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: _featuredTile(
+                    'AI-анализ документа',
+                    'Сфотографируйте и получите ключевые тезисы за 10 секунд',
+                    Icons.auto_awesome,
+                    gradient: const [
+                      Color(0xFF6FCFF5),
+                      Color(0xFF2CA5E0),
+                      Color(0xFF1565C0)
+                    ],
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => DocumentAiScreen.camera()),
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 14),
+            const SizedBox(height: 14),
+          ] else
+            const SizedBox(height: 12),
 
-          // Sticky tab bar категорий.
-          Container(
+          // Sticky tab bar категорий — на широком экране ограничен по
+          // ширине и центрирован, чтобы pill-табы не растягивались
+          // и капчура с активной заливкой выглядела пропорционально.
+          Center(
+            child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 16),
+            constraints: const BoxConstraints(maxWidth: 560),
             decoration: BoxDecoration(
               color: tabBg,
               borderRadius: BorderRadius.circular(16),
@@ -420,6 +441,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
                     ),
                   ),
               ],
+            ),
             ),
           ),
           const SizedBox(height: 14),
