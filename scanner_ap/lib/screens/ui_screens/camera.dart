@@ -246,8 +246,9 @@ class _CameraScreenState extends State<CameraScreen>
 
       final controller = CameraController(
         backCamera,
-        ResolutionPreset.high,
+        ResolutionPreset.veryHigh,
         enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.yuv420,
       );
 
       await controller.initialize();
@@ -957,6 +958,26 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
+  /// Превью камеры с сохранением aspect-ratio сенсора.
+  /// `previewSize` у пакета camera возвращается в landscape (width > height)
+  /// даже на портретной ориентации — поэтому в SizedBox swap-аем стороны.
+  /// FittedBox(cover) заполняет весь Stack, обрезая лишние края, но не
+  /// растягивает изображение по одной из осей.
+  Widget _buildAspectCorrectPreview(CameraController controller) {
+    final preview = controller.value.previewSize;
+    if (preview == null) return CameraPreview(controller);
+    return ClipRect(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        child: SizedBox(
+          width: preview.height,
+          height: preview.width,
+          child: CameraPreview(controller),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_importedDocumentPath != null) {
@@ -1098,10 +1119,13 @@ class _CameraScreenState extends State<CameraScreen>
         children: [
           // Стабильный, всегда смонтированный слой превью — не пересоздаётся
           // при переключении режимов, чтобы камера не мерцала.
+          // FittedBox(cover) сохраняет aspect-ratio сенсора — preview больше
+          // не растягивается, на экране показывается «обрезанный» центр
+          // (как нативная камера в Android), без искажения пропорций.
           Positioned.fill(
             key: const ValueKey('persistentCameraPreview'),
             child: showPersistentPreview
-                ? CameraPreview(_cameraController!)
+                ? _buildAspectCorrectPreview(_cameraController!)
                 : const ColoredBox(color: Colors.black),
           ),
           Positioned.fill(child: currentCameraView),
