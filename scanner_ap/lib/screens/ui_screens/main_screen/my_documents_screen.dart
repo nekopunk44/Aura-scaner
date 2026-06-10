@@ -1302,42 +1302,45 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
         final gap2 = isCompact ? 4.0 : 8.0;
         final titleSize = isCompact ? 15.0 : 17.0;
 
-        return SingleChildScrollView(
-          padding: EdgeInsets.symmetric(horizontal: 40, vertical: isCompact ? 12 : 24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: iconBox,
-                height: iconBox,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2CA5E0).withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
+        return Center(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(horizontal: 40, vertical: isCompact ? 12 : 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: iconBox,
+                  height: iconBox,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2CA5E0).withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.description_outlined,
+                    size: iconSize,
+                    color: const Color(0xFF2CA5E0),
+                  ),
                 ),
-                child: Icon(
-                  Icons.description_outlined,
-                  size: iconSize,
-                  color: const Color(0xFF2CA5E0),
+                SizedBox(height: gap1),
+                Text(
+                  _isSearching ? 'Ничего не найдено' : 'Файлов пока нет',
+                  style: TextStyle(
+                    color: isDark ? Colors.white70 : const Color(0xFF1A1A2E),
+                    fontSize: titleSize,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              SizedBox(height: gap1),
-              Text(
-                _isSearching ? 'Ничего не найдено' : 'Файлов пока нет',
-                style: TextStyle(
-                  color: isDark ? Colors.white70 : const Color(0xFF1A1A2E),
-                  fontSize: titleSize,
-                  fontWeight: FontWeight.w600,
+                SizedBox(height: gap2),
+                Text(
+                  _isSearching
+                      ? 'Попробуйте изменить запрос'
+                      : 'Отсканируйте документ или импортируйте файл',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: subtextColor, fontSize: 13.5, height: 1.45),
                 ),
-              ),
-              SizedBox(height: gap2),
-              Text(
-                _isSearching
-                    ? 'Попробуйте изменить запрос'
-                    : 'Отсканируйте документ или импортируйте файл',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: subtextColor, fontSize: 13.5, height: 1.45),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
