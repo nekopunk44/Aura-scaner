@@ -12,6 +12,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../services/document_registry.dart';
 import '../../services/premium_service.dart';
 import 'premium_screen.dart';
 import 'add_password_screen.dart';
@@ -939,6 +940,11 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         paths.add(destPath);
         await prefs.setStringList(_documentKey, paths);
       }
+      await DocumentRegistry().add(DocEntry(
+        localPath: destPath,
+        remoteId: null,
+        name: p.basenameWithoutExtension(fileName),
+      ));
 
       widget.onDocumentImported?.call();
       messenger.showSnackBar(
@@ -983,6 +989,11 @@ class _AllActionsScreenState extends State<AllActionsScreen>
       paths.add(destPath);
       await prefs.setStringList(_documentKey, paths);
     }
+    await DocumentRegistry().add(DocEntry(
+      localPath: destPath,
+      remoteId: null,
+      name: p.basenameWithoutExtension(fileName),
+    ));
     widget.onDocumentImported?.call();
     messenger.showSnackBar(SnackBar(content: Text('Сохранено: $fileName')));
   }
@@ -1044,6 +1055,11 @@ class _AllActionsScreenState extends State<AllActionsScreen>
       paths.add(destPath);
       await prefs.setStringList(_documentKey, paths);
     }
+    await DocumentRegistry().add(DocEntry(
+      localPath: destPath,
+      remoteId: null,
+      name: p.basenameWithoutExtension(fileName),
+    ));
     widget.onDocumentImported?.call();
     messenger.showSnackBar(SnackBar(content: Text('Сохранено с меткой: $fileName')));
   }
@@ -1098,6 +1114,11 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         paths.add(outputPath);
         await prefs.setStringList(_documentKey, paths);
       }
+      await DocumentRegistry().add(DocEntry(
+        localPath: outputPath,
+        remoteId: null,
+        name: p.basenameWithoutExtension(fileName),
+      ));
       widget.onDocumentImported?.call();
 
       if (context.mounted) Navigator.pop(context);
@@ -1164,6 +1185,14 @@ class _AllActionsScreenState extends State<AllActionsScreen>
             final outputPath = '${dir.path}/$fileName';
             await File(outputPath).writeAsBytes(jpegBytes);
             if (!paths.contains(outputPath)) paths.add(outputPath);
+            // Регистрируем в DocumentRegistry — иначе вкладка «Файлы»
+            // этих JPEG не увидит (MyDocumentsScreen читает registry,
+            // а не legacy _documentKey).
+            await DocumentRegistry().add(DocEntry(
+              localPath: outputPath,
+              remoteId: null,
+              name: '${baseName}_page${i + 1}',
+            ));
             saved++;
           } finally {
             pdfImage.dispose();
@@ -1222,6 +1251,11 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         paths.add(destPath);
         await prefs.setStringList(_documentKey, paths);
       }
+      await DocumentRegistry().add(DocEntry(
+        localPath: destPath,
+        remoteId: null,
+        name: p.basenameWithoutExtension(fileName),
+      ));
 
       widget.onDocumentImported?.call();
       messenger.showSnackBar(
