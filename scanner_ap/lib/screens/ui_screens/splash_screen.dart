@@ -107,28 +107,47 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // Цвета фона splash совпадают с фоном login_screen (тот же
+    // LinearGradient в shell обоих экранов) — Hero логотип плывёт по
+    // одному и тому же фоновому слою, без видимого скачка цвета.
+    final gradient = isDark
+        ? const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Color(0xFF8CDDFF),
-              Color(0xFF2CA5E0),
-              Color(0xFF0D47A1),
+              Color(0xFF1a1a2e),
+              Color(0xFF16213e),
+              Color(0xFF0f3460),
             ],
-            stops: [0.0, 0.55, 1.0],
-          ),
-        ),
+          )
+        : const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFFEEF4FF),
+              Color(0xFFF5F9FF),
+              Colors.white,
+            ],
+          );
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor =
+        isDark ? Colors.white.withValues(alpha: 0.7) : const Color(0xFF6B7A99);
+
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(gradient: gradient),
         child: SafeArea(
           child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Hero оборачивает только SizedBox→AuraLogo: те же
+                // параметры что и на login. Разница только в size —
+                // Flutter сам интерполирует пропорцию между 170 и 88.
                 Hero(
                   tag: kAuraLogoHeroTag,
-                  child: const AuraLogo(size: 170, monoWhite: true),
+                  child: const AuraLogo(size: 170),
                 ),
                 const SizedBox(height: 28),
                 FadeTransition(
@@ -143,13 +162,13 @@ class _SplashScreenState extends State<SplashScreen>
                     )),
                     child: Column(
                       children: [
-                        const Text(
+                        Text(
                           'Aura Scanner',
                           style: TextStyle(
                             fontSize: 30,
                             fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: 1.2,
+                            color: textColor,
+                            letterSpacing: 1.0,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -157,7 +176,7 @@ class _SplashScreenState extends State<SplashScreen>
                           'Документы, OCR и AI в кармане',
                           style: TextStyle(
                             fontSize: 13,
-                            color: Colors.white.withValues(alpha: 0.85),
+                            color: subColor,
                             letterSpacing: 0.3,
                           ),
                         ),
