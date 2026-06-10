@@ -174,52 +174,21 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
                       ),
                       Positioned(
                         right: 8,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // «+» виден только на вкладке «Файлы» — на
-                            // «Инструментах» он не имеет смысла.
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 220),
-                              transitionBuilder: (child, anim) =>
-                                  ScaleTransition(scale: anim, child: child),
-                              child: _currentScreenIndex == 0
-                                  ? Material(
-                                      key: const ValueKey('import-btn'),
-                                      color: Colors.transparent,
-                                      child: InkWell(
-                                        onTap: () => _docsKey.currentState
-                                            ?.showImportOptions(),
-                                        borderRadius: BorderRadius.circular(20),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(10),
-                                          child: Icon(
-                                            Icons.add_rounded,
-                                            size: 24,
-                                            color: navSelected,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                  : const SizedBox(width: 0, height: 0),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const SettingsScreen()),
                             ),
-                            Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) => const SettingsScreen()),
-                                ),
-                                borderRadius: BorderRadius.circular(20),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(10),
-                                  child: Icon(Icons.settings_outlined,
-                                      size: 22, color: iconColor),
-                                ),
-                              ),
+                            borderRadius: BorderRadius.circular(20),
+                            child: Padding(
+                              padding: const EdgeInsets.all(10),
+                              child: Icon(Icons.settings_outlined,
+                                  size: 22, color: iconColor),
                             ),
-                          ],
+                          ),
                         ),
                       ),
                     ],
@@ -230,14 +199,36 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
           },
         ),
       ),
-      body: PageView(
-        controller: _pageController,
-        physics: const ClampingScrollPhysics(),
-        onPageChanged: (i) => setState(() => _currentScreenIndex = i),
+      body: Stack(
         children: [
-          MyDocumentsScreen(key: _docsKey),
-          AllActionsScreen(
-            onDocumentImported: () => _docsKey.currentState?.refreshDocuments(),
+          PageView(
+            controller: _pageController,
+            physics: const ClampingScrollPhysics(),
+            onPageChanged: (i) => setState(() => _currentScreenIndex = i),
+            children: [
+              MyDocumentsScreen(key: _docsKey),
+              AllActionsScreen(
+                onDocumentImported: () => _docsKey.currentState?.refreshDocuments(),
+              ),
+            ],
+          ),
+          // Плавающий «+» над bottomNavigationBar. Виден только на
+          // вкладке «Файлы»; AnimatedScale прячет/показывает плавно.
+          Positioned(
+            right: 20,
+            bottom: 120,
+            child: AnimatedScale(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutBack,
+              scale: _currentScreenIndex == 0 ? 1.0 : 0.0,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 180),
+                opacity: _currentScreenIndex == 0 ? 1.0 : 0.0,
+                child: _ImportFab(
+                  onTap: () => _docsKey.currentState?.showImportOptions(),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -304,6 +295,43 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _ImportFab extends StatelessWidget {
+  final VoidCallback onTap;
+  const _ImportFab({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(28),
+        child: Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: const LinearGradient(
+              colors: [Color(0xFF6FCFF5), Color(0xFF2CA5E0)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF2CA5E0).withValues(alpha: 0.45),
+                blurRadius: 16,
+                spreadRadius: 1,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+        ),
       ),
     );
   }
