@@ -107,53 +107,67 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
-    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-    final subColor = isDark ? Colors.white60 : const Color(0xFF6B7A99);
-
     return Scaffold(
-      backgroundColor: bg,
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Hero(
-              tag: kAuraLogoHeroTag,
-              child: const AuraLogo(size: 160),
-            ),
-            const SizedBox(height: 24),
-            FadeTransition(
-              opacity: _textCtrl,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.3),
-                  end: Offset.zero,
-                ).animate(CurvedAnimation(
-                  parent: _textCtrl,
-                  curve: Curves.easeOutCubic,
-                )),
-                child: Column(
-                  children: [
-                    Text(
-                      'Aura Scanner',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                        color: textColor,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Документы, OCR и AI в кармане',
-                      style: TextStyle(fontSize: 13, color: subColor),
-                    ),
-                  ],
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF8CDDFF),
+              Color(0xFF2CA5E0),
+              Color(0xFF0D47A1),
+            ],
+            stops: [0.0, 0.55, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Hero(
+                  tag: kAuraLogoHeroTag,
+                  child: const AuraLogo(size: 170, monoWhite: true),
                 ),
-              ),
+                const SizedBox(height: 28),
+                FadeTransition(
+                  opacity: _textCtrl,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.3),
+                      end: Offset.zero,
+                    ).animate(CurvedAnimation(
+                      parent: _textCtrl,
+                      curve: Curves.easeOutCubic,
+                    )),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'Aura Scanner',
+                          style: TextStyle(
+                            fontSize: 30,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Документы, OCR и AI в кармане',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.white.withValues(alpha: 0.85),
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
