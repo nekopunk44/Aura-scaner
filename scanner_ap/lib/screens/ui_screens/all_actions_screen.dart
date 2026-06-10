@@ -177,6 +177,34 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     );
   }
 
+  /// Широкая карточка-«хедлайнер» — стоит первой в каждой вкладке.
+  /// Горизонтальный layout (иконка крупнее, текст рядом, стрелка-CTA)
+  /// выделяет флагман категории, не сливаясь с 2-колоночным grid'ом.
+  Widget _wideTile(
+    String title,
+    IconData icon, {
+    bool isPremium = false,
+    String? subtitle,
+    VoidCallback? onTap,
+    Color iconColor = const Color(0xFF2CA5E0),
+  }) {
+    final effectiveTap = (isPremium && !PremiumService().isPremium)
+        ? () => _showPremiumPaywall(context, title)
+        : onTap ?? () => ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('«$title» в разработке')),
+            );
+
+    return buildFeatureTileWide(
+      context,
+      title: title,
+      icon: icon,
+      onTap: effectiveTap,
+      isPremium: isPremium,
+      subtitle: subtitle,
+      iconColor: iconColor,
+    );
+  }
+
   /// Большая карточка-«фичеред» во всю ширину. Привлекает внимание к
   /// флагманской функции категории; визуально разбивает однообразие
   /// 2-колоночного grid'а.
@@ -424,7 +452,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
       children: [
-        _tile(
+        _wideTile(
           'Документ',
           Icons.description,
           iconColor: Colors.purple,
@@ -511,7 +539,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
       children: [
-        _tile(
+        _wideTile(
           'Изменение цвета',
           Icons.color_lens,
           iconColor: Colors.red,
@@ -668,7 +696,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
       children: [
-        _tile(
+        _wideTile(
           'Конвертировать в PDF',
           Icons.picture_as_pdf,
           subtitle: 'Изображения → один PDF-документ',
@@ -731,7 +759,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
       children: [
-        _tile(
+        _wideTile(
           'Импорт документов',
           Icons.file_download,
           subtitle: 'PDF, Word, TXT и другие форматы',
@@ -756,7 +784,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
       children: [
-        _tile(
+        _wideTile(
           'Извлечь суть и действия',
           Icons.mobile_friendly,
           subtitle: 'AI выделяет ключевые моменты договора',

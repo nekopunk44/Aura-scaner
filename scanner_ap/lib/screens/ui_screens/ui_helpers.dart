@@ -1,5 +1,130 @@
 import 'package:flutter/material.dart';
 
+/// Широкая карточка-«хедлайнер» категории: иконка-блок слева, текст
+/// справа, стрелка-CTA. Используется в начале каждой вкладки в
+/// AllActionsScreen, чтобы выделить флагманский инструмент категории.
+Widget buildFeatureTileWide(
+  BuildContext context, {
+  required String title,
+  required IconData icon,
+  required VoidCallback onTap,
+  bool isPremium = false,
+  String? subtitle,
+  Color iconColor = const Color(0xFF2CA5E0),
+}) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+  final titleColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+  final subtitleColor = isDark ? Colors.white60 : const Color(0xFF6B7A99);
+  final effectiveIconColor = isPremium ? const Color(0xFFE8A317) : iconColor;
+  final iconBg = effectiveIconColor.withValues(alpha: isDark ? 0.22 : 0.13);
+
+  return Material(
+    color: cardBg,
+    borderRadius: BorderRadius.circular(20),
+    elevation: 0,
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: onTap,
+      splashColor: effectiveIconColor.withValues(alpha: 0.12),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: isDark
+              ? null
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, size: 30, color: effectiveIconColor),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: titleColor,
+                          ),
+                        ),
+                      ),
+                      if (isPremium) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFFC56B), Color(0xFFE8A317)],
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Text(
+                            'PRO',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: subtitleColor,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 16,
+              color: subtitleColor,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 /// Карточка инструмента для AllActionsScreen.
 ///
 /// Структура:
