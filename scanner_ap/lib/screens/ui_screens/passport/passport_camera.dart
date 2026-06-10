@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 
 import '../capture_modes.dart';
+import '../../../widgets/camera_controls_bar.dart';
 
 class PassportCameraView extends StatelessWidget {
   const PassportCameraView({
@@ -159,78 +160,31 @@ class PassportCameraView extends StatelessWidget {
 
   Widget _buildBottomBar(BuildContext context) {
     const bool isDocumentMode = true;
+    final bool canSnap =
+        captureModeController.canTakePicture(isDocumentMode: isDocumentMode);
 
-    final bool canSnap = captureModeController.canTakePicture(
-        isDocumentMode: isDocumentMode);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      color: Colors.black87,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          GestureDetector(
-            onTap: isScanning ? null : setCaptureModeAuto, 
-            child: const Icon(Icons.refresh, color: Colors.white, size: 30),
-          ),
-
-          GestureDetector(
-            onTap: isScanning ? null : pickImageFromGallery,
-            child: const Icon(Icons.photo_library, color: Colors.white, size: 30),
-          ),
-
-          // Кнопка снимка
-          GestureDetector(
-            onTap: canSnap ? takePicture : null,
-            child: Container(
-              width: 70,
-              height: 70,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                    color: canSnap ? Colors.white : Colors.grey, width: 4),
-                color: canSnap ? Colors.white : Colors.transparent,
-              ),
-              child: canSnap
-                  ? Container(
-                width: 60,
-                height: 60,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white,
-                ),
-              )
-                  : const SizedBox.shrink(),
-            ),
-          ),
-
-          // Переключатель 1/2 страницы
-          GestureDetector(
-              onTap: () {
-                setPageMode(
-                    pageMode == "1 страница" ? "2 страницы" : "1 страница");
-                resetTwoPageState();
-                setCaptureModeAuto();
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: Colors.white70, width: 1.6),
-                  color: Colors.black45,
-                ),
-                child: Text(
-                  pageMode == "1 страница" ? "1 → 2" : "2 → 1",
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+    return CameraControlsBar(
+      onCapture: canSnap ? takePicture : null,
+      leftActions: [
+        CameraActionIcon(
+          icon: Icons.refresh,
+          onTap: isScanning ? null : setCaptureModeAuto,
+        ),
+        CameraActionIcon(
+          icon: Icons.photo_library_outlined,
+          onTap: isScanning ? null : pickImageFromGallery,
+        ),
+      ],
+      rightActions: [
+        CameraActionPill(
+          label: pageMode == "1 страница" ? "1 → 2" : "2 → 1",
+          onTap: () {
+            setPageMode(pageMode == "1 страница" ? "2 страницы" : "1 страница");
+            resetTwoPageState();
+            setCaptureModeAuto();
+          },
+        ),
+      ],
     );
   }
 
@@ -264,7 +218,7 @@ class PassportCameraView extends StatelessWidget {
         ),
 
         Positioned(
-          bottom: MediaQuery.of(context).padding.bottom + 16,
+          bottom: 0,
           left: 0,
           right: 0,
           child: _buildBottomBar(context),

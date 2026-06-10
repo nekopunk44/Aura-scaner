@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import '../../../widgets/camera_controls_bar.dart';
 
 class MultiPageDocumentView extends StatelessWidget {
   const MultiPageDocumentView({
@@ -155,97 +156,61 @@ class MultiPageDocumentView extends StatelessWidget {
     const int maxPages = 9;
     const bool isDocumentMode = true;
 
-    final bool canSnap = (captureModeController as dynamic).canTakePicture(isDocumentMode: isDocumentMode) as bool;
+    final bool canSnap = (captureModeController as dynamic)
+        .canTakePicture(isDocumentMode: isDocumentMode) as bool;
 
     final bool isBatchActive = currentBatchPageCount > 0;
     final bool canAddMore = currentBatchPageCount < maxPages;
     final bool captureButtonActive = canSnap && canAddMore;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      color: Colors.black, // Убедимся, что фон черный
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          // кнопка Очистить пачку
-          GestureDetector(
-            onTap: isBatchActive ? onClearBatch : null,
-            child: Icon(
-              Icons.delete_forever,
-              color: isBatchActive ? Colors.redAccent : Colors.grey,
-              size: 30,
+    return CameraControlsBar(
+      onCapture: captureButtonActive ? takePicture : null,
+      captureLabel: '${currentBatchPageCount + 1}',
+      leftActions: [
+        CameraActionIcon(
+          icon: Icons.delete_outline,
+          onTap: isBatchActive ? onClearBatch : null,
+        ),
+        CameraActionIcon(
+          icon: Icons.photo_library_outlined,
+          onTap: pickImageFromGallery,
+        ),
+      ],
+      rightActions: [
+        GestureDetector(
+          onTap: isBatchActive ? onFinishBatch : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            height: 46,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(23),
+              color: isBatchActive
+                  ? const Color(0xFF2CA5E0)
+                  : Colors.white.withValues(alpha: 0.08),
             ),
-          ),
-
-          // кнопка Галереи (для добавления страницы из галереи)
-          GestureDetector(
-            onTap: pickImageFromGallery,
-            child: const Icon(Icons.photo_library, color: Colors.white, size: 30),
-          ),
-
-          // кнопка снимка (Добавить страницу) - с индикатором номера страницы
-          GestureDetector(
-            onTap: captureButtonActive ? takePicture : null,
-            child: Container(
-              width: 70,
-              height: 70,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                    color: captureButtonActive ? Colors.white : Colors.grey, width: 4),
-                color: Colors.transparent,
-              ),
-              child: Center(
-                child: Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: captureButtonActive ? Colors.white : Colors.grey[600],
-                  ),
-                  child: Center(
-                    child: Text(
-                      '${currentBatchPageCount + 1}', // Показы номера следующей страницы
-                      style: TextStyle(
-                        color: captureButtonActive ? Colors.black : Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 22,
-                      ),
-                    ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.check,
+                  color: isBatchActive ? Colors.white : Colors.white38,
+                  size: 18,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Готово ($currentBatchPageCount)',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isBatchActive ? Colors.white : Colors.white38,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-              ),
+              ],
             ),
           ),
-
-          // кнопка Готово (Завершить пачку)
-          GestureDetector(
-            onTap: isBatchActive ? onFinishBatch : null,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(30),
-                color: isBatchActive ? Colors.green : Colors.grey[700],
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.check, color: Colors.white, size: 20),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Готово ($currentBatchPageCount)',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -307,10 +272,7 @@ class MultiPageDocumentView extends StatelessWidget {
             bottom: 0,
             left: 0,
             right: 0,
-            child: Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
-              child: _buildBottomBar(context),
-            ),
+            child: _buildBottomBar(context),
           ),
         ],
       ),

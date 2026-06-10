@@ -913,26 +913,39 @@ class _CameraScreenState extends State<CameraScreen>
             },
             child: SizedBox(
               width: tileWidth,
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: horizontalPad, vertical: 10),
-                margin: const EdgeInsets.only(right: 8),
-                decoration: BoxDecoration(
-                  color: isSelected ? Colors.white : Colors.black54,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: isSelected ? Colors.white : Colors.white24,
-                    width: 1,
-                  ),
-                ),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: horizontalPad * 0.4),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      feature['icon'] ?? Icons.circle,
-                      size: iconSize,
-                      color: isSelected ? Colors.black : Colors.white,
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOut,
+                      width: isCompact ? 40 : 48,
+                      height: isCompact ? 40 : 48,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isSelected
+                            ? const Color(0xFF2CA5E0)
+                            : Colors.white.withValues(alpha: 0.14),
+                        boxShadow: isSelected
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFF2CA5E0)
+                                      .withValues(alpha: 0.55),
+                                  blurRadius: 14,
+                                  spreadRadius: 1,
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Icon(
+                        feature['icon'] ?? Icons.circle,
+                        size: iconSize,
+                        color: Colors.white,
+                      ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
@@ -943,8 +956,11 @@ class _CameraScreenState extends State<CameraScreen>
                         style: TextStyle(
                           fontSize: fontSize,
                           height: 1.15,
-                          color: isSelected ? Colors.black : Colors.white,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          color: isSelected
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.7),
+                          fontWeight:
+                              isSelected ? FontWeight.w700 : FontWeight.w500,
                         ),
                       ),
                     ),
@@ -1130,14 +1146,27 @@ class _CameraScreenState extends State<CameraScreen>
           ),
           Positioned.fill(child: currentCameraView),
           Positioned(
-            // controls в child-views сидят на SafeArea.bottom + ~85 (capture
-            // button + side buttons + padding). Сажаем селектор вплотную над
-            // ними, чтобы не было чёрной полосы между селектором и controls,
-            // и чтобы он сам не уезжал под gesture-bar на Android-устройствах.
-            bottom: MediaQuery.of(context).padding.bottom + 100,
+            // CameraControlsBar (child-view bottom-bar) уже включает
+            // SafeArea и сам встаёт на bottom:0. Селектор сидит точно над
+            // ним — высота bar'а ~78 + 32 padding + safeBottom; берём
+            // 110 + safeBottom как стабильный отступ.
+            bottom: MediaQuery.of(context).padding.bottom + 110,
             left: 0,
             right: 0,
-            child: _buildFeatureSelector(),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0),
+                    Colors.black.withValues(alpha: 0.35),
+                  ],
+                ),
+              ),
+              child: _buildFeatureSelector(),
+            ),
           ),
         ],
       ),
