@@ -17,6 +17,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
   int _currentScreenIndex = 0;
   bool _isScanning = false;
   final GlobalKey<MyDocumentsScreenState> _docsKey = GlobalKey();
+  late final PageController _pageController;
 
   late final AnimationController _pulseCtrl;
   late final Animation<double> _pulseAnim;
@@ -26,6 +27,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: 0);
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2800),
@@ -40,6 +42,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _pageController.dispose();
     _pulseCtrl.dispose();
     _beamCtrl.dispose();
     super.dispose();
@@ -49,9 +52,15 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
     if (index == 1) {
       _navigateToCameraScreen();
     } else {
-      setState(() {
-        _currentScreenIndex = index == 0 ? 0 : 1;
-      });
+      final pageIndex = index == 0 ? 0 : 1;
+      if (pageIndex == _currentScreenIndex) return;
+      // Плавный переход через PageController.animateToPage — hardware-
+      // accelerated slide, выглядит лучше AnimatedOpacity-перекрытия.
+      _pageController.animateToPage(
+        pageIndex,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
     }
   }
 
@@ -165,19 +174,52 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
                       ),
                       Positioned(
                         right: 8,
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // «+» виден только на вкладке «Файлы» — на
+                            // «Инструментах» он не имеет смысла.
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 220),
+                              transitionBuilder: (child, anim) =>
+                                  ScaleTransition(scale: anim, child: child),
+                              child: _currentScreenIndex == 0
+                                  ? Material(
+                                      key: const ValueKey('import-btn'),
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        onTap: () => _docsKey.currentState
+                                            ?.showImportOptions(),
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(10),
+                                          child: Icon(
+                                            Icons.add_rounded,
+                                            size: 24,
+                                            color: navSelected,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  : const SizedBox(width: 0, height: 0),
                             ),
-                            borderRadius: BorderRadius.circular(20),
-                            child: Padding(
-                              padding: const EdgeInsets.all(10),
-                              child: Icon(Icons.settings_outlined, size: 22, color: iconColor),
+                            Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) => const SettingsScreen()),
+                                ),
+                                borderRadius: BorderRadius.circular(20),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Icon(Icons.settings_outlined,
+                                      size: 22, color: iconColor),
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
                       ),
                     ],
@@ -188,14 +230,14 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
           },
         ),
       ),
-      body: Stack(
+      body: PageView(
+        controller: _pageController,
+        physics: const ClampingScrollPhysics(),
+        onPageChanged: (i) => setState(() => _currentScreenIndex = i),
         children: [
-          _FadeTab(visible: _currentScreenIndex == 0, child: MyDocumentsScreen(key: _docsKey)),
-          _FadeTab(
-            visible: _currentScreenIndex == 1,
-            child: AllActionsScreen(
-              onDocumentImported: () => _docsKey.currentState?.refreshDocuments(),
-            ),
+          MyDocumentsScreen(key: _docsKey),
+          AllActionsScreen(
+            onDocumentImported: () => _docsKey.currentState?.refreshDocuments(),
           ),
         ],
       ),
@@ -262,25 +304,6 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _FadeTab extends StatelessWidget {
-  final bool visible;
-  final Widget child;
-  const _FadeTab({required this.visible, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      ignoring: !visible,
-      child: AnimatedOpacity(
-        opacity: visible ? 1.0 : 0.0,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeInOut,
-        child: child,
       ),
     );
   }

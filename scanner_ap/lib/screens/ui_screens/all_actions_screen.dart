@@ -153,19 +153,37 @@ class AllActionsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final sectionColor = isDark ? Colors.white38 : Colors.grey.shade500;
+    final titleColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final accentColor = isDark
+        ? const Color(0xFF2CA5E0)
+        : const Color(0xFF2CA5E0).withValues(alpha: 0.8);
 
-    Widget buildSectionHeader(String title) {
+    Widget buildSectionHeader(String title, IconData icon) {
       return Padding(
-        padding: const EdgeInsets.only(top: 16, bottom: 8),
-        child: Text(
-          title,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: sectionColor,
-            letterSpacing: 0.8,
-          ),
+        padding: const EdgeInsets.only(top: 20, bottom: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 4,
+              height: 18,
+              decoration: BoxDecoration(
+                color: accentColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Icon(icon, size: 18, color: accentColor),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: titleColor,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -175,7 +193,7 @@ class AllActionsScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          buildSectionHeader('СКАНИРОВАТЬ'),
+          buildSectionHeader('Сканировать', Icons.camera_alt_outlined),
 
           Row(
             children: [
@@ -305,7 +323,7 @@ class AllActionsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          buildSectionHeader('РЕДАКТИРОВАТЬ'),
+          buildSectionHeader('Редактировать', Icons.tune),
 
           Row(
             children: [
@@ -521,7 +539,7 @@ class AllActionsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          buildSectionHeader('ДЕЛИТЬСЯ'),
+          buildSectionHeader('Делиться', Icons.ios_share_outlined),
 
           Row(
             children: [
@@ -608,7 +626,7 @@ class AllActionsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
 
-          buildSectionHeader('Импорты'),
+          buildSectionHeader('Импорты', Icons.file_download_outlined),
 
           Row(
             children: [
@@ -641,7 +659,7 @@ class AllActionsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          buildSectionHeader('ИИ'),
+          buildSectionHeader('AI-инструменты', Icons.auto_awesome_outlined),
 
           Row(
             children: [

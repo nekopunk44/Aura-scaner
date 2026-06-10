@@ -217,18 +217,21 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     try {
       if (fileName.endsWith('.jpg') ||
           fileName.endsWith('.jpeg') ||
-          fileName.endsWith('.png')) {
+          fileName.endsWith('.png') ||
+          fileName.endsWith('.webp') ||
+          fileName.endsWith('.bmp')) {
         return await File(filePath).readAsBytes();
       } else if (fileName.endsWith('.pdf')) {
         return await generatePdfPreview(filePath);
       } else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
         return await generateDocxPreview(filePath);
-      } else if (fileName.endsWith('.txt')) {
+      }
+      // Любой текстовый формат (txt, md, csv, json, log, yaml, xml...)
+      // рисуем как text-preview — пользователь сразу видит первые строки
+      // вместо безликой иконки.
+      try {
         final content = await File(filePath).readAsString();
         return await _createTextPreview(content);
-      }
-      try {
-        return await File(filePath).readAsBytes();
       } catch (_) {
         return null;
       }
@@ -240,31 +243,55 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
 
   Future<Uint8List?> _createTextPreview(String content) async {
     try {
-      final text =
-          content.length > 100 ? '${content.substring(0, 100)}...' : content;
-      return await _textToImage(text);
+      // Берём первые ~12 не пустых строк — это даёт несколько заметных
+      // строк текста в превью, а не 100 склеенных символов в одну линию.
+      final lines = content
+          .split('\n')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .take(12)
+          .toList();
+      final preview = lines.join('\n');
+      return await _textToImage(preview);
     } catch (e) {
       return null;
     }
   }
 
   Future<Uint8List?> _textToImage(String text) async {
-    const double w = 150;
-    const double h = 150;
+    const double w = 220;
+    const double h = 220;
+    const double pad = 14;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));
+    // Светлая страница с тёмным текстом — выглядит как настоящий
+    // документ, а не «тёмная плашка с цифрами».
     canvas.drawRect(
       const Rect.fromLTWH(0, 0, w, h),
-      Paint()..color = const Color(0xFF1a2535),
+      Paint()..color = const Color(0xFFFAFCFF),
+    );
+    // Лента-акцент сверху — чтобы превью читалось как «документ».
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 0, w, 6),
+      Paint()..color = const Color(0xFF2CA5E0),
     );
     final paragraphBuilder = ui.ParagraphBuilder(
-      ui.ParagraphStyle(fontSize: 10, textDirection: TextDirection.ltr),
+      ui.ParagraphStyle(
+        fontSize: 10,
+        textDirection: TextDirection.ltr,
+        maxLines: 14,
+        ellipsis: '…',
+      ),
     )
-      ..pushStyle(ui.TextStyle(color: const Color(0xFFCCCCCC), fontSize: 10))
+      ..pushStyle(ui.TextStyle(
+        color: const Color(0xFF1A1A2E),
+        fontSize: 10,
+        height: 1.35,
+      ))
       ..addText(text);
     final paragraph = paragraphBuilder.build()
-      ..layout(const ui.ParagraphConstraints(width: w - 8));
-    canvas.drawParagraph(paragraph, const Offset(4, 4));
+      ..layout(const ui.ParagraphConstraints(width: w - pad * 2));
+    canvas.drawParagraph(paragraph, const Offset(pad, pad + 6));
     final picture = recorder.endRecording();
     final image = await picture.toImage(w.toInt(), h.toInt());
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -1057,23 +1084,13 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
       color: bgColor,
       child: Column(
         children: [
-          // Section title + search
+          // Search
           Padding(
             padding:
-                const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                const EdgeInsets.fromLTRB(20, 16, 20, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Мои файлы',
-                  style: TextStyle(
-                    color: textColor,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-                const SizedBox(height: 14),
                 Container(
                   decoration: BoxDecoration(
                     color: searchFill,
@@ -1235,44 +1252,16 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                     }),
           ),
 
-          // Import button
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            child: SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton.icon(
-                onPressed: () => _showImportOptions(context),
-                icon: const Icon(Icons.add_rounded, size: 20),
-                label: const Text(
-                  'Импорт',
-                  style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isDark
-                      ? Colors.white.withValues(alpha: 0.08)
-                      : const Color(0xFF2CA5E0).withValues(alpha: 0.1),
-                  foregroundColor: isDark
-                      ? Colors.white70
-                      : const Color(0xFF2CA5E0),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.12)
-                          : const Color(0xFF2CA5E0)
-                              .withValues(alpha: 0.3),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
+  }
+
+  /// Вызывается из AppBar родителя (app_tabs_screen) когда тапнули по
+  /// «+» — открывает тот же bottom-sheet выбора способа импорта.
+  void showImportOptions() {
+    if (!mounted) return;
+    _showImportOptions(context);
   }
 
   Widget _buildSkeletonList(bool isDark) {
