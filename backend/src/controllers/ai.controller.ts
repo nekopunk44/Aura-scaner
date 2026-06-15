@@ -5,7 +5,9 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import { logger } from '../utils/logger';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const AI_MODEL = 'google/gemma-4-31b-it:free';
+// Модель задаётся через env (OPENROUTER_MODEL). Должна быть vision-моделью —
+// запросы содержат image_url. Дефолт — google/gemma-3-27b-it:free.
+const AI_MODEL = env.openRouterModel;
 
 export async function analyzeDocument(req: AuthRequest, res: Response): Promise<void> {
   if (!env.openRouterApiKey) {
