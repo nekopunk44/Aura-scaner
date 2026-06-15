@@ -44,6 +44,7 @@ import 'highlight_screen.dart';
 import 'add_password_screen.dart';
 import 'remove_watermark_screen.dart';
 import 'document_ai_screen.dart';
+import 'settings_screen.dart';
 
 
 class CameraScreen extends StatefulWidget {
@@ -75,6 +76,7 @@ class _CameraScreenState extends State<CameraScreen>
   final GlobalKey _qrKey = GlobalKey(debugLabel: "QR");
   QRViewController? _qrController;
   Barcode? _qrResult;
+  bool _qrFlashOn = false;
   
 
   final List<Map<String, dynamic>> _features = [...cameraFeatures];
@@ -631,9 +633,20 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
 
-    const double itemWidth = 120.0;
-    const double viewportWidth = 360.0;
-    final double targetOffset = (index * itemWidth) - (viewportWidth / 2) + (itemWidth / 2);
+    // Значения ДОЛЖНЫ совпадать с _buildFeatureSelector: ширина тайла
+    // зависит от компактности экрана, а у ListView есть ведущий padding 12.
+    // Раньше здесь были захардкожены 120/360 — из-за завышенной itemWidth
+    // расчёт давал перелёт, и выбранный режим (например «Перевод») уезжал
+    // за левый край («вод» вместо «Перевод»).
+    final isCompact = MediaQuery.of(context).size.width < 360;
+    final double itemWidth = isCompact ? 72.0 : 84.0;
+    const double leadingPadding = 12.0;
+    final double viewportWidth =
+        _featureScrollController.position.viewportDimension;
+
+    // Центр выбранного тайла в координатах контента, центрируем в вьюпорте.
+    final double itemCenter = leadingPadding + index * itemWidth + itemWidth / 2;
+    final double targetOffset = itemCenter - (viewportWidth / 2);
 
     final maxOffset = _featureScrollController.position.maxScrollExtent;
     final minOffset = _featureScrollController.position.minScrollExtent;
@@ -677,6 +690,29 @@ class _CameraScreenState extends State<CameraScreen>
           ),
         );
       }
+    }
+  }
+
+  /// Открывает экран настроек приложения. Привязан к иконке-шестерёнке
+  /// во всех режимах камеры (раньше колбэк был пустым — иконка ничего не
+  /// делала).
+  void _openSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+    );
+  }
+
+  /// Фонарик в режиме QR работает через QRViewController (отдельный от
+  /// CameraController пакет qr_code_scanner_plus).
+  Future<void> _toggleQrFlash() async {
+    if (_qrController == null) return;
+    try {
+      await _qrController!.toggleFlash();
+      final status = await _qrController!.getFlashStatus();
+      if (mounted) setState(() => _qrFlashOn = status ?? !_qrFlashOn);
+    } catch (e) {
+      debugPrint('Ошибка переключения фонарика QR: $e');
     }
   }
 
@@ -797,22 +833,112 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Widget _buildQrCodeView() {
-    return Column(
+    final l10n = AppLocalizations.of(context);
+    return Stack(
       children: [
-        Expanded(
-          flex: 5,
+        // Камера сканера на весь экран.
+        Positioned.fill(
           child: QRView(
             key: _qrKey,
             onQRViewCreated: _onQrViewCreated,
           ),
         ),
-        Expanded(
-          flex: 1,
-          child: Center(
-            child: (
-                _qrResult != null)
-                ? Text("Barcode Data: ${_qrResult!.code}")
-                : const Text("Scan a code"),
+
+        // Рамка-видоискатель по центру (как на экране Паспорт).
+        Center(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final side = constraints.maxWidth * 0.7;
+              return Container(
+                width: side,
+                height: side,
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: _qrResult != null
+                        ? Colors.greenAccent
+                        : Colors.white,
+                    width: 3,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              );
+            },
+          ),
+        ),
+
+        // Верхняя панель: назад, фонарик, настройки.
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: const Icon(Icons.arrow_back,
+                        color: Colors.white, size: 28),
+                  ),
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: _toggleQrFlash,
+                        child: Icon(
+                          _qrFlashOn ? Icons.flash_on : Icons.flash_off,
+                          color: Colors.white,
+                          size: 26,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: _openSettings,
+                        child: const Icon(Icons.settings,
+                            color: Colors.white, size: 26),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // Нижняя полупрозрачная плашка с результатом/подсказкой.
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            padding: EdgeInsets.fromLTRB(
+              24,
+              20,
+              24,
+              20 + MediaQuery.of(context).padding.bottom,
+            ),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0),
+                  Colors.black.withValues(alpha: 0.6),
+                ],
+              ),
+            ),
+            child: Text(
+              _qrResult != null ? _qrResult!.code ?? '' : l10n.qrScanHint,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ),
       ],
@@ -1055,7 +1181,7 @@ class _CameraScreenState extends State<CameraScreen>
         setCaptureModeAuto: _setCaptureModeAuto,
         setCaptureModeManual: _setCaptureModeManual,
         onBack: () => Navigator.pop(context),
-        onSettings: () {},
+        onSettings: _openSettings,
       ),
       'Удостоверение личности': () => IdCardCameraView(
         cameraController: _cameraController,
@@ -1069,7 +1195,7 @@ class _CameraScreenState extends State<CameraScreen>
         setCaptureModeAuto: _setCaptureModeAuto,
         setCaptureModeManual: _setCaptureModeManual,
         onBack: () => Navigator.pop(context),
-        onSettings: () {},
+        onSettings: _openSettings,
       ),
       'Документ': () => MultiPageDocumentView(
         cameraController: _cameraController,
@@ -1081,7 +1207,7 @@ class _CameraScreenState extends State<CameraScreen>
         setCaptureModeAuto: _setCaptureModeAuto,
         setCaptureModeManual: _setCaptureModeManual,
         onBack: () => Navigator.pop(context),
-        onSettings: () {},
+        onSettings: _openSettings,
         currentBatchPageCount: _currentBatchPageCount,
         onFinishBatch: _onFinishBatch,
         onClearBatch: _onClearBatch,
@@ -1096,7 +1222,7 @@ class _CameraScreenState extends State<CameraScreen>
         setCaptureModeAuto: _setCaptureModeAuto,
         setCaptureModeManual: _setCaptureModeManual,
         onBack: () => Navigator.pop(context),
-        onSettings: () {},
+        onSettings: _openSettings,
         currentBatchPageCount: _currentBatchPageCount,
         onFinishBatch: _onFinishBatch,
         onClearBatch: _onClearBatch,
@@ -1106,7 +1232,7 @@ class _CameraScreenState extends State<CameraScreen>
         takePicture: _takePictureForTranslation,
         pickImageFromGallery: _pickImageFromGallery,
         onBack: () => Navigator.pop(context),
-        onSettings: () {},
+        onSettings: _openSettings,
         onScanCompleted: widget.onScanCompleted,
         captureModeController: captureModeController,
         isDocumentDetected: _isDocumentDetected,
