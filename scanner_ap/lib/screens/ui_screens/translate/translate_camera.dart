@@ -45,6 +45,100 @@ class _TranslateCameraState extends State<TranslateCamera> {
   String? _shownText;
   bool _isProcessing = false;
 
+  /// Целевой язык перевода. Источник определяется автоматически в
+  /// TranslationApi, а цель выбирает пользователь. По умолчанию — русский.
+  String _targetLang = 'ru';
+
+  /// Состояние фонарика (для иконки). Сам фонарик — через CameraController.
+  bool _flashOn = false;
+
+  Future<void> _toggleFlash() async {
+    final controller = widget.cameraController;
+    if (controller == null || !controller.value.isInitialized) return;
+    try {
+      final on = controller.value.flashMode == FlashMode.torch;
+      await controller.setFlashMode(on ? FlashMode.off : FlashMode.torch);
+      if (mounted) setState(() => _flashOn = !on);
+    } catch (e) {
+      debugPrint('Ошибка фонарика (перевод): $e');
+    }
+  }
+
+  /// Поддерживаемые целевые языки (коды совпадают с _mapLanguageCode в
+  /// TranslationApi). Названия — на родном языке, переводить их не нужно.
+  static const Map<String, String> _languages = {
+    'ru': 'Русский',
+    'en': 'English',
+    'es': 'Español',
+    'fr': 'Français',
+    'de': 'Deutsch',
+    'it': 'Italiano',
+    'pt': 'Português',
+    'pl': 'Polski',
+    'tr': 'Türkçe',
+    'ar': 'العربية',
+    'zh': '中文',
+    'ja': '日本語',
+    'ko': '한국어',
+  };
+
+  void _showLanguagePicker() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1E2A3A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  'Перевести на',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: _languages.entries.map((e) {
+                    final selected = e.key == _targetLang;
+                    return ListTile(
+                      title: Text(
+                        e.value,
+                        style: TextStyle(
+                          color: selected
+                              ? const Color(0xFF2CA5E0)
+                              : Colors.white,
+                          fontWeight:
+                              selected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      trailing: selected
+                          ? const Icon(Icons.check, color: Color(0xFF2CA5E0))
+                          : null,
+                      onTap: () {
+                        setState(() => _targetLang = e.key);
+                        Navigator.pop(sheetContext);
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _translateImage() async {
     if (widget.cameraController == null ||
         !widget.cameraController!.value.isInitialized ||
@@ -82,7 +176,10 @@ class _TranslateCameraState extends State<TranslateCamera> {
 
       debugPrint('Распознанный текст: $recognizedText');
 
-      final translatedText = await TranslationApi.translateText(recognizedText);
+      final translatedText = await TranslationApi.translateText(
+        recognizedText,
+        targetLanguage: _targetLang,
+      );
 
       setState(() {
         _shownText = translatedText ?? 'Ошибка перевода';
@@ -134,7 +231,10 @@ class _TranslateCameraState extends State<TranslateCamera> {
         return;
       }
 
-      final translatedText = await TranslationApi.translateText(recognizedText);
+      final translatedText = await TranslationApi.translateText(
+        recognizedText,
+        targetLanguage: _targetLang,
+      );
 
       if (!mounted) return;
       setState(() {
@@ -169,6 +269,28 @@ class _TranslateCameraState extends State<TranslateCamera> {
             child: IconButton(
               icon: const Icon(Icons.arrow_back, color: Colors.white, size: 30),
               onPressed: () => widget.onBack(),
+            ),
+          ),
+
+          // Фонарик + настройки (справа вверху, как на экране Паспорт).
+          Positioned(
+            top: 50,
+            right: 12,
+            child: Row(
+              children: [
+                IconButton(
+                  icon: Icon(
+                    _flashOn ? Icons.flash_on : Icons.flash_off,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                  onPressed: _isProcessing ? null : _toggleFlash,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.settings, color: Colors.white, size: 26),
+                  onPressed: () => widget.onSettings(),
+                ),
+              ],
             ),
           ),
 
@@ -207,45 +329,111 @@ class _TranslateCameraState extends State<TranslateCamera> {
             ),
           ),
 
+          // Нижний бар: затемнение-градиент (как на остальных экранах
+          // камеры через CameraControlsBar), внутри — галерея слева,
+          // кнопка перевода по центру, выбор языка справа.
           Positioned(
-            bottom: 50,
-            left: 30,
-            child: GestureDetector(
-              onTap: _isProcessing ? null : _pickImageAndTranslate,
-              child: Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(
-                    color: _isProcessing ? Colors.grey : Colors.white,
-                    width: 2,
-                  ),
-                ),
-                child: Center(
-                  child: Icon(
-                    Icons.photo_library,
-                    color: _isProcessing ? Colors.grey : Colors.white,
-                    size: 30,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          Positioned(
-            bottom: 50,
+            bottom: 0,
             left: 0,
             right: 0,
-            child: Align(
-              alignment: Alignment.center,
-              child: FloatingActionButton(
-                onPressed: _isProcessing ? null : _translateImage,
-                backgroundColor: _isProcessing ? Colors.grey : Colors.blue,
-                child: _isProcessing
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Icon(Icons.translate, size: 30),
+            child: Container(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                24,
+                24,
+                24 + MediaQuery.of(context).padding.bottom,
+              ),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0),
+                    Colors.black.withValues(alpha: 0.6),
+                  ],
+                ),
+              ),
+              child: SizedBox(
+                height: 64,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Галерея — слева
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: GestureDetector(
+                        onTap: _isProcessing ? null : _pickImageAndTranslate,
+                        child: Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(28),
+                            border: Border.all(
+                              color: _isProcessing ? Colors.grey : Colors.white,
+                              width: 2,
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.photo_library,
+                            color: _isProcessing ? Colors.grey : Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Кнопка перевода — по центру
+                    FloatingActionButton(
+                      heroTag: 'translateFab',
+                      onPressed: _isProcessing ? null : _translateImage,
+                      backgroundColor:
+                          _isProcessing ? Colors.grey : const Color(0xFF2CA5E0),
+                      child: _isProcessing
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Icon(Icons.translate, size: 30),
+                    ),
+
+                    // Выбор целевого языка — справа
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: GestureDetector(
+                        onTap: _isProcessing ? null : _showLanguagePicker,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.4),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.language,
+                                  color: Colors.white, size: 18),
+                              const SizedBox(width: 6),
+                              Text(
+                                _languages[_targetLang] ?? _targetLang,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const Icon(Icons.arrow_drop_down,
+                                  color: Colors.white, size: 18),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

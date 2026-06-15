@@ -20,7 +20,15 @@ import 'package:flutter/foundation.dart';
 ///
 /// Все методы статические — создавать экземпляр не нужно.
 class TranslationApi {
-  static Future<String?> translateText(String recognizedText) async {
+  /// Переводит [recognizedText]. Исходный язык определяется автоматически.
+  ///
+  /// [targetLanguage] — код целевого языка (например 'ru', 'en', 'es').
+  /// Если не задан, сохраняется прежнее авто-поведение: en→ru, ru→en,
+  /// остальное→en.
+  static Future<String?> translateText(
+    String recognizedText, {
+    String? targetLanguage,
+  }) async {
     try {
       debugPrint('=' * 60);
       debugPrint('НАЧАЛО ПЕРЕВОДА');
@@ -71,27 +79,28 @@ class TranslationApi {
       }
 
       // Выбор целевого языка:
-      // - English source → Russian target
-      // - Russian source → English target
-      // - Anything else  → English target
-      final String targetLanguage;
-      if (sourceLanguage == 'en') {
-        targetLanguage = 'ru';
+      // - если пользователь выбрал язык явно — используем его;
+      // - иначе авто: en→ru, ru→en, остальное→en.
+      final String resolvedTarget;
+      if (targetLanguage != null && targetLanguage.trim().isNotEmpty) {
+        resolvedTarget = targetLanguage.trim().toLowerCase();
+      } else if (sourceLanguage == 'en') {
+        resolvedTarget = 'ru';
       } else if (sourceLanguage == 'ru') {
-        targetLanguage = 'en';
+        resolvedTarget = 'en';
       } else {
-        targetLanguage = 'en';
+        resolvedTarget = 'en';
       }
 
-      if (sourceLanguage == targetLanguage) {
+      if (sourceLanguage == resolvedTarget) {
         debugPrint('Source == target, перевод не нужен');
         return _formatOutput(cleanedText);
       }
 
       debugPrint('\n=== ВЫПОЛНЕНИЕ ПЕРЕВОДА ===');
-      debugPrint('Исходный текст ($sourceLanguage → $targetLanguage): ${_getPreview(cleanedText)}');
+      debugPrint('Исходный текст ($sourceLanguage → $resolvedTarget): ${_getPreview(cleanedText)}');
 
-      final translatedText = await _performTranslation(cleanedText, sourceLanguage, targetLanguage);
+      final translatedText = await _performTranslation(cleanedText, sourceLanguage, resolvedTarget);
 
       if (translatedText == null) {
         debugPrint('Перевод не удался, возвращаем оригинал');
