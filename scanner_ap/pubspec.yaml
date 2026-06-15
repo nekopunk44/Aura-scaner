@@ -136,6 +136,10 @@ flutter:
   assets:
      - assets/images/
      - assets/tessdata/
+     # Конфиг со списком моделей для flutter_tesseract_ocr. Без него пакет
+     # не находит tessdata, Tesseract падает, и OCR уходит в fallback на
+     # ML Kit Latin (кириллица превращается в мусор).
+     - assets/tessdata_config.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
