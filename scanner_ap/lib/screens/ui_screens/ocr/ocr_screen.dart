@@ -9,7 +9,12 @@ import '../translate/apis/recognition_api.dart';
 import '../../../l10n/app_localizations.dart';
 
 class OcrScreen extends StatefulWidget {
-  const OcrScreen({super.key});
+  /// Если задано — экран открывается сразу с этим изображением и
+  /// автоматически запускает распознавание (используется при заходе из
+  /// OCR-камеры, где фото уже снято/выбрано).
+  final File? initialImage;
+
+  const OcrScreen({super.key, this.initialImage});
 
   @override
   State<OcrScreen> createState() => _OcrScreenState();
@@ -20,6 +25,17 @@ class _OcrScreenState extends State<OcrScreen> {
   String? _recognizedText;
   bool _isProcessing = false;
   final ImagePicker _picker = ImagePicker();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialImage != null) {
+      _selectedImage = widget.initialImage;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _extractText(widget.initialImage!);
+      });
+    }
+  }
 
   Future<void> _pickImage(ImageSource source) async {
     final XFile? image = await _picker.pickImage(source: source);

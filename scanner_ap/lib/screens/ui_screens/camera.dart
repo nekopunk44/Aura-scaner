@@ -19,6 +19,7 @@
 //- [importedDocumentPath] — путь к файлу при открытии через импорт
 //- [onScanCompleted] — колбэк после завершения сканирования
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
@@ -37,6 +38,7 @@ import 'translate/translate_camera.dart';
 import '+10 ten page/plus_ten_page_camera.dart';
 import 'importDocument/document_importer.dart';
 import 'ocr/ocr_screen.dart';
+import 'ocr/ocr_camera_view.dart';
 import 'signature/home_screen.dart' as sig;
 import 'color_adjustment_screen.dart';
 import 'remove_spots_screen.dart';
@@ -134,7 +136,9 @@ class _CameraScreenState extends State<CameraScreen>
 
     if (_importedDocumentPath == null && _selectedFeature != 'Сканер qr-код') {
       _initializeCamera();
-      if (_selectedFeature != 'Перевод') {
+      // Для «Перевод» и «OCR» детекция документа не нужна: захват ручной,
+      // а активный image-stream помешал бы takePicture().
+      if (_selectedFeature != 'Перевод' && _selectedFeature != 'OCR') {
         Future.delayed(const Duration(milliseconds: 300), _startDocumentDetectionStream);
       }
     }
@@ -549,6 +553,41 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  /// Открывает OCR-экран с уже снятым/выбранным изображением и
+  /// автозапуском распознавания.
+  Future<void> _runOcrWith(XFile file) async {
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OcrScreen(initialImage: File(file.path)),
+      ),
+    );
+    if (mounted) unawaited(_ensureCameraReady());
+  }
+
+  /// Съёмка в режиме OCR. Детекция документа для OCR не запускается
+  /// (см. условия в initState и селекторе), поэтому image-stream не
+  /// активен и takePicture() не конфликтует с ним.
+  Future<void> _captureForOcr() async {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      return;
+    }
+    try {
+      final XFile file = await _cameraController!.takePicture();
+      await _runOcrWith(file);
+    } catch (e) {
+      debugPrint('Ошибка съёмки (OCR): $e');
+    }
+  }
+
+  Future<void> _pickImageForOcr() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+    await _runOcrWith(image);
+  }
+
   Future<void> _openPreview({
     required XFile imageFile,
     XFile? secondImageFile,
@@ -748,16 +787,7 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   bool _openToolFeature(Map<String, dynamic> feature) {
-    final String name = feature['name'] as String;
     final IconData? icon = feature['icon'] as IconData?;
-
-    if (name == 'OCR') {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const OcrScreen()),
-      ).then(_afterToolReturn);
-      return true;
-    }
 
     if (icon == Icons.edit) {
       Navigator.push(
@@ -1024,8 +1054,8 @@ class _CameraScreenState extends State<CameraScreen>
                 }
 
                 
-                if (newFeature != 'Перевод') {
-                  
+                if (newFeature != 'Перевод' && newFeature != 'OCR') {
+
                   Future.delayed(const Duration(milliseconds: 500), _startDocumentDetectionStream);
                 } else {
                   captureModeController.resetDetectionState();
@@ -1239,6 +1269,13 @@ class _CameraScreenState extends State<CameraScreen>
         isScanning: _isScanning,
         setCaptureModeAuto: _setCaptureModeAuto,
         setCaptureModeManual: _setCaptureModeManual,
+      ),
+      'OCR': () => OcrCameraView(
+        cameraController: _cameraController,
+        onCapture: _captureForOcr,
+        onPickGallery: _pickImageForOcr,
+        onBack: () => Navigator.pop(context),
+        onSettings: _openSettings,
       ),
       'Сканер qr-код': () => _buildQrCodeView(),
     };
