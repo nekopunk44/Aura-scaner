@@ -53,20 +53,36 @@ const corsDevDefaults =
     : ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000'];
 const allowedOrigins = new Set<string>([...corsAllowed, ...corsDevDefaults]);
 
-app.use(
-  cors({
-    origin(origin, cb) {
-      // Нет Origin — нативный клиент или server-to-server, пропускаем
-      if (!origin) return cb(null, true);
-      if (allowedOrigins.has(origin)) return cb(null, true);
-      logger.warn('[cors] Blocked origin: %s', origin);
-      cb(new Error(`CORS: origin ${origin} не разрешён`));
-    },
+// Delegate-форма (с доступом к req): разрешаем same-origin запросы.
+// Страницы Telegram/VK-логина отдаёт сам бэкенд, и они POST'ят обратно
+// на свой же хост (/auth/telegram/exchange и т.п.) — браузер при этом
+// шлёт Origin, и без этой проверки CORS их резал.
+const corsDelegate: cors.CorsOptionsDelegate<express.Request> = (req, cb) => {
+  const base: cors.CorsOptions = {
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-  }),
-);
+  };
+  const origin = req.headers.origin;
+
+  // Нет Origin — нативный клиент или server-to-server, пропускаем.
+  if (!origin) return cb(null, { ...base, origin: true });
+  // Явный whitelist из CORS_ALLOWED_ORIGINS.
+  if (allowedOrigins.has(origin)) return cb(null, { ...base, origin: true });
+  // Same-origin: за прокси (Railway) внутренний протокол http, а внешний
+  // https — поэтому сравниваем только host, без схемы.
+  try {
+    if (new URL(origin).host === req.headers.host) {
+      return cb(null, { ...base, origin: true });
+    }
+  } catch {
+    // битый Origin — провалится в отказ ниже
+  }
+  logger.warn('[cors] Blocked origin: %s', origin);
+  cb(new Error(`CORS: origin ${origin} не разрешён`));
+};
+
+app.use(cors(corsDelegate));
 
 // HTTP request logging через Morgan → Winston
 app.use(morgan('combined', { stream: { write: (msg) => logger.http(msg.trim()) } }));

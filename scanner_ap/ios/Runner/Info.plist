@@ -44,6 +44,8 @@
 	<string>Для импорта и экспорта документов</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Для сохранения отсканированных документов</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Для входа в приложение по Face ID</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Motion usage description</string>
 	<key>LSRequiresIPhoneOS</key>

@@ -1,0 +1,131 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Фон-вариант 1: «северное сияние» — размытые цветные ленты, обыгрывают название Aura -->
+  <defs>
+    <linearGradient id="bgBase" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#141428"/>
+      <stop offset="0.5" stop-color="#121E3A"/>
+      <stop offset="1" stop-color="#0D2C4F"/>
+    </linearGradient>
+    <linearGradient id="rib1" x1="0" y1="120" x2="512" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7B5CFF"/>
+      <stop offset="1" stop-color="#2CA5E0"/>
+    </linearGradient>
+    <linearGradient id="rib2" x1="0" y1="420" x2="512" y2="470" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2CA5E0"/>
+      <stop offset="1" stop-color="#5BE0D5"/>
+    </linearGradient>
+    <radialGradient id="vignette" cx="256" cy="246" r="330" gradientUnits="userSpaceOnUse">
+      <stop offset="0.55" stop-color="#06101F" stop-opacity="0"/>
+      <stop offset="1" stop-color="#06101F" stop-opacity="0.5"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="256" cy="262" r="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0.4" stop-color="#2CA5E0" stop-opacity="0.30"/>
+      <stop offset="0.75" stop-color="#2CA5E0" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#2CA5E0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="paper" x1="186" y1="152" x2="330" y2="372" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E9F2FC"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="100" y1="262" x2="412" y2="262" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2CA5E0" stop-opacity="0"/>
+      <stop offset="0.18" stop-color="#2CA5E0" stop-opacity="0.65"/>
+      <stop offset="0.5" stop-color="#9FE0FF"/>
+      <stop offset="0.82" stop-color="#2CA5E0" stop-opacity="0.65"/>
+      <stop offset="1" stop-color="#2CA5E0" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="ribBlur" x="-200" y="-200" width="912" height="912" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+    <filter id="paperShadow" x="100" y="80" width="320" height="400" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#06101F" flood-opacity="0.55"/>
+    </filter>
+    <filter id="beamGlow" x="72" y="206" width="368" height="112" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
+    <filter id="holoGlow" x="140" y="60" width="260" height="240" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+    <path id="pageShape" d="M202 152 H268 L330 214 V356 Q330 372 314 372 H202 Q186 372 186 356 V168 Q186 152 202 152 Z"/>
+    <clipPath id="clipBelowBeam"><rect x="0" y="262" width="512" height="250"/></clipPath>
+    <clipPath id="clipAboveBeam"><rect x="0" y="0" width="512" height="262"/></clipPath>
+    <clipPath id="clipPage"><use href="#pageShape"/></clipPath>
+    <clipPath id="roundClip"><rect width="512" height="512" rx="116"/></clipPath>
+  </defs>
+
+  <!-- ФОН: база + ленты сияния + редкие звёзды + виньетка -->
+  <g clip-path="url(#roundClip)">
+    <rect width="512" height="512" fill="url(#bgBase)"/>
+    <path d="M-80 170 C 60 60, 240 30, 380 70 C 470 96, 540 90, 600 60"
+          stroke="url(#rib1)" stroke-width="90" stroke-linecap="round" fill="none"
+          opacity="0.34" filter="url(#ribBlur)"/>
+    <path d="M-60 120 C 80 30, 250 10, 420 40"
+          stroke="#7B5CFF" stroke-width="36" stroke-linecap="round" fill="none"
+          opacity="0.22" filter="url(#ribBlur)"/>
+    <path d="M-80 430 C 100 500, 320 510, 600 420"
+          stroke="url(#rib2)" stroke-width="80" stroke-linecap="round" fill="none"
+          opacity="0.26" filter="url(#ribBlur)"/>
+    <g fill="#FFFFFF">
+      <circle cx="86"  cy="84"  r="2"   fill-opacity="0.55"/>
+      <circle cx="430" cy="64"  r="1.6" fill-opacity="0.4"/>
+      <circle cx="470" cy="170" r="2.2" fill-opacity="0.5"/>
+      <circle cx="58"  cy="300" r="1.4" fill-opacity="0.35"/>
+      <circle cx="448" cy="382" r="1.8" fill-opacity="0.4"/>
+      <circle cx="120" cy="448" r="2"   fill-opacity="0.45"/>
+      <circle cx="380" cy="452" r="1.4" fill-opacity="0.3"/>
+      <circle cx="252" cy="52"  r="1.5" fill-opacity="0.45"/>
+    </g>
+    <rect width="512" height="512" fill="url(#vignette)"/>
+  </g>
+
+  <!-- аура -->
+  <circle cx="256" cy="262" r="205" fill="url(#glow)"/>
+  <g stroke-linecap="round" fill="none">
+    <circle cx="256" cy="262" r="152" stroke="#5BC0EF" stroke-opacity="0.6" stroke-width="6"
+            stroke-dasharray="210 70 380 70" transform="rotate(-18 256 262)"/>
+    <circle cx="256" cy="262" r="180" stroke="#2CA5E0" stroke-opacity="0.26" stroke-width="4"
+            stroke-dasharray="120 90 300 90" transform="rotate(34 256 262)"/>
+  </g>
+
+  <!-- ниже луча: бумага -->
+  <g clip-path="url(#clipBelowBeam)">
+    <g transform="rotate(-7 258 262)">
+      <g filter="url(#paperShadow)">
+        <use href="#pageShape" fill="url(#paper)"/>
+      </g>
+      <rect x="200" y="296" width="112" height="12" rx="6" fill="#CBD8EA"/>
+      <rect x="200" y="320" width="94" height="12" rx="6" fill="#CBD8EA"/>
+      <rect x="200" y="344" width="64" height="12" rx="6" fill="#CBD8EA"/>
+    </g>
+  </g>
+
+  <!-- выше луча: голограмма -->
+  <g clip-path="url(#clipAboveBeam)">
+    <g transform="rotate(-7 258 262)">
+      <use href="#pageShape" fill="none" stroke="#5BC0EF" stroke-width="6"
+           stroke-opacity="0.5" filter="url(#holoGlow)"/>
+      <use href="#pageShape" fill="#2CA5E0" fill-opacity="0.10"
+           stroke="#7FD4FF" stroke-width="3"/>
+      <g clip-path="url(#clipPage)" stroke="#5BC0EF" stroke-width="1.5" stroke-opacity="0.35">
+        <path d="M214 140 V270"/><path d="M242 140 V270"/><path d="M270 140 V270"/>
+        <path d="M298 140 V270"/><path d="M326 140 V270"/>
+        <path d="M180 176 H340"/><path d="M180 200 H340"/><path d="M180 224 H340"/>
+      </g>
+      <rect x="200" y="214" width="112" height="12" rx="6" fill="#7FD4FF" fill-opacity="0.9"/>
+      <rect x="200" y="238" width="88" height="12" rx="6" fill="#7FD4FF" fill-opacity="0.9"/>
+      <rect x="284" y="148" width="14" height="14" rx="4" fill="#9FE0FF" fill-opacity="0.9"/>
+      <rect x="306" y="164" width="11" height="11" rx="3" fill="#7FC6EC" fill-opacity="0.8"/>
+      <rect x="302" y="130" width="10" height="10" rx="3" fill="#9FE0FF" fill-opacity="0.7"/>
+      <rect x="324" y="146" width="8" height="8" rx="2.5" fill="#9FE0FF" fill-opacity="0.6"/>
+      <rect x="320" y="112" width="6" height="6" rx="2" fill="#7FC6EC" fill-opacity="0.5"/>
+      <rect x="342" y="130" width="5" height="5" rx="1.5" fill="#2CA5E0" fill-opacity="0.45"/>
+    </g>
+  </g>
+
+  <!-- луч -->
+  <rect x="104" y="252" width="304" height="20" rx="10" fill="url(#beam)" opacity="0.6" filter="url(#beamGlow)"/>
+  <rect x="104" y="256" width="304" height="12" rx="6" fill="url(#beam)"/>
+  <rect x="164" y="259" width="184" height="6" rx="3" fill="#FFFFFF" fill-opacity="0.85"/>
+  <circle cx="104" cy="262" r="7" fill="#9FE0FF"/>
+  <circle cx="408" cy="262" r="7" fill="#9FE0FF"/>
+</svg>

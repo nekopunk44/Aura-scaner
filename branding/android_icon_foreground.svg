@@ -1,0 +1,65 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Адаптивная иконка Android: слой ПЕРЕДНЕГО ПЛАНА (прозрачный фон, знак в безопасной зоне 66%) -->
+  <defs>
+    <radialGradient id="glow" cx="256" cy="260" r="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0.4" stop-color="#2CA5E0" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#2CA5E0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="paper" x1="166" y1="130" x2="346" y2="390" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E9F2FC"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="96" y1="262" x2="416" y2="262" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2CA5E0" stop-opacity="0"/>
+      <stop offset="0.15" stop-color="#2CA5E0" stop-opacity="0.7"/>
+      <stop offset="0.5" stop-color="#9FE0FF"/>
+      <stop offset="0.85" stop-color="#2CA5E0" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#2CA5E0" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="paperShadow" x="80" y="60" width="360" height="440" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#06101F" flood-opacity="0.55"/>
+    </filter>
+    <filter id="beamGlow" x="60" y="200" width="392" height="124" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+    <path id="pageShape" d="M186 130 H296 L346 180 V370 Q346 390 326 390 H186 Q166 390 166 370 V150 Q166 130 186 130 Z"/>
+    <clipPath id="clipBelowBeam"><rect x="0" y="262" width="512" height="250"/></clipPath>
+    <clipPath id="clipAboveBeam"><rect x="0" y="0" width="512" height="262"/></clipPath>
+  </defs>
+
+  <!-- знак ужат на 8%, чтобы кольцо гарантированно влезло в безопасную зону -->
+  <g transform="translate(20.48 20.8) scale(0.92)">
+    <circle cx="256" cy="260" r="200" fill="url(#glow)"/>
+    <circle cx="256" cy="260" r="158" stroke="#5BC0EF" stroke-opacity="0.7" stroke-width="10"
+            stroke-linecap="round" fill="none"
+            stroke-dasharray="330 90 480 90" transform="rotate(-20 256 260)"/>
+
+    <g clip-path="url(#clipBelowBeam)">
+      <g transform="rotate(-6 256 260)">
+        <g filter="url(#paperShadow)">
+          <use href="#pageShape" fill="url(#paper)"/>
+        </g>
+        <rect x="186" y="292" width="124" height="20" rx="10" fill="#C3D2E6"/>
+        <rect x="186" y="328" width="88" height="20" rx="10" fill="#C3D2E6"/>
+      </g>
+    </g>
+
+    <g clip-path="url(#clipAboveBeam)">
+      <g transform="rotate(-6 256 260)">
+        <use href="#pageShape" fill="#2CA5E0" fill-opacity="0.16"
+             stroke="#8FE0FF" stroke-width="11"/>
+        <rect x="186" y="188" width="124" height="20" rx="10" fill="#7FD4FF"/>
+        <rect x="186" y="224" width="92" height="20" rx="10" fill="#7FD4FF"/>
+        <rect x="312" y="116" width="20" height="20" rx="6" fill="#9FE0FF"/>
+        <rect x="342" y="142" width="14" height="14" rx="4" fill="#7FC6EC"/>
+        <rect x="336" y="96" width="11" height="11" rx="3" fill="#7FC6EC" fill-opacity="0.8"/>
+      </g>
+    </g>
+
+    <rect x="100" y="250" width="312" height="24" rx="12" fill="url(#beam)" opacity="0.6" filter="url(#beamGlow)"/>
+    <rect x="100" y="253" width="312" height="18" rx="9" fill="url(#beam)"/>
+    <rect x="160" y="258" width="192" height="8" rx="4" fill="#FFFFFF" fill-opacity="0.9"/>
+    <circle cx="100" cy="262" r="9" fill="#9FE0FF"/>
+    <circle cx="412" cy="262" r="9" fill="#9FE0FF"/>
+  </g>
+</svg>

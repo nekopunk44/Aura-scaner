@@ -1,0 +1,18 @@
+# Шаблон параметров релизного keystore.
+#
+# 1. Сгенерируй upload-ключ (один раз, храни .jks в надёжном месте — НЕ в гите):
+#
+#    keytool -genkey -v -keystore upload-keystore.jks \
+#      -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+# 2. Скопируй этот файл в android/key.properties и впиши реальные значения.
+#    key.properties и *.jks уже в .gitignore — они НЕ попадут в репозиторий.
+#
+# 3. Потеря этого keystore = невозможность обновлять приложение в сторе.
+#    Сделай резервную копию (или включи Google Play App Signing).
+
+storePassword=ПАРОЛЬ_ОТ_ХРАНИЛИЩА
+keyPassword=ПАРОЛЬ_ОТ_КЛЮЧА
+keyAlias=upload
+# Путь к .jks — абсолютный или относительно папки android/
+storeFile=upload-keystore.jks

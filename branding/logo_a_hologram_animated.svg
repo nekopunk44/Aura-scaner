@@ -1,0 +1,194 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Вариант A-holo LIVE: луч ездит по странице, граница «бумага → голограмма» движется вместе с ним.
+       Открывать в браузере — превью VS Code может не проиграть анимацию. -->
+  <style>
+    /* луч и обе клип-маски движутся синхронно — граница превращения едет с лучом */
+    @keyframes scan { 0%, 100% { transform: translateY(-58px); } 50% { transform: translateY(62px); } }
+    .scanSync { animation: scan 4.2s ease-in-out infinite; }
+
+    @keyframes spin    { to { transform: rotate(360deg); } }
+    @keyframes spinRev { to { transform: rotate(-360deg); } }
+    .ring1 { animation: spin 30s linear infinite;    transform-origin: 256px 262px; }
+    .ring2 { animation: spinRev 44s linear infinite; transform-origin: 256px 262px; }
+    .orbit { animation: spin 14s linear infinite;    transform-origin: 256px 262px; }
+
+    @keyframes pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+    .glowPulse { animation: pulse 4.2s ease-in-out infinite; }
+    .emitter   { animation: pulse 1.4s ease-in-out infinite; }
+
+    /* голограмма слегка «шумит», как настоящая проекция */
+    @keyframes flicker {
+      0%, 100% { opacity: 1; }
+      6%  { opacity: 0.72; } 8%  { opacity: 1; }
+      42% { opacity: 0.88; } 44% { opacity: 1; }
+      71% { opacity: 0.78; } 73% { opacity: 1; }
+    }
+    .holo { animation: flicker 4.2s linear infinite; }
+
+    @keyframes floatUp {
+      0%   { opacity: 0; transform: translate(-8px, 18px); }
+      25%  { opacity: 1; }
+      100% { opacity: 0; transform: translate(12px, -34px); }
+    }
+    .p { animation: floatUp 2.8s ease-out infinite; }
+    .p2 { animation-delay: 0.4s; } .p3 { animation-delay: 0.8s; }
+    .p4 { animation-delay: 1.2s; } .p5 { animation-delay: 1.6s; }
+    .p6 { animation-delay: 2.0s; } .p7 { animation-delay: 2.4s; }
+  </style>
+  <defs>
+    <radialGradient id="bgDeep" cx="256" cy="232" r="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1F4068"/>
+      <stop offset="0.45" stop-color="#152A4A"/>
+      <stop offset="0.8" stop-color="#0E1B33"/>
+      <stop offset="1" stop-color="#0A1322"/>
+    </radialGradient>
+    <radialGradient id="vignette" cx="256" cy="246" r="330" gradientUnits="userSpaceOnUse">
+      <stop offset="0.6" stop-color="#050D1A" stop-opacity="0"/>
+      <stop offset="1" stop-color="#050D1A" stop-opacity="0.55"/>
+    </radialGradient>
+    <filter id="starBlur" x="0" y="0" width="512" height="512" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="1"/>
+    </filter>
+    <clipPath id="roundClip"><rect width="512" height="512" rx="116"/></clipPath>
+    <radialGradient id="glow" cx="256" cy="262" r="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0.4" stop-color="#2CA5E0" stop-opacity="0.30"/>
+      <stop offset="0.75" stop-color="#2CA5E0" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#2CA5E0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="paper" x1="186" y1="152" x2="330" y2="372" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E9F2FC"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="100" y1="262" x2="412" y2="262" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2CA5E0" stop-opacity="0"/>
+      <stop offset="0.18" stop-color="#2CA5E0" stop-opacity="0.65"/>
+      <stop offset="0.5" stop-color="#9FE0FF"/>
+      <stop offset="0.82" stop-color="#2CA5E0" stop-opacity="0.65"/>
+      <stop offset="1" stop-color="#2CA5E0" stop-opacity="0"/>
+    </linearGradient>
+    <!-- шлейф оцифровки, тянется вверх от луча -->
+    <linearGradient id="wake" x1="256" y1="212" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9FE0FF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#9FE0FF" stop-opacity="0.28"/>
+    </linearGradient>
+    <filter id="paperShadow" x="100" y="80" width="320" height="400" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#06101F" flood-opacity="0.55"/>
+    </filter>
+    <filter id="beamGlow" x="40" y="120" width="432" height="284" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
+    <filter id="holoGlow" x="120" y="40" width="300" height="420" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+
+    <path id="pageShape" d="M202 152 H268 L330 214 V356 Q330 372 314 372 H202 Q186 372 186 356 V168 Q186 152 202 152 Z"/>
+    <!-- клип-маски двигаются той же анимацией, что и луч -->
+    <clipPath id="clipBelowBeam"><rect class="scanSync" x="0" y="262" width="512" height="420"/></clipPath>
+    <clipPath id="clipAboveBeam"><rect class="scanSync" x="0" y="-160" width="512" height="422"/></clipPath>
+    <clipPath id="clipPage"><use href="#pageShape"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#roundClip)">
+    <rect width="512" height="512" fill="url(#bgDeep)"/>
+    <g fill="#9FC9E8" filter="url(#starBlur)">
+      <circle cx="64"  cy="120" r="1.2" fill-opacity="0.35"/>
+      <circle cx="150" cy="58"  r="1"   fill-opacity="0.3"/>
+      <circle cx="350" cy="44"  r="1.3" fill-opacity="0.35"/>
+      <circle cx="468" cy="120" r="1"   fill-opacity="0.3"/>
+      <circle cx="490" cy="262" r="1.2" fill-opacity="0.3"/>
+      <circle cx="36"  cy="250" r="1"   fill-opacity="0.28"/>
+      <circle cx="70"  cy="400" r="1.3" fill-opacity="0.3"/>
+      <circle cx="200" cy="470" r="1"   fill-opacity="0.28"/>
+      <circle cx="420" cy="440" r="1.2" fill-opacity="0.3"/>
+    </g>
+    <g fill="#FFFFFF">
+      <circle cx="96"  cy="86"  r="2.2" fill-opacity="0.6"/>
+      <circle cx="428" cy="78"  r="1.8" fill-opacity="0.5"/>
+      <circle cx="466" cy="334" r="2"   fill-opacity="0.5"/>
+      <circle cx="54"  cy="330" r="1.6" fill-opacity="0.45"/>
+      <circle cx="142" cy="446" r="2"   fill-opacity="0.5"/>
+      <circle cx="394" cy="424" r="1.6" fill-opacity="0.4"/>
+    </g>
+    <g stroke="#CFEAFB" stroke-opacity="0.6" stroke-width="1.5" stroke-linecap="round">
+      <path d="M408 156 v16 M400 164 h16"/>
+    </g>
+    <rect width="512" height="512" fill="url(#vignette)"/>
+  </g>
+
+  <!-- аура: пульс + вращающиеся кольца + спутник на орбите -->
+  <circle class="glowPulse" cx="256" cy="262" r="205" fill="url(#glow)"/>
+  <g class="ring1">
+    <circle cx="256" cy="262" r="152" stroke="#5BC0EF" stroke-opacity="0.6" stroke-width="6"
+            stroke-linecap="round" fill="none"
+            stroke-dasharray="210 70 380 70" transform="rotate(-18 256 262)"/>
+  </g>
+  <g class="ring2">
+    <circle cx="256" cy="262" r="180" stroke="#2CA5E0" stroke-opacity="0.26" stroke-width="4"
+            stroke-linecap="round" fill="none"
+            stroke-dasharray="120 90 300 90" transform="rotate(34 256 262)"/>
+  </g>
+  <g class="orbit">
+    <circle cx="256" cy="110" r="6" fill="#9FE0FF"/>
+    <circle cx="256" cy="110" r="12" fill="#9FE0FF" fill-opacity="0.25"/>
+  </g>
+
+  <!-- НИЖЕ ЛУЧА: бумага (полный набор серых строк — луч «зажигает» их при проходе) -->
+  <g clip-path="url(#clipBelowBeam)">
+    <g transform="rotate(-7 258 262)">
+      <g filter="url(#paperShadow)">
+        <use href="#pageShape" fill="url(#paper)"/>
+      </g>
+      <rect x="200" y="200" width="112" height="12" rx="6" fill="#CBD8EA"/>
+      <rect x="200" y="226" width="88"  height="12" rx="6" fill="#CBD8EA"/>
+      <rect x="200" y="252" width="100" height="12" rx="6" fill="#CBD8EA"/>
+      <rect x="200" y="296" width="112" height="12" rx="6" fill="#CBD8EA"/>
+      <rect x="200" y="322" width="94"  height="12" rx="6" fill="#CBD8EA"/>
+      <rect x="200" y="348" width="64"  height="12" rx="6" fill="#CBD8EA"/>
+    </g>
+  </g>
+
+  <!-- ВЫШЕ ЛУЧА: голограмма (те же строки, но неоновые) -->
+  <g clip-path="url(#clipAboveBeam)">
+    <g class="holo">
+      <g transform="rotate(-7 258 262)">
+        <use href="#pageShape" fill="none" stroke="#5BC0EF" stroke-width="7"
+             stroke-opacity="0.55" filter="url(#holoGlow)"/>
+        <use href="#pageShape" fill="#2CA5E0" fill-opacity="0.12"
+             stroke="#8FE0FF" stroke-width="3.5"/>
+        <!-- цифровая сетка по всей странице -->
+        <g clip-path="url(#clipPage)" stroke="#5BC0EF" stroke-width="1.5" stroke-opacity="0.4">
+          <path d="M214 140 V384"/><path d="M242 140 V384"/><path d="M270 140 V384"/>
+          <path d="M298 140 V384"/><path d="M326 140 V384"/>
+          <path d="M180 176 H340"/><path d="M180 204 H340"/><path d="M180 232 H340"/>
+          <path d="M180 260 H340"/><path d="M180 288 H340"/><path d="M180 316 H340"/>
+          <path d="M180 344 H340"/>
+        </g>
+        <!-- неоновые строки — те же позиции, что и серые на бумаге -->
+        <rect x="200" y="200" width="112" height="12" rx="6" fill="#7FD4FF"/>
+        <rect x="200" y="226" width="88"  height="12" rx="6" fill="#7FD4FF"/>
+        <rect x="200" y="252" width="100" height="12" rx="6" fill="#7FD4FF"/>
+        <rect x="200" y="296" width="112" height="12" rx="6" fill="#7FD4FF"/>
+        <rect x="200" y="322" width="94"  height="12" rx="6" fill="#7FD4FF"/>
+        <rect x="200" y="348" width="64"  height="12" rx="6" fill="#7FD4FF"/>
+        <!-- угол рассыпается в пиксели -->
+        <rect class="p"    x="282" y="150" width="16" height="16" rx="4"   fill="#BFE2F7"/>
+        <rect class="p p2" x="306" y="166" width="12" height="12" rx="3"   fill="#7FC6EC"/>
+        <rect class="p p3" x="326" y="186" width="10" height="10" rx="3"   fill="#7FC6EC"/>
+        <rect class="p p4" x="300" y="132" width="11" height="11" rx="3"   fill="#9FE0FF"/>
+        <rect class="p p5" x="324" y="148" width="9"  height="9"  rx="2.5" fill="#9FE0FF"/>
+        <rect class="p p6" x="318" y="112" width="7"  height="7"  rx="2"   fill="#7FC6EC"/>
+        <rect class="p p7" x="344" y="134" width="5"  height="5"  rx="1.5" fill="#2CA5E0"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- сканирующий луч: шлейф + свечение + тело + ядро + эмиттеры -->
+  <g class="scanSync">
+    <rect x="150" y="212" width="212" height="44" rx="8" fill="url(#wake)"/>
+    <rect x="104" y="252" width="304" height="20" rx="10" fill="url(#beam)" opacity="0.6" filter="url(#beamGlow)"/>
+    <rect x="104" y="256" width="304" height="12" rx="6" fill="url(#beam)"/>
+    <rect x="156" y="259" width="200" height="6" rx="3" fill="#FFFFFF" fill-opacity="0.9"/>
+    <circle class="emitter" cx="104" cy="262" r="7" fill="#9FE0FF"/>
+    <circle class="emitter" cx="408" cy="262" r="7" fill="#9FE0FF"/>
+  </g>
+</svg>
