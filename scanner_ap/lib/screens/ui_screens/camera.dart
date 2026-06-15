@@ -874,25 +874,37 @@ class _CameraScreenState extends State<CameraScreen>
           ),
         ),
 
-        // Рамка-видоискатель по центру (как на экране Паспорт).
-        Center(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final side = constraints.maxWidth * 0.7;
-              return Container(
-                width: side,
-                height: side,
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: _qrResult != null
-                        ? Colors.greenAccent
-                        : Colors.white,
-                    width: 3,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              );
-            },
+        // Рамка-видоискатель в верхней половине (как на экране Паспорт),
+        // чтобы не перекрывалась нижней плашкой и селектором режимов.
+        Align(
+          alignment: const Alignment(0, -0.25),
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.66,
+            height: MediaQuery.of(context).size.width * 0.66,
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: _qrResult != null ? Colors.greenAccent : Colors.white,
+                width: 3,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        ),
+
+        // Подсказка прямо под рамкой.
+        Align(
+          alignment: const Alignment(0, 0.30),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              l10n.qrScanHint,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.9),
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ),
 
@@ -936,37 +948,33 @@ class _CameraScreenState extends State<CameraScreen>
           ),
         ),
 
-        // Нижняя полупрозрачная плашка с результатом/подсказкой.
+        // Нижняя плашка — то же сплошное затемнение, что и CameraControlsBar
+        // на остальных экранах (раньше был градиент — отсюда несовпадение).
+        // Показывает отсканированный код; когда его нет — просто тёмная
+        // полоса-фон под селектором режимов, как на других режимах.
         Positioned(
           bottom: 0,
           left: 0,
           right: 0,
           child: Container(
             padding: EdgeInsets.fromLTRB(
-              24,
-              20,
-              24,
-              20 + MediaQuery.of(context).padding.bottom,
+              20, 16, 20, 16 + MediaQuery.of(context).padding.bottom,
             ),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0),
-                  Colors.black.withValues(alpha: 0.6),
-                ],
-              ),
-            ),
-            child: Text(
-              _qrResult != null ? _qrResult!.code ?? '' : l10n.qrScanHint,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
+            color: Colors.black.withValues(alpha: 0.5),
+            child: SizedBox(
+              height: 78,
+              child: Center(
+                child: Text(
+                  _qrResult?.code ?? '',
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
           ),
