@@ -10,6 +10,13 @@ import '../../l10n/app_localizations.dart';
 const _kMonthlyId = 'aura_scanner_premium_monthly';
 const _kYearlyId = 'aura_scanner_premium_yearly';
 
+// Цены отображаются в USDT. Период (мес/год) понятен из названия плана,
+// поэтому суффикс не дублируем. ВАЖНО: при реальной покупке через
+// Google Play / App Store валюту и сумму списания задаёт сам стор —
+// эти строки отвечают только за отображение.
+const _kMonthlyUsdt = '2.99 USDT';
+const _kYearlyUsdt = '19.99 USDT';
+
 class PremiumScreen extends StatefulWidget {
   const PremiumScreen({super.key});
 
@@ -587,8 +594,14 @@ class _PremiumScreenState extends State<PremiumScreen> {
                 children: [
                   Row(
                     children: [
-                      Text(isYearly ? l10n.premiumPlanYearly : l10n.premiumPlanMonthly,
-                          style: TextStyle(fontWeight: FontWeight.w600, color: textColor, fontSize: 14)),
+                      Flexible(
+                        child: Text(
+                          isYearly ? l10n.premiumPlanYearly : l10n.premiumPlanMonthly,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.w600, color: textColor, fontSize: 14),
+                        ),
+                      ),
                       if (isYearly) ...[
                         const SizedBox(width: 8),
                         Container(
@@ -608,7 +621,8 @@ class _PremiumScreenState extends State<PremiumScreen> {
                 ],
               ),
             ),
-            Text(product.price,
+            const SizedBox(width: 10),
+            Text(_usdtPriceFor(product.id, product.price),
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: textColor)),
           ],
         ),
@@ -616,11 +630,19 @@ class _PremiumScreenState extends State<PremiumScreen> {
     );
   }
 
+  /// Возвращает цену в USDT для известных продуктов. Для неизвестного id
+  /// (на случай других продуктов в сторе) — отдаёт цену из стора как есть.
+  String _usdtPriceFor(String productId, String storePrice) {
+    if (productId == _kMonthlyId) return _kMonthlyUsdt;
+    if (productId == _kYearlyId) return _kYearlyUsdt;
+    return storePrice;
+  }
+
   Widget _buildFallbackPlan(bool isDark, Color textColor, Color subColor, Color borderColor) {
     final l10n = AppLocalizations.of(context);
     final plans = [
-      {'id': _kMonthlyId, 'title': l10n.premiumPlanMonthly, 'price': '299 ₽/мес', 'yearly': false},
-      {'id': _kYearlyId, 'title': l10n.premiumPlanYearly, 'price': '1 990 ₽/год', 'yearly': true},
+      {'id': _kMonthlyId, 'title': l10n.premiumPlanMonthly, 'price': _kMonthlyUsdt, 'yearly': false},
+      {'id': _kYearlyId, 'title': l10n.premiumPlanYearly, 'price': _kYearlyUsdt, 'yearly': true},
     ];
     return Column(
       children: plans.map((plan) {
@@ -659,8 +681,14 @@ class _PremiumScreenState extends State<PremiumScreen> {
                 Expanded(
                   child: Row(
                     children: [
-                      Text(plan['title'] as String,
-                          style: TextStyle(fontWeight: FontWeight.w600, color: textColor, fontSize: 14)),
+                      Flexible(
+                        child: Text(
+                          plan['title'] as String,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.w600, color: textColor, fontSize: 14),
+                        ),
+                      ),
                       if (isYearly) ...[
                         const SizedBox(width: 8),
                         Container(
@@ -675,6 +703,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(width: 10),
                 Text(plan['price'] as String,
                     style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: textColor)),
               ],
