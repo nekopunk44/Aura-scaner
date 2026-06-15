@@ -27,9 +27,13 @@ export const env = {
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
   openRouterApiKey: process.env.OPENROUTER_API_KEY || '',
   // Модель OpenRouter. ДОЛЖНА поддерживать vision (запросы содержат картинки).
-  // gemma-3 мультимодальна; прежняя 'gemma-4-31b' не существовала → OpenRouter
-  // отвечал ошибкой, а контроллер отдавал 502.
-  openRouterModel: process.env.OPENROUTER_MODEL || 'google/gemma-3-27b-it:free',
+  // ВАЖНО: набор бесплатных моделей у OpenRouter постоянно меняется — если
+  // дефолт отвалится (404 "unavailable for free"), задайте рабочую модель
+  // через env OPENROUTER_MODEL без правок кода. На момент написания свободна
+  // llama-3.2-11b-vision. Платная альтернатива: google/gemma-3-27b-it.
+  openRouterModel:
+    process.env.OPENROUTER_MODEL ||
+    'meta-llama/llama-3.2-11b-vision-instruct:free',
   // Apple Sign In
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'com.example.scannerAp',
   // Apple App Store Server API (для проверки receipt)

@@ -43,7 +43,11 @@ export async function analyzeDocument(req: AuthRequest, res: Response): Promise<
     proxyRes.on('end', () => {
       if (proxyRes.statusCode !== 200) {
         logger.warn('[analyzeDocument] OpenRouter error', { status: proxyRes.statusCode, body: data });
-        res.status(502).json({ message: 'Ошибка AI сервиса' });
+        // Пробрасываем сообщение OpenRouter (напр. «model unavailable for
+        // free…») — помогает понять причину без логов Railway.
+        let detail = '';
+        try { detail = JSON.parse(data)?.error?.message ?? ''; } catch { /* not json */ }
+        res.status(502).json({ message: 'Ошибка AI сервиса', detail });
         return;
       }
       try {
