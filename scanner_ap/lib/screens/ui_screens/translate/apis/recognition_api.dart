@@ -50,49 +50,67 @@ class RecognitionApi {
     return null;
   }
 
+  static final _letterRegex = RegExp(r'[a-zA-Zа-яА-ЯёЁ]');
+
   /// Распознаёт текст из [inputImage].
   ///
-  /// Сначала пробует Tesseract (rus+eng). При пустом результате или ошибке
-  /// переключается на ML Kit Latin.
+  /// Стратегия:
+  ///  1. Tesseract (rus+eng, psm 6) — основной, поддерживает кириллицу.
+  ///  2. Tesseract (rus+eng, psm 3) — повторная попытка с авто-разбивкой.
+  ///  3. ML Kit Latin — fallback только для латиницы (кириллицу не даст).
   static Future<String?> recognizeText(InputImage inputImage) async {
-    // --- 1. Попытка через Tesseract ---
-    try {
-      final filePath = await _resolveFilePath(inputImage);
-      if (filePath != null) {
-        final tesseractResult = await FlutterTesseractOcr.extractText(
+    final filePath = await _resolveFilePath(inputImage);
+
+    // --- 1. Tesseract psm=6 (однородный блок текста) ---
+    if (filePath != null) {
+      try {
+        final result = await FlutterTesseractOcr.extractText(
           filePath,
           language: 'rus+eng',
-          args: {
-            'psm': '6',
-            'preserve_interword_spaces': '1',
-          },
+          args: {'psm': '6', 'preserve_interword_spaces': '1'},
         );
-        final trimmed = tesseractResult.trim();
-        if (trimmed.isNotEmpty) {
-          debugPrint('RecognitionApi: результат от Tesseract (${trimmed.length} символов)');
+        final trimmed = result.trim();
+        if (trimmed.isNotEmpty && _letterRegex.hasMatch(trimmed)) {
+          debugPrint('RecognitionApi: Tesseract psm=6 (${trimmed.length} символов)');
           return trimmed;
         }
-        debugPrint('RecognitionApi: Tesseract вернул пустую строку, переключаемся на ML Kit');
-      } else {
-        debugPrint('RecognitionApi: не удалось получить путь к файлу, переключаемся на ML Kit');
+      } catch (e) {
+        debugPrint('RecognitionApi: Tesseract psm=6 ошибка: $e');
       }
-    } catch (e) {
-      debugPrint('RecognitionApi: ошибка Tesseract, переключаемся на ML Kit: $e');
+
+      // --- 2. Tesseract psm=3 (автоматический разбор страницы) ---
+      try {
+        final result = await FlutterTesseractOcr.extractText(
+          filePath,
+          language: 'rus+eng',
+          args: {'psm': '3', 'preserve_interword_spaces': '1'},
+        );
+        final trimmed = result.trim();
+        if (trimmed.isNotEmpty && _letterRegex.hasMatch(trimmed)) {
+          debugPrint('RecognitionApi: Tesseract psm=3 (${trimmed.length} символов)');
+          return trimmed;
+        }
+        debugPrint('RecognitionApi: Tesseract вернул пустой результат');
+      } catch (e) {
+        debugPrint('RecognitionApi: Tesseract psm=3 ошибка: $e');
+      }
+    } else {
+      debugPrint('RecognitionApi: не удалось получить путь к файлу');
     }
 
-    // --- 2. Fallback: ML Kit Latin ---
+    // --- 3. Fallback: ML Kit Latin (только для латиницы) ---
     try {
-      final recognizedText = await _mlKitRecognizer.processImage(inputImage);
-      final text = recognizedText.text.trim();
-      if (text.isNotEmpty) {
-        debugPrint('RecognitionApi: результат от ML Kit (${text.length} символов)');
+      final recognized = await _mlKitRecognizer.processImage(inputImage);
+      final text = recognized.text.trim();
+      if (text.isNotEmpty && _letterRegex.hasMatch(text)) {
+        debugPrint('RecognitionApi: ML Kit Latin (${text.length} символов)');
         return text;
       }
-      return null;
     } catch (e) {
-      debugPrint('RecognitionApi: ошибка ML Kit: $e');
-      return null;
+      debugPrint('RecognitionApi: ML Kit ошибка: $e');
     }
+
+    return null;
   }
 
   static Future<void> dispose() async {

@@ -64,12 +64,10 @@ class TranslationApi {
       String sourceLanguage = await _determineSourceLanguage(cleanedText);
       debugPrint('Определенный язык: $sourceLanguage');
 
-      // Fallback: если язык не определён, но визуально текст английский —
-      // считаем его английским, чтобы перевести в русский (а не возвращать
-      // оригинал, как было раньше).
+      // Fallback: если ML Kit не определил язык — используем эвристику по символам.
       if (sourceLanguage == 'und' || sourceLanguage.isEmpty) {
-        sourceLanguage = _isAlreadyEnglish(cleanedText) ? 'en' : 'en';
-        debugPrint('Язык не определён, fallback: $sourceLanguage');
+        sourceLanguage = _manualLanguageDetection(cleanedText);
+        debugPrint('Язык не определён, fallback по символам: $sourceLanguage');
       }
 
       // Выбор целевого языка:
@@ -272,13 +270,8 @@ class TranslationApi {
 
     String cleaned = text;
 
-    // 1. Заменяем похожие символы
-    cleaned = cleaned
-        .replaceAll('|', 'I')  // Вертикальная черта
-        .replaceAll('1', 'l')  // Цифра 1 на букву l (в контексте)
-        .replaceAll('0', 'O')  // Ноль на букву O
-        .replaceAll('5', 'S')  // Пятерка на S
-        .replaceAll('8', 'B'); // Восьмерка на B
+    // 1. Заменяем похожие символы (только безопасные: не трогаем цифры)
+    cleaned = cleaned.replaceAll('|', 'I'); // Вертикальная черта → I
 
     // 2. Убираем непечатаемые символы
     cleaned = cleaned.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), ' ');
@@ -299,46 +292,6 @@ class TranslationApi {
     }
 
     return cleaned;
-  }
-
-  /// Проверка, не является ли текст уже английским
-  static bool _isAlreadyEnglish(String text) {
-    if (text.length < 3) return false;
-
-    final words = text.toLowerCase().split(RegExp(r'[^\w]+'));
-    if (words.isEmpty) return false;
-
-    // Распространенные английские слова
-    final commonEnglishWords = {
-      'the', 'and', 'you', 'that', 'have', 'for', 'not', 'with', 'this', 'but',
-      'from', 'they', 'say', 'her', 'she', 'will', 'one', 'all', 'would', 'there',
-      'their', 'what', 'out', 'about', 'who', 'get', 'which', 'when', 'make',
-      'can', 'like', 'time', 'just', 'him', 'know', 'take', 'person', 'into',
-      'year', 'your', 'good', 'some', 'could', 'them', 'see', 'other', 'than',
-      'then', 'now', 'look', 'only', 'come', 'its', 'over', 'think', 'also',
-      'back', 'after', 'use', 'two', 'how', 'our', 'work', 'first', 'well',
-      'way', 'even', 'new', 'want', 'because', 'any', 'these', 'give', 'day',
-      'most', 'us'
-    };
-
-    int englishWordCount = 0;
-    int totalValidWords = 0;
-
-    for (final word in words) {
-      if (word.length > 2) { 
-        totalValidWords++;
-        if (commonEnglishWords.contains(word)) {
-          englishWordCount++;
-        }
-      }
-    }
-
-    if (totalValidWords == 0) return false;
-
-    final englishRatio = englishWordCount / totalValidWords;
-    debugPrint('Английских слов: $englishWordCount из $totalValidWords ($englishRatio)');
-
-    return englishRatio > 0.3; 
   }
 
   static Future<String> _determineSourceLanguage(String text) async {
@@ -457,7 +410,7 @@ class TranslationApi {
       return false;
     }
 
-    final letterCount = RegExp(r'[a-zA-Z]').allMatches(translated).length;
+    final letterCount = RegExp(r'[a-zA-Zа-яА-ЯёЁ]').allMatches(translated).length;
     if (letterCount < translated.length * 0.3 && translated.length > 5) {
       debugPrint('Слишком мало букв в переводе');
       return false;
