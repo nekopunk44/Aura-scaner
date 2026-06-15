@@ -4,7 +4,8 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:pdfx/pdfx.dart';
+import 'package:pdfrx/pdfrx.dart';
+import 'package:image/image.dart' as img;
 import 'package:docx_to_text/docx_to_text.dart';
 
 const int _kMaxCacheEntries = 60;
@@ -97,18 +98,28 @@ mixin DocumentUtils<T extends StatefulWidget> on State<T> {
       _pdfLoadingFlags.add(filePath);
 
       final document = await PdfDocument.openFile(filePath);
-      final page = await document.getPage(1);
+      final page = document.pages.first;
 
-      final pageImage = await page.render(
-        width: page.width * _kPdfRenderScale,
-        height: page.height * _kPdfRenderScale,
-        format: PdfPageImageFormat.png,
+      final pdfImage = await page.render(
+        fullWidth: page.width * _kPdfRenderScale,
+        fullHeight: page.height * _kPdfRenderScale,
       );
 
-      await page.close();
-      await document.close();
-
-      final result = pageImage?.bytes;
+      Uint8List? result;
+      if (pdfImage != null) {
+        try {
+          final decoded = img.Image.fromBytes(
+            width: pdfImage.width,
+            height: pdfImage.height,
+            bytes: pdfImage.pixels.buffer,
+            order: img.ChannelOrder.bgra,
+          );
+          result = Uint8List.fromList(img.encodePng(decoded));
+        } finally {
+          pdfImage.dispose();
+        }
+      }
+      await document.dispose();
       _pdfPreviewCache[filePath] = result;
       _pdfLoadingFlags.remove(filePath);
 

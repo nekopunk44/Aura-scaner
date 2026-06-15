@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'main_screen/app_tabs_screen.dart';
 import '../../models/save_format.dart';
+import '../../l10n/app_localizations.dart';
 
 class SaveSuccessScreen extends StatelessWidget {
   final String filePath;
@@ -12,11 +13,12 @@ class SaveSuccessScreen extends StatelessWidget {
     required this.format,
   });
 
-  String get _formatText =>
-      format == SaveFormat.pdf ? 'PDF-файл' : 'Фото/Изображение';
+  String _formatText(AppLocalizations l10n) =>
+      format == SaveFormat.pdf ? l10n.saveFormatPdf : l10n.saveFormatImage;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
@@ -41,14 +43,14 @@ class SaveSuccessScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               Text(
-                'Документ сохранён!',
+                l10n.saveDocSaved,
                 style: TextStyle(
                     fontSize: 24, fontWeight: FontWeight.bold, color: textColor),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 10),
               Text(
-                '$_formatText успешно сохранён и доступен в разделе "Мои файлы".',
+                l10n.saveSuccessBody(_formatText(l10n)),
                 style: TextStyle(fontSize: 15, color: subColor, height: 1.45),
                 textAlign: TextAlign.center,
               ),
@@ -69,9 +71,9 @@ class SaveSuccessScreen extends StatelessWidget {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: const Text(
-                    'Перейти в "Мои файлы"',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  child: Text(
+                    l10n.saveGoToMyFiles,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),

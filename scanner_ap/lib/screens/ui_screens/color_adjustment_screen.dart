@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/image_editing_service.dart';
+import '../../l10n/app_localizations.dart';
 
 const String _documentKey = 'saved_document_paths';
 
@@ -91,7 +92,7 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка обработки: $e')),
+        SnackBar(content: Text('${AppLocalizations.of(context).processingError}: $e')),
       );
     } finally {
       if (mounted) setState(() => _isProcessing = false);
@@ -122,7 +123,7 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Сохранено: $fileName'),
+            content: Text(AppLocalizations.of(context).snackSaved(fileName)),
             backgroundColor: const Color(0xFF2CA5E0),
           ),
         );
@@ -131,7 +132,7 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка сохранения: $e')),
+        SnackBar(content: Text('${AppLocalizations.of(context).saveError}: $e')),
       );
     } finally {
       if (mounted) setState(() => _isProcessing = false);
@@ -192,6 +193,7 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -207,14 +209,14 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: Text('Настройка цвета', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        title: Text(l10n.featColorAdjust, style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
         backgroundColor: appBarBg,
         iconTheme: IconThemeData(color: textColor),
         elevation: 0,
         actions: [
           TextButton(
             onPressed: _resetValues,
-            child: const Text('Сброс', style: TextStyle(color: accent)),
+            child: Text(l10n.reset, style: const TextStyle(color: accent)),
           ),
         ],
       ),
@@ -266,7 +268,7 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
                         child: Row(
                           children: [
                             _ParamChip(
-                              label: 'Яркость',
+                              label: l10n.colorBrightness,
                               icon: Icons.brightness_6_outlined,
                               active: _activeParam == _Param.brightness,
                               modified: !_isDefault(_Param.brightness),
@@ -278,7 +280,7 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
                             ),
                             const SizedBox(width: 8),
                             _ParamChip(
-                              label: 'Контраст',
+                              label: l10n.colorContrast,
                               icon: Icons.contrast,
                               active: _activeParam == _Param.contrast,
                               modified: !_isDefault(_Param.contrast),
@@ -290,7 +292,7 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
                             ),
                             const SizedBox(width: 8),
                             _ParamChip(
-                              label: 'Насыщ.',
+                              label: l10n.colorSaturationShort,
                               icon: Icons.palette_outlined,
                               active: _activeParam == _Param.saturation,
                               modified: !_isDefault(_Param.saturation),
@@ -302,7 +304,7 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
                             ),
                             const SizedBox(width: 8),
                             _ParamChip(
-                              label: 'Оттенок',
+                              label: l10n.colorHue,
                               icon: Icons.color_lens_outlined,
                               active: _activeParam == _Param.hue,
                               modified: !_isDefault(_Param.hue),
@@ -353,7 +355,7 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
                         children: [
                           Expanded(
                             child: _ToggleTile(
-                              label: 'Удалить шумы',
+                              label: l10n.colorDenoise,
                               icon: Icons.blur_on,
                               value: _removeNoise,
                               accent: accent,
@@ -368,7 +370,7 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: _ToggleTile(
-                              label: 'Резкость',
+                              label: l10n.colorSharpness,
                               icon: Icons.deblur,
                               value: _sharpen,
                               accent: accent,
@@ -389,7 +391,7 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
                             child: OutlinedButton.icon(
                               onPressed: _isProcessing ? null : _pickImage,
                               icon: const Icon(Icons.image, size: 18),
-                              label: const Text('Другое фото'),
+                              label: Text(l10n.otherPhoto),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: accent,
                                 side: const BorderSide(color: accent),
@@ -403,7 +405,7 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
                             child: ElevatedButton.icon(
                               onPressed: _isProcessing ? null : _saveImage,
                               icon: const Icon(Icons.check, size: 18),
-                              label: const Text('Сохранить'),
+                              label: Text(l10n.actionSave),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: accent,
                                 disabledBackgroundColor: accent.withValues(alpha: 0.4),
@@ -425,15 +427,16 @@ class _ColorAdjustmentScreenState extends State<ColorAdjustmentScreen> {
   }
 
   String _activeParamLabel() {
+    final l10n = AppLocalizations.of(context);
     switch (_activeParam) {
       case _Param.brightness:
-        return 'Яркость';
+        return l10n.colorBrightness;
       case _Param.contrast:
-        return 'Контраст';
+        return l10n.colorContrast;
       case _Param.saturation:
-        return 'Насыщенность';
+        return l10n.colorSaturation;
       case _Param.hue:
-        return 'Оттенок';
+        return l10n.colorHue;
     }
   }
 }

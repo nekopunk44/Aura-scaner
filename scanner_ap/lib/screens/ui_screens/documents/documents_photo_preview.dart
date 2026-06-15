@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'dart:io';
-import 'document_camera_edit.dart'; 
+import 'document_camera_edit.dart';
+import '../../../l10n/app_localizations.dart';
 
 class MultiPageDocumentPreviewScreen extends StatelessWidget {
   final List<XFile> imageFiles;
@@ -16,8 +17,9 @@ class MultiPageDocumentPreviewScreen extends StatelessWidget {
   });
 
   Widget _buildImagePreview(BuildContext context, XFile file, int index) {
+    final l10n = AppLocalizations.of(context);
     final double screenWidth = MediaQuery.of(context).size.width;
-  
+
     const double aspectRatio = 1 / 1.414;
 
     final double containerWidth = screenWidth - 32.0;
@@ -30,7 +32,7 @@ class MultiPageDocumentPreviewScreen extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Text(
-            'Страница ${index + 1} / ${imageFiles.length}',
+            l10n.docPageNofM(index + 1, imageFiles.length),
             style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ),
@@ -99,7 +101,7 @@ class MultiPageDocumentPreviewScreen extends StatelessWidget {
                     child: ElevatedButton.icon(
                       onPressed: onRetakeAll,
                       icon: const Icon(Icons.delete_forever, color: Colors.white),
-                      label: const Text('Сбросить пачку', overflow: TextOverflow.ellipsis),
+                      label: Text(AppLocalizations.of(context).docResetBatch, overflow: TextOverflow.ellipsis),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red.shade600,
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
@@ -134,8 +136,8 @@ class MultiPageDocumentPreviewScreen extends StatelessWidget {
                       },
                       icon: const Icon(Icons.edit_note, color: Colors.white),
                       label: Text(
-                          'Редактировать (${imageFiles.length})',
-                          overflow: TextOverflow.ellipsis 
+                        AppLocalizations.of(context).editCount(imageFiles.length),
+                        overflow: TextOverflow.ellipsis,
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green.shade600,

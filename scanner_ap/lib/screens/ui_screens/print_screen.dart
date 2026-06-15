@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import '../../l10n/app_localizations.dart';
 
 class PrintScreen extends StatefulWidget {
   const PrintScreen({super.key});
@@ -57,6 +58,7 @@ class _PrintScreenState extends State<PrintScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -67,7 +69,7 @@ class _PrintScreenState extends State<PrintScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: Text('Печать документа',
+        title: Text(l10n.printTitle,
             style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
         backgroundColor: appBarBg,
         iconTheme: IconThemeData(color: textColor),
@@ -100,10 +102,10 @@ class _PrintScreenState extends State<PrintScreen> {
                     child: const Icon(Icons.print, color: Color(0xFF2CA5E0), size: 36),
                   ),
                   const SizedBox(height: 16),
-                  Text('Печать документа',
+                  Text(l10n.printTitle,
                       style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: textColor)),
                   const SizedBox(height: 6),
-                  Text('Выберите файл для печати',
+                  Text(l10n.printSelectFile,
                       style: TextStyle(fontSize: 13, color: subColor)),
                 ],
               ),
@@ -111,16 +113,16 @@ class _PrintScreenState extends State<PrintScreen> {
             const SizedBox(height: 24),
             _buildButton(
               icon: Icons.picture_as_pdf,
-              label: 'Печать PDF',
-              subLabel: 'Выбрать PDF-файл',
+              label: l10n.printPdf,
+              subLabel: l10n.pwdSelectPdfFile,
               color: Colors.red.shade600,
               onTap: _isPrinting ? null : _printPdf,
             ),
             const SizedBox(height: 14),
             _buildButton(
               icon: Icons.image_outlined,
-              label: 'Печать изображения',
-              subLabel: 'Выбрать из галереи (JPG/PNG)',
+              label: l10n.printImage,
+              subLabel: l10n.printSelectImage,
               color: const Color(0xFF2CA5E0),
               onTap: _isPrinting ? null : _printImage,
             ),
@@ -129,7 +131,7 @@ class _PrintScreenState extends State<PrintScreen> {
               const Center(child: CircularProgressIndicator(color: Color(0xFF2CA5E0))),
               const SizedBox(height: 12),
               Center(
-                child: Text('Подготовка к печати...',
+                child: Text(l10n.printPreparing,
                     style: TextStyle(color: subColor, fontSize: 13)),
               ),
             ],

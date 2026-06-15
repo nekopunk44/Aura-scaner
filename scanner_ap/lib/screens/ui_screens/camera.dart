@@ -22,6 +22,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../l10n/app_localizations.dart';
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'camera_features.dart';
@@ -327,7 +328,7 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _onFinishBatch() async {
     if (_multiPageBatch.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Пачка пуста. Добавьте хотя бы одну страницу.")),
+        SnackBar(content: Text(AppLocalizations.of(context).camBatchEmpty)),
       );
       return;
     }
@@ -367,7 +368,7 @@ class _CameraScreenState extends State<CameraScreen>
       _startDocumentDetectionStream();
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Пачка страниц очищена.")),
+      SnackBar(content: Text(AppLocalizations.of(context).camBatchCleared)),
     );
   }
 
@@ -392,11 +393,12 @@ class _CameraScreenState extends State<CameraScreen>
     final bool isMultiPageLimited = _selectedFeature == "Документ";
     final bool isMultiPageUnlimited = _selectedFeature == "+10 страниц";
 
+    final l10n = AppLocalizations.of(context);
     if (!captureModeController.canTakePicture(isDocumentMode: isDocumentMode)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Ожидание обнаружения документа..."),
-          duration: Duration(seconds: 1),
+        SnackBar(
+          content: Text(l10n.camWaitingDocument),
+          duration: const Duration(seconds: 1),
         ),
       );
       return;
@@ -417,7 +419,7 @@ class _CameraScreenState extends State<CameraScreen>
           const int maxPages = 10;
           if (_currentBatchPageCount >= maxPages) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Достигнуто максимальное количество страниц.")),
+              SnackBar(content: Text(l10n.camMaxPages)),
             );
             _isScanning = false;
             captureModeController.isScanning = false;
@@ -435,7 +437,7 @@ class _CameraScreenState extends State<CameraScreen>
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Страница ${_multiPageBatch.length} добавлена в пачку."),
+            content: Text(l10n.camPageAdded(_multiPageBatch.length)),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -453,9 +455,9 @@ class _CameraScreenState extends State<CameraScreen>
           _startDocumentDetectionStream();
 
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Лицевая сторона готова! Сделайте Обратную."),
-              duration: Duration(seconds: 2),
+            SnackBar(
+              content: Text(l10n.camFrontReady),
+              duration: const Duration(seconds: 2),
             ),
           );
           return;
@@ -494,9 +496,9 @@ class _CameraScreenState extends State<CameraScreen>
           captureModeController.isScanning = false;
           _startDocumentDetectionStream();
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Первая страница готова! Сделайте вторую."),
-              duration: Duration(seconds: 2),
+            SnackBar(
+              content: Text(l10n.camFirstPageReady),
+              duration: const Duration(seconds: 2),
             ),
           );
           return;
@@ -571,6 +573,7 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _pickImageFromGallery() async {
+    final l10n = AppLocalizations.of(context);
     final ImagePicker picker = ImagePicker();
     final XFile? galleryImage = await picker.pickImage(source: ImageSource.gallery);
 
@@ -587,7 +590,7 @@ class _CameraScreenState extends State<CameraScreen>
         const int maxPages = 10;
         if (_currentBatchPageCount >= maxPages) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Достигнуто максимальное количество страниц.")),
+            SnackBar(content: Text(l10n.camMaxPages)),
           );
           return;
         }
@@ -598,7 +601,7 @@ class _CameraScreenState extends State<CameraScreen>
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Страница ${_multiPageBatch.length} добавлена из галереи."),
+          content: Text(l10n.camPageFromGallery(_multiPageBatch.length)),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -669,7 +672,7 @@ class _CameraScreenState extends State<CameraScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Невозможно открыть ссылку: $string. (Ошибка: ${e.runtimeType})"),
+            content: Text(AppLocalizations.of(context).camCantOpenLink(string, e.runtimeType.toString())),
             duration: const Duration(seconds: 4),
           ),
         );

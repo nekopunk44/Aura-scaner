@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../l10n/app_localizations.dart';
 
 const _documentKey = 'saved_document_paths';
 
@@ -104,13 +105,14 @@ class _HighlightScreenState extends State<HighlightScreen> {
     widget.onSaved?.call();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Сохранено'), backgroundColor: Colors.green),
+        SnackBar(content: Text(AppLocalizations.of(context).savedPlain), backgroundColor: Colors.green),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -120,7 +122,7 @@ class _HighlightScreenState extends State<HighlightScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: const Text('Выделять'),
+        title: Text(l10n.highlightTitle),
         backgroundColor: isDark ? const Color(0xFF141E2B) : Colors.white,
         foregroundColor: textColor,
         elevation: 0,
@@ -133,21 +135,21 @@ class _HighlightScreenState extends State<HighlightScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Выберите документ для разметки',
+                    l10n.highlightSelectDoc,
                     style: TextStyle(
                         fontSize: 16, fontWeight: FontWeight.w600, color: textColor),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Откроется редактор с инструментами выделения, маркером и текстом',
+                    l10n.highlightEditorHint,
                     style: TextStyle(fontSize: 13, color: subColor, height: 1.4),
                   ),
                   const SizedBox(height: 24),
                   _PickTile(
                     icon: Icons.picture_as_pdf,
                     iconColor: Colors.red.shade400,
-                    title: 'PDF документ',
-                    subtitle: 'Разметка первой страницы',
+                    title: l10n.importPdfDocument,
+                    subtitle: l10n.highlightPdfSub,
                     cardBg: cardBg,
                     textColor: textColor,
                     subColor: subColor,
@@ -157,8 +159,8 @@ class _HighlightScreenState extends State<HighlightScreen> {
                   _PickTile(
                     icon: Icons.image_outlined,
                     iconColor: Colors.blue.shade400,
-                    title: 'Изображение',
-                    subtitle: 'JPG, PNG из галереи',
+                    title: l10n.highlightImage,
+                    subtitle: l10n.highlightImageSub,
                     cardBg: cardBg,
                     textColor: textColor,
                     subColor: subColor,

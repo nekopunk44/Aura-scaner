@@ -5,7 +5,9 @@ import '../../config/theme_config.dart';
 import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/social_auth_service.dart';
+import '../../l10n/app_localizations.dart';
 import '../../utils/app_notification.dart';
+import '../../utils/error_messages.dart';
 import '../../widgets/aura_logo.dart';
 import '../ui_screens/main_screen/app_tabs_screen.dart';
 import '../ui_screens/splash_screen.dart';
@@ -55,7 +57,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      AppNotification.show(context, message: e.toString());
+      AppNotification.show(context, message: friendlyError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -73,8 +75,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      final message = e.toString().replaceFirst('Exception: ', '');
-      AppNotification.show(context, message: message);
+      AppNotification.show(context, message: friendlyError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -100,13 +101,14 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      AppNotification.show(context, message: e.toString().replaceFirst('Exception: ', ''));
+      AppNotification.show(context, message: friendlyError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _promptTelegramEmail() async {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final controller = TextEditingController();
     final bg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -129,11 +131,11 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Добавить email',
+                Text(l10n.telegramAddEmailTitle,
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: textColor)),
                 const SizedBox(height: 8),
                 Text(
-                  'Telegram не передаёт email. Добавьте его для восстановления доступа.',
+                  l10n.telegramAddEmailBody,
                   style: TextStyle(fontSize: 13, color: subColor, height: 1.4),
                 ),
                 const SizedBox(height: 16),
@@ -171,7 +173,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         foregroundColor: subColor,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      child: const Text('Пропустить'),
+                      child: Text(l10n.actionSkip),
                     ),
                     const SizedBox(width: 8),
                     FilledButton(
@@ -183,7 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                       ),
-                      child: const Text('Добавить', style: TextStyle(fontWeight: FontWeight.w600)),
+                      child: Text(l10n.actionAdd, style: const TextStyle(fontWeight: FontWeight.w600)),
                     ),
                   ],
                 ),
@@ -206,6 +208,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
@@ -263,13 +266,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       color: textColor,
                       letterSpacing: 0.5,
                     ),
-                    child: const Text('Aura Scanner', textAlign: TextAlign.center),
+                    child: Text(l10n.appName, textAlign: TextAlign.center),
                   ),
                   const SizedBox(height: 6),
                   AnimatedDefaultTextStyle(
                     duration: const Duration(milliseconds: 300),
                     style: TextStyle(fontSize: 14, color: subtextColor),
-                    child: const Text('Войдите в свой аккаунт', textAlign: TextAlign.center),
+                    child: Text(l10n.loginSubtitle, textAlign: TextAlign.center),
                   ),
 
                   const SizedBox(height: 36),
@@ -292,7 +295,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         children: [
                           _AdaptiveTextField(
                             controller: _emailController,
-                            label: 'Email',
+                            label: l10n.fieldEmail,
                             icon: Icons.email_outlined,
                             keyboardType: TextInputType.emailAddress,
                             isDark: isDark,
@@ -300,15 +303,15 @@ class _LoginScreenState extends State<LoginScreen> {
                             inputBorder: inputBorder,
                             prefixColor: prefixColor,
                             validator: (v) {
-                              if (v == null || v.trim().isEmpty) return 'Введите email';
-                              if (!v.contains('@')) return 'Некорректный email';
+                              if (v == null || v.trim().isEmpty) return l10n.validateEmailRequired;
+                              if (!v.contains('@')) return l10n.validateEmailInvalid;
                               return null;
                             },
                           ),
                           const SizedBox(height: 14),
                           _AdaptiveTextField(
                             controller: _passwordController,
-                            label: 'Пароль',
+                            label: l10n.fieldPassword,
                             icon: Icons.lock_outline,
                             obscureText: _obscurePassword,
                             isDark: isDark,
@@ -327,8 +330,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   setState(() => _obscurePassword = !_obscurePassword),
                             ),
                             validator: (v) {
-                              if (v == null || v.isEmpty) return 'Введите пароль';
-                              if (v.length < 6) return 'Минимум 6 символов';
+                              if (v == null || v.isEmpty) return l10n.validatePasswordRequired;
+                              if (v.length < 6) return l10n.validatePasswordMin;
                               return null;
                             },
                           ),
@@ -353,8 +356,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                       child: CircularProgressIndicator(
                                           strokeWidth: 2, color: Colors.white),
                                     )
-                                  : const Text('Войти',
-                                      style: TextStyle(
+                                  : Text(l10n.actionLogin,
+                                      style: const TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.w600,
                                           color: Colors.white)),
@@ -372,7 +375,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       Expanded(child: Divider(color: dividerColor)),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 14),
-                        child: Text('или войдите через',
+                        child: Text(l10n.loginOrVia,
                             style: TextStyle(fontSize: 12, color: subtextColor)),
                       ),
                       Expanded(child: Divider(color: dividerColor)),
@@ -410,7 +413,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   if (Platform.isIOS) ...[
                     const SizedBox(height: 12),
                     _SocialTile(
-                      label: 'Войти через Apple',
+                      label: l10n.loginWithApple,
                       color: isDark ? Colors.white : Colors.black,
                       faIcon: FontAwesomeIcons.apple,
                       isDark: isDark,
@@ -424,14 +427,14 @@ class _LoginScreenState extends State<LoginScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text('Нет аккаунта? ',
+                      Text(l10n.loginNoAccount,
                           style: TextStyle(color: subtextColor, fontSize: 14)),
                       GestureDetector(
                         onTap: () => Navigator.push(context,
                             MaterialPageRoute(builder: (_) => const RegisterScreen())),
-                        child: const Text(
-                          'Зарегистрироваться',
-                          style: TextStyle(
+                        child: Text(
+                          l10n.actionRegister,
+                          style: const TextStyle(
                               color: Color(0xFF2CA5E0),
                               fontWeight: FontWeight.w600,
                               fontSize: 14),

@@ -1,9 +1,6 @@
 // ignore_for_file: use_build_context_synchronously
 import 'dart:async';
-import 'dart:collection';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'dart:typed_data';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -15,10 +12,14 @@ import 'package:path_provider/path_provider.dart';
 import '../../../services/document_sync_service.dart';
 import '../../../services/document_registry.dart';
 import '../../../utils/app_notification.dart';
+import '../../../utils/error_messages.dart';
+import '../../../l10n/app_localizations.dart';
 import 'pdf_viewer_screen.dart';
 import 'docx_viewer_screen.dart';
 import 'text_file_viewer_screen.dart';
 import 'document_utils.dart';
+import 'document_file_preview.dart';
+import 'document_list_widgets.dart';
 
 class MyDocumentsScreen extends StatefulWidget {
   const MyDocumentsScreen({super.key});
@@ -28,7 +29,7 @@ class MyDocumentsScreen extends StatefulWidget {
 }
 
 class MyDocumentsScreenState extends State<MyDocumentsScreen>
-    with AutomaticKeepAliveClientMixin, DocumentUtils {
+    with AutomaticKeepAliveClientMixin, DocumentUtils, DocumentFilePreview {
 
   @override
   bool get wantKeepAlive => true;
@@ -41,10 +42,6 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
   final TextEditingController _searchController = TextEditingController();
   final List<String> _filteredDocumentPaths = [];
   bool _isSearching = false;
-
-  static const int _kMaxPreviewFutures = 80;
-  final LinkedHashMap<String, Future<Uint8List?>> _previewFutures =
-      LinkedHashMap<String, Future<Uint8List?>>();
 
   Timer? _searchDebounce;
 
@@ -59,22 +56,8 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
   void dispose() {
     _searchDebounce?.cancel();
     _searchController.dispose();
-    _previewFutures.clear();
+    previewFutures.clear();
     super.dispose();
-  }
-
-  Future<Uint8List?> _previewFutureFor(String filePath) {
-    final existing = _previewFutures.remove(filePath);
-    if (existing != null) {
-      _previewFutures[filePath] = existing;
-      return existing;
-    }
-    final future = _loadPreviewFuture(filePath);
-    _previewFutures[filePath] = future;
-    while (_previewFutures.length > _kMaxPreviewFutures) {
-      _previewFutures.remove(_previewFutures.keys.first);
-    }
-    return future;
   }
 
   void _onSearchChanged() {
@@ -212,182 +195,9 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     }
   }
 
-  Future<Uint8List?> _loadPreviewFuture(String filePath) async {
-    final fileName = getFileNameFromPath(filePath).toLowerCase();
-    try {
-      if (fileName.endsWith('.jpg') ||
-          fileName.endsWith('.jpeg') ||
-          fileName.endsWith('.png') ||
-          fileName.endsWith('.webp') ||
-          fileName.endsWith('.bmp')) {
-        return await File(filePath).readAsBytes();
-      } else if (fileName.endsWith('.pdf')) {
-        return await generatePdfPreview(filePath);
-      } else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
-        return await generateDocxPreview(filePath);
-      }
-      // Любой текстовый формат (txt, md, csv, json, log, yaml, xml...)
-      // рисуем как text-preview — пользователь сразу видит первые строки
-      // вместо безликой иконки.
-      try {
-        final content = await File(filePath).readAsString();
-        return await _createTextPreview(content);
-      } catch (_) {
-        return null;
-      }
-    } catch (e) {
-      debugPrint('Preview error for $filePath: $e');
-      return null;
-    }
-  }
-
-  Future<Uint8List?> _createTextPreview(String content) async {
-    try {
-      // Берём первые ~12 не пустых строк — это даёт несколько заметных
-      // строк текста в превью, а не 100 склеенных символов в одну линию.
-      final lines = content
-          .split('\n')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .take(12)
-          .toList();
-      final preview = lines.join('\n');
-      return await _textToImage(preview);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  Future<Uint8List?> _textToImage(String text) async {
-    const double w = 220;
-    const double h = 220;
-    const double pad = 14;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));
-    // Светлая страница с тёмным текстом — выглядит как настоящий
-    // документ, а не «тёмная плашка с цифрами».
-    canvas.drawRect(
-      const Rect.fromLTWH(0, 0, w, h),
-      Paint()..color = const Color(0xFFFAFCFF),
-    );
-    // Лента-акцент сверху — чтобы превью читалось как «документ».
-    canvas.drawRect(
-      const Rect.fromLTWH(0, 0, w, 6),
-      Paint()..color = const Color(0xFF2CA5E0),
-    );
-    final paragraphBuilder = ui.ParagraphBuilder(
-      ui.ParagraphStyle(
-        fontSize: 10,
-        textDirection: TextDirection.ltr,
-        maxLines: 14,
-        ellipsis: '…',
-      ),
-    )
-      ..pushStyle(ui.TextStyle(
-        color: const Color(0xFF1A1A2E),
-        fontSize: 10,
-        height: 1.35,
-      ))
-      ..addText(text);
-    final paragraph = paragraphBuilder.build()
-      ..layout(const ui.ParagraphConstraints(width: w - pad * 2));
-    canvas.drawParagraph(paragraph, const Offset(pad, pad + 6));
-    final picture = recorder.endRecording();
-    final image = await picture.toImage(w.toInt(), h.toInt());
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    return byteData?.buffer.asUint8List();
-  }
-
-  Widget _buildFilePreview(String filePath, bool isDark, {double size = 52}) {
-    final fileName = getFileNameFromPath(filePath).toLowerCase();
-    final future = _previewFutureFor(filePath);
-
-    return FutureBuilder<Uint8List?>(
-      future: future,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return _previewShimmer(isDark, size: size);
-        }
-
-        final previewBytes = snapshot.data;
-        if (previewBytes != null) {
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: SizedBox(
-              width: size,
-              height: size,
-              child: Image.memory(
-                previewBytes,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _buildFileIcon(fileName, isDark, size: size),
-              ),
-            ),
-          );
-        }
-
-        return _buildFileIcon(fileName, isDark, size: size);
-      },
-    );
-  }
-
-  Widget _previewShimmer(bool isDark, {double size = 52}) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.07)
-            : const Color(0xFFF0F4FA),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Center(
-        child: SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: isDark ? Colors.white24 : const Color(0xFFCCD3E0),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFileIcon(String fileName, bool isDark, {double size = 52}) {
-    final (color, icon) = _fileStyle(fileName);
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: isDark ? 0.2 : 0.12),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-            color: color.withValues(alpha: isDark ? 0.35 : 0.25), width: 1),
-      ),
-      child: Center(child: Icon(icon, color: color, size: size * 0.42)),
-    );
-  }
-
-  (Color, IconData) _fileStyle(String fileName) {
-    if (fileName.endsWith('.pdf')) {
-      return (const Color(0xFFEF5350), Icons.picture_as_pdf_outlined);
-    }
-    if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
-      return (const Color(0xFF2CA5E0), Icons.description_outlined);
-    }
-    if (fileName.endsWith('.jpg') ||
-        fileName.endsWith('.jpeg') ||
-        fileName.endsWith('.png')) {
-      return (const Color(0xFF26C060), Icons.image_outlined);
-    }
-    if (fileName.endsWith('.txt')) {
-      return (const Color(0xFF9E9E9E), Icons.text_fields_rounded);
-    }
-    return (const Color(0xFFFF9800), Icons.insert_drive_file_outlined);
-  }
-
   void _exportDocument(String fullPath) async {
     if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
 
     if (!(await _requestPermissions())) return;
 
@@ -397,7 +207,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
 
     try {
       if (!await fileToExport.exists()) {
-        throw Exception('Файл не найден: $fullPath');
+        throw Exception(l10n.docFileNotFoundNamed(fullPath));
       }
 
       if (lower.endsWith('.jpg') ||
@@ -409,10 +219,10 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
         final ok = result is Map
             ? result['isSuccess'] == true || result['isSuccess'] == 1
             : result == true;
-        if (!ok) throw Exception('Не удалось сохранить в Галерею.');
+        if (!ok) throw Exception(l10n.docSaveToGalleryFailed);
         if (mounted) {
           AppNotification.show(context,
-              message: 'Сохранено в Галерею', type: NotificationType.success);
+              message: l10n.docSavedToGallery, type: NotificationType.success);
         }
       } else {
         final bytes = await fileToExport.readAsBytes();
@@ -420,10 +230,10 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
           fileName: fileName,
           bytes: bytes,
         );
-        if (newPath == null) throw Exception('Сохранение отменено.');
+        if (newPath == null) throw Exception(l10n.docSaveCancelled);
         if (mounted) {
           AppNotification.show(context,
-              message: 'Файл сохранён', type: NotificationType.success);
+              message: l10n.docFileSaved, type: NotificationType.success);
         }
       }
     } catch (e) {
@@ -447,7 +257,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     }
 
     final fileName = getFileNameFromPath(filePath);
-    _previewFutures.remove(filePath);
+    previewFutures.remove(filePath);
     setState(() {});
 
     // fire-and-forget: удаление локального файла + удаление из реестра/облака.
@@ -472,7 +282,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
 
     if (mounted) {
       AppNotification.show(context,
-          message: '"$fileName" удалён', type: NotificationType.info);
+          message: AppLocalizations.of(context).docDeleted(fileName), type: NotificationType.info);
     }
   }
 
@@ -502,6 +312,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
 
     final controller = TextEditingController(text: fileName);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final l10n = AppLocalizations.of(context);
 
     showDialog(
       context: context,
@@ -522,7 +333,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Переименовать',
+                  l10n.dialogRename,
                   style: TextStyle(
                       color: textColor,
                       fontSize: 17,
@@ -554,7 +365,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                 if (fileExtension != null) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'Расширение: $fileExtension',
+                    l10n.docExtension(fileExtension),
                     style: TextStyle(color: subtextColor, fontSize: 12),
                   ),
                 ],
@@ -570,7 +381,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                               borderRadius: BorderRadius.circular(12)),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        child: const Text('Отмена'),
+                        child: Text(l10n.actionCancel),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -581,7 +392,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                           String newBaseName = controller.text.trim();
                           if (newBaseName.isEmpty) {
                             AppNotification.show(context,
-                                message: 'Имя не может быть пустым');
+                                message: l10n.docNameEmpty);
                             return;
                           }
 
@@ -606,7 +417,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                           try {
                             if (await File(newPath).exists()) {
                               AppNotification.show(context,
-                                  message: '"$newFullName" уже существует');
+                                  message: l10n.docNameExists(newFullName));
                               nav.pop();
                               return;
                             }
@@ -626,8 +437,8 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                               }
                             }
 
-                            final future = _previewFutures.remove(currentPath);
-                            if (future != null) _previewFutures[newPath] = future;
+                            final future = previewFutures.remove(currentPath);
+                            if (future != null) previewFutures[newPath] = future;
 
                             setState(() {
                               _documentPaths[originalIndex] = newPath;
@@ -638,13 +449,13 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
 
                             if (mounted) {
                               AppNotification.show(context,
-                                  message: 'Переименовано в "$newFullName"',
+                                  message: l10n.docRenamedTo(newFullName),
                                   type: NotificationType.success);
                             }
                           } catch (e) {
                             if (mounted) {
                               AppNotification.show(context,
-                                  message: 'Ошибка: ${e.toString()}');
+                                  message: friendlyError(e));
                             }
                           }
                           nav.pop();
@@ -657,8 +468,8 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                               borderRadius: BorderRadius.circular(12)),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        child: const Text('Готово',
-                            style: TextStyle(fontWeight: FontWeight.w600)),
+                        child: Text(l10n.actionDone,
+                            style: const TextStyle(fontWeight: FontWeight.w600)),
                       ),
                     ),
                   ],
@@ -677,6 +488,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
         : _documentPaths[index];
     final fileName = getFileNameFromPath(fullPath);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final l10n = AppLocalizations.of(context);
 
     final sheetBg = isDark ? const Color(0xFF152030) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
@@ -728,33 +540,33 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                 ),
                 const SizedBox(height: 12),
                 Divider(color: dividerColor, height: 1),
-                _SheetAction(
+                SheetAction(
                   icon: Icons.edit_outlined,
                   iconColor: const Color(0xFF2CA5E0),
                   iconBg: const Color(0xFF2CA5E0).withValues(alpha: 0.12),
-                  label: 'Переименовать',
+                  label: l10n.dialogRename,
                   textColor: textColor,
                   onTap: () {
                     Navigator.pop(ctx);
                     _renameDocument(index);
                   },
                 ),
-                _SheetAction(
+                SheetAction(
                   icon: Icons.save_alt_outlined,
                   iconColor: const Color(0xFF26C060),
                   iconBg: const Color(0xFF26C060).withValues(alpha: 0.12),
-                  label: 'Сохранить / Экспорт',
+                  label: l10n.menuSaveExport,
                   textColor: textColor,
                   onTap: () {
                     Navigator.pop(ctx);
                     _exportDocument(fullPath);
                   },
                 ),
-                _SheetAction(
+                SheetAction(
                   icon: Icons.share_outlined,
                   iconColor: const Color(0xFFFF9800),
                   iconBg: const Color(0xFFFF9800).withValues(alpha: 0.12),
-                  label: 'Поделиться',
+                  label: l10n.menuShare,
                   textColor: textColor,
                   onTap: () {
                     Navigator.pop(ctx);
@@ -762,11 +574,11 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                   },
                 ),
                 Divider(color: dividerColor, height: 1),
-                _SheetAction(
+                SheetAction(
                   icon: Icons.delete_outline,
                   iconColor: const Color(0xFFEF5350),
                   iconBg: const Color(0xFFEF5350).withValues(alpha: 0.12),
-                  label: 'Удалить',
+                  label: l10n.actionDelete,
                   textColor: const Color(0xFFEF5350),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -783,6 +595,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
   }
 
   Future<void> _confirmAndDelete(int index) async {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final dialogBg = isDark ? const Color(0xFF1a2535) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
@@ -809,14 +622,14 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                     color: Color(0xFFEF5350), size: 28),
               ),
               const SizedBox(height: 16),
-              Text('Удалить файл?',
+              Text(l10n.dialogDeleteTitle,
                   style: TextStyle(
                       color: textColor,
                       fontSize: 17,
                       fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               Text(
-                'Файл будет удалён без возможности восстановления.',
+                l10n.dialogDeleteBody,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: subtextColor, fontSize: 14),
               ),
@@ -832,7 +645,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                             borderRadius: BorderRadius.circular(12)),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
-                      child: const Text('Отмена'),
+                      child: Text(l10n.actionCancel),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -847,8 +660,8 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                             borderRadius: BorderRadius.circular(12)),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
-                      child: const Text('Удалить',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      child: Text(l10n.actionDelete,
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
                     ),
                   ),
                 ],
@@ -865,7 +678,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     final file = File(fullPath);
     if (!await file.exists()) {
       if (mounted) {
-        AppNotification.show(context, message: 'Файл не найден');
+        AppNotification.show(context, message: AppLocalizations.of(context).docFileNotFound);
       }
       return;
     }
@@ -888,8 +701,8 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
       }
     });
 
-    _previewFutures.putIfAbsent(
-        fullPath, () => _loadPreviewFuture(fullPath));
+    previewFutures.putIfAbsent(
+        fullPath, () => loadPreviewFuture(fullPath));
 
     () async {
       final entryName = () {
@@ -919,13 +732,14 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
       _addDocument(fullPath);
       if (mounted) {
         AppNotification.show(context,
-            message: '"$fileName" импортирован',
+            message: AppLocalizations.of(context).docImported(fileName),
             type: NotificationType.success);
       }
     }
   }
 
   void _showImportOptions(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final sheetBg = isDark ? const Color(0xFF152030) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
@@ -957,7 +771,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Text(
-                    'Импорт документа',
+                    l10n.importSheetTitle,
                     style: TextStyle(
                         color: textColor,
                         fontSize: 16,
@@ -965,22 +779,22 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                   ),
                 ),
                 const SizedBox(height: 12),
-                _SheetAction(
+                SheetAction(
                   icon: Icons.image_outlined,
                   iconColor: const Color(0xFF26C060),
                   iconBg: const Color(0xFF26C060).withValues(alpha: 0.12),
-                  label: 'Выбрать фото',
+                  label: l10n.importChoosePhoto,
                   textColor: textColor,
                   onTap: () {
                     Navigator.pop(ctx);
                     _importDocument(FileType.image);
                   },
                 ),
-                _SheetAction(
+                SheetAction(
                   icon: Icons.folder_outlined,
                   iconColor: const Color(0xFF2CA5E0),
                   iconBg: const Color(0xFF2CA5E0).withValues(alpha: 0.12),
-                  label: 'Выбрать файл',
+                  label: l10n.importChooseFile,
                   textColor: textColor,
                   onTap: () {
                     Navigator.pop(ctx);
@@ -1005,7 +819,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     if (storageStatus.isPermanentlyDenied || photosStatus.isPermanentlyDenied) {
       if (mounted) {
         AppNotification.show(context,
-            message: 'Разрешение отклонено. Откройте настройки.');
+            message: AppLocalizations.of(context).permissionDenied);
       }
     }
     return false;
@@ -1014,6 +828,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
   void _navigateToDocumentView(String fullPath) async {
     if (!mounted) return;
     final navigator = Navigator.of(context);
+    final l10n = AppLocalizations.of(context);
     final fileName = getFileNameFromPath(fullPath);
     final lower = fileName.toLowerCase();
 
@@ -1040,18 +855,18 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
           final result = await OpenFilex.open(fullPath);
           if (result.type != ResultType.done && mounted) {
             AppNotification.show(context,
-                message:
-                    'Не удалось открыть файл формата .${fileName.split('.').last.toUpperCase()}');
+                message: l10n.docOpenUnsupported(
+                    fileName.split('.').last.toUpperCase()));
           }
         } else {
           if (mounted) {
-            AppNotification.show(context, message: 'Файл не найден: $fileName');
+            AppNotification.show(context, message: l10n.docFileNotFoundNamed(fileName));
           }
         }
       } catch (e) {
         if (mounted) {
           AppNotification.show(context,
-              message: 'Ошибка открытия файла: $e');
+              message: '${l10n.docOpenError}: $e');
         }
       }
     }
@@ -1079,6 +894,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     final cardBorder = isDark
         ? Colors.white.withValues(alpha: 0.08)
         : const Color(0xFFEEF2F8);
+    final l10n = AppLocalizations.of(context);
 
     return Container(
       color: bgColor,
@@ -1114,7 +930,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                           style:
                               TextStyle(color: textColor, fontSize: 14),
                           decoration: InputDecoration(
-                            hintText: 'Поиск',
+                            hintText: l10n.searchHint,
                             hintStyle: TextStyle(
                                 color: subtextColor, fontSize: 14),
                             border: InputBorder.none,
@@ -1135,8 +951,8 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                   const SizedBox(height: 10),
                   Text(
                     _filteredDocumentPaths.isEmpty
-                        ? 'Ничего не найдено'
-                        : 'Найдено: ${_filteredDocumentPaths.length}',
+                        ? l10n.searchNothingFound
+                        : l10n.searchFoundCount(_filteredDocumentPaths.length),
                     style: TextStyle(color: subtextColor, fontSize: 12),
                   ),
                 ],
@@ -1203,7 +1019,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                                       horizontal: hPad, vertical: 12),
                                   child: Row(
                                     children: [
-                                      _buildFilePreview(
+                                      buildFilePreview(
                                           filePath, isDark, size: previewSize),
                                       SizedBox(width: gap),
                                       Expanded(
@@ -1285,12 +1101,13 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
       itemCount: 6,
       itemBuilder: (_, __) => Padding(
         padding: const EdgeInsets.only(bottom: 10),
-        child: _SkeletonRow(baseColor: baseColor, highlightColor: highlightColor),
+        child: SkeletonRow(baseColor: baseColor, highlightColor: highlightColor),
       ),
     );
   }
 
   Widget _buildEmptyState(bool isDark, Color subtextColor) {
+    final l10n = AppLocalizations.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         // Адаптивные размеры под landscape / низкие высоты —
@@ -1324,7 +1141,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                 ),
                 SizedBox(height: gap1),
                 Text(
-                  _isSearching ? 'Ничего не найдено' : 'Файлов пока нет',
+                  _isSearching ? l10n.searchNothingFound : l10n.emptyNoFiles,
                   style: TextStyle(
                     color: isDark ? Colors.white70 : const Color(0xFF1A1A2E),
                     fontSize: titleSize,
@@ -1334,8 +1151,8 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                 SizedBox(height: gap2),
                 Text(
                   _isSearching
-                      ? 'Попробуйте изменить запрос'
-                      : 'Отсканируйте документ или импортируйте файл',
+                      ? l10n.emptyTryDifferentQuery
+                      : l10n.emptyScanOrImport,
                   textAlign: TextAlign.center,
                   style: TextStyle(color: subtextColor, fontSize: 13.5, height: 1.45),
                 ),
@@ -1348,112 +1165,3 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
   }
 }
 
-class _SheetAction extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final Color iconBg;
-  final String label;
-  final Color textColor;
-  final VoidCallback onTap;
-
-  const _SheetAction({
-    required this.icon,
-    required this.iconColor,
-    required this.iconBg,
-    required this.label,
-    required this.textColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-      leading: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-        child: Icon(icon, color: iconColor, size: 18),
-      ),
-      title: Text(label,
-          style: TextStyle(
-              color: textColor, fontSize: 14, fontWeight: FontWeight.w500)),
-      onTap: onTap,
-    );
-  }
-}
-
-class _SkeletonRow extends StatefulWidget {
-  final Color baseColor;
-  final Color highlightColor;
-  const _SkeletonRow({required this.baseColor, required this.highlightColor});
-
-  @override
-  State<_SkeletonRow> createState() => _SkeletonRowState();
-}
-
-class _SkeletonRowState extends State<_SkeletonRow>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(
-    duration: const Duration(milliseconds: 1100),
-    vsync: this,
-  )..repeat();
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (_, __) {
-        final t = _ctrl.value;
-        final color = Color.lerp(widget.baseColor, widget.highlightColor, (t < 0.5 ? t : 1 - t) * 2)!;
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(
-                  color: widget.highlightColor,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      height: 12, width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: widget.highlightColor,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      height: 10, width: 120,
-                      decoration: BoxDecoration(
-                        color: widget.highlightColor,
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}

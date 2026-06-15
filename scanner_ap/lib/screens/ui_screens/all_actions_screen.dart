@@ -14,7 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../services/document_registry.dart';
 import '../../services/premium_service.dart';
-import 'premium_screen.dart';
+import 'premium_paywall.dart';
 import 'add_password_screen.dart';
 import 'restore_photo_screen.dart';
 import 'highlight_screen.dart';
@@ -36,6 +36,7 @@ import 'voice_note_screen.dart';
 import 'print_screen.dart';
 import 'remove_watermark_screen.dart';
 import 'hot_zone_screen.dart';
+import '../../l10n/app_localizations.dart';
 
 const _documentKey = 'saved_document_paths';
 
@@ -50,107 +51,30 @@ class AllActionsScreen extends StatefulWidget {
 
 class _AllActionsScreenState extends State<AllActionsScreen>
     with TickerProviderStateMixin {
-  static const _categories = [
-    ('Скан', Icons.camera_alt_outlined),
-    ('Правка', Icons.tune),
-    ('Поделиться', Icons.ios_share_outlined),
-    ('Импорт', Icons.file_download_outlined),
-    ('AI', Icons.auto_awesome_outlined),
+  static const _categoryIcons = [
+    Icons.camera_alt_outlined,
+    Icons.tune,
+    Icons.ios_share_outlined,
+    Icons.file_download_outlined,
+    Icons.auto_awesome_outlined,
   ];
+
+  // Метки табов резолвятся в build через l10n (AI — бренд, не переводится).
+  List<String> _categoryLabels(AppLocalizations l10n) =>
+      [l10n.tabScan, l10n.tabEdit, l10n.tabShare, l10n.tabImport, 'AI'];
 
   late final TabController _tabCtrl;
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: _categories.length, vsync: this);
+    _tabCtrl = TabController(length: _categoryIcons.length, vsync: this);
   }
 
   @override
   void dispose() {
     _tabCtrl.dispose();
     super.dispose();
-  }
-
-  void _showPremiumPaywall(BuildContext context, String featureName) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
-    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => Container(
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36, height: 4,
-              decoration: BoxDecoration(
-                color: isDark ? Colors.white24 : Colors.black12,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Container(
-              width: 64, height: 64,
-              decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.workspace_premium, size: 32, color: Colors.amber.shade600),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Функция только для Premium',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: textColor),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '«$featureName» доступна в подписке.\nОформите Premium чтобы разблокировать её.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: subColor, height: 1.45),
-            ),
-            const SizedBox(height: 24),
-            _PremiumBenefitRow(icon: Icons.library_books, label: 'Пакетное сканирование (+10 страниц)', isDark: isDark),
-            _PremiumBenefitRow(icon: Icons.auto_fix_high, label: 'Восстановление фото и выделение текста', isDark: isDark),
-            _PremiumBenefitRow(icon: Icons.lock, label: 'Защита паролем и удаление водяных знаков', isDark: isDark),
-            _PremiumBenefitRow(icon: Icons.voice_chat, label: 'Голосовые заметки и Эко-сканер', isDark: isDark, isLast: true),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.amber.shade600,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen()));
-                },
-                child: const Text('Оформить Premium',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Не сейчас', style: TextStyle(color: subColor, fontSize: 14)),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _tile(
@@ -162,9 +86,9 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     Color iconColor = const Color(0xFF2CA5E0),
   }) {
     final effectiveTap = (isPremium && !PremiumService().isPremium)
-        ? () => _showPremiumPaywall(context, title)
+        ? () => showPremiumPaywall(context, title)
         : onTap ?? () => ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('«$title» в разработке')),
+              SnackBar(content: Text(AppLocalizations.of(context).featInDevelopment(title))),
             );
 
     return buildFeatureTile(
@@ -190,9 +114,9 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     Color iconColor = const Color(0xFF2CA5E0),
   }) {
     final effectiveTap = (isPremium && !PremiumService().isPremium)
-        ? () => _showPremiumPaywall(context, title)
+        ? () => showPremiumPaywall(context, title)
         : onTap ?? () => ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('«$title» в разработке')),
+              SnackBar(content: Text(AppLocalizations.of(context).featInDevelopment(title))),
             );
 
     return buildFeatureTileWide(
@@ -218,7 +142,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     bool isPremium = false,
   }) {
     final effectiveTap = (isPremium && !PremiumService().isPremium)
-        ? () => _showPremiumPaywall(context, title)
+        ? () => showPremiumPaywall(context, title)
         : onTap;
 
     return Material(
@@ -343,6 +267,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final tabBg = isDark ? const Color(0xFF141E2B) : Colors.white;
@@ -366,8 +291,8 @@ class _AllActionsScreenState extends State<AllActionsScreen>
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 560),
                   child: _featuredTile(
-                    'AI-анализ документа',
-                    'Сфотографируйте и получите ключевые тезисы за 10 секунд',
+                    l10n.featAiAnalyzeTitle,
+                    l10n.featAiAnalyzeSub,
                     Icons.auto_awesome,
                     gradient: const [
                       Color(0xFF6FCFF5),
@@ -426,7 +351,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
               overlayColor: WidgetStateProperty.all(Colors.transparent),
               padding: const EdgeInsets.all(4),
               tabs: [
-                for (final (label, icon) in _categories)
+                for (var i = 0; i < _categoryIcons.length; i++)
                   Tab(
                     height: 44,
                     child: Padding(
@@ -434,9 +359,9 @@ class _AllActionsScreenState extends State<AllActionsScreen>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(icon, size: 16),
+                          Icon(_categoryIcons[i], size: 16),
                           const SizedBox(width: 6),
-                          Text(label),
+                          Text(_categoryLabels(AppLocalizations.of(context))[i]),
                         ],
                       ),
                     ),
@@ -472,14 +397,15 @@ class _AllActionsScreenState extends State<AllActionsScreen>
   // ------------------------------------------------------------------
 
   Widget _buildScanTab() {
+    final l10n = AppLocalizations.of(context);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
       children: [
         _wideTile(
-          'Документ',
+          l10n.featDocument,
           Icons.description,
           iconColor: Colors.purple,
-          subtitle: 'Сканирование нескольких листов',
+          subtitle: l10n.featDocumentSub,
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
@@ -490,9 +416,9 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _pairRow(
           _tile(
-            'Удостоверение',
+            l10n.featIdCard,
             Icons.add_card,
-            subtitle: 'Снимок обоих сторон',
+            subtitle: l10n.featIdCardSub,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -501,9 +427,9 @@ class _AllActionsScreenState extends State<AllActionsScreen>
             ),
           ),
           _tile(
-            'Паспорт',
+            l10n.featPassport,
             Icons.man,
-            subtitle: 'Сканирование страниц данных',
+            subtitle: l10n.featPassportSub,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => CameraScreen(initialFeature: 'Паспорт')),
@@ -513,19 +439,19 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _pairRow(
           _tile(
-            '+10 страниц',
+            l10n.feat10PagesTitle,
             Icons.library_books,
             isPremium: true,
-            subtitle: 'Пакетный режим',
+            subtitle: l10n.feat10PagesSub,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => CameraScreen(initialFeature: '+10 страниц')),
             ),
           ),
           _tile(
-            'Перевод',
+            l10n.featTranslate,
             Icons.translate,
-            subtitle: 'Мгновенный перевод текста',
+            subtitle: l10n.featTranslateSub,
             iconColor: const Color(0xFFE67E22),
             onTap: () async {
               await availableCameras();
@@ -540,9 +466,9 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _singleRow(
           _tile(
-            'QR-код',
+            l10n.featQr,
             Icons.qr_code_2,
-            subtitle: 'Мгновенный сканер',
+            subtitle: l10n.featQrSub,
             iconColor: Colors.teal,
             onTap: () async {
               await availableCameras();
@@ -559,14 +485,15 @@ class _AllActionsScreenState extends State<AllActionsScreen>
   }
 
   Widget _buildEditTab() {
+    final l10n = AppLocalizations.of(context);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
       children: [
         _wideTile(
-          'Изменение цвета',
+          l10n.featColorAdjust,
           Icons.color_lens,
           iconColor: Colors.red,
-          subtitle: 'Яркость, контраст, оттенок документа',
+          subtitle: l10n.featColorAdjustSub,
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
@@ -579,16 +506,16 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _pairRow(
           _tile(
-            'Обрезать, повернуть',
+            l10n.featCropRotate,
             Icons.crop,
-            subtitle: '90° / 180° или произвольно',
+            subtitle: l10n.featCropRotateSub,
             onTap: () => _cropAndRotate(context),
           ),
           _tile(
-            'Подпись',
+            l10n.featSignature,
             Icons.edit_note,
             iconColor: Colors.green,
-            subtitle: 'Рисование подписи',
+            subtitle: l10n.featSignatureSub,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const sig.HomeScreen()),
@@ -598,18 +525,18 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _pairRow(
           _tile(
-            'Восстановить фото',
+            l10n.featRestorePhoto,
             Icons.auto_fix_high,
             isPremium: true,
-            subtitle: 'Улучшение качества',
+            subtitle: l10n.featRestorePhotoSub,
             onTap: () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => RestorePhotoScreen(onSaved: widget.onDocumentImported),
             )),
           ),
           _tile(
-            'Убрать пятна',
+            l10n.featRemoveSpots,
             Icons.layers_clear,
-            subtitle: 'Удаление дефектов',
+            subtitle: l10n.featRemoveSpotsSub,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -623,10 +550,10 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _pairRow(
           _tile(
-            'Объединить файлы',
+            l10n.featMerge,
             Icons.merge_type,
             iconColor: Colors.purple,
-            subtitle: 'PDF и изображения в один PDF',
+            subtitle: l10n.featMergeSub,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -637,9 +564,9 @@ class _AllActionsScreenState extends State<AllActionsScreen>
             ),
           ),
           _tile(
-            'Извлечь страницы',
+            l10n.featExtractPages,
             Icons.auto_delete,
-            subtitle: 'Отдельные страницы из PDF',
+            subtitle: l10n.featExtractPagesSub,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -656,16 +583,16 @@ class _AllActionsScreenState extends State<AllActionsScreen>
             'OCR',
             Icons.text_fields_outlined,
             iconColor: const Color(0xFF6B7A99),
-            subtitle: 'Текст из файла + копирование',
+            subtitle: l10n.featOcrSub,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const OcrScreen()),
             ),
           ),
           _tile(
-            'Сжать PDF',
+            l10n.featCompressPdf,
             Icons.compress,
-            subtitle: 'Уменьшить размер',
+            subtitle: l10n.featCompressPdfSub,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -679,19 +606,19 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _pairRow(
           _tile(
-            'Выделить текст',
+            l10n.featHighlight,
             Icons.highlight,
             isPremium: true,
-            subtitle: 'Подсветка важного',
+            subtitle: l10n.featHighlightSub,
             iconColor: const Color(0xFFE8A317),
             onTap: () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => HighlightScreen(onSaved: widget.onDocumentImported),
             )),
           ),
           _tile(
-            'Порядок страниц',
+            l10n.featReorderPages,
             Icons.swap_vert,
-            subtitle: 'Изменение порядка PDF',
+            subtitle: l10n.featReorderPagesSub,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -705,9 +632,9 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _singleRow(
           _tile(
-            'Местоположение и время',
+            l10n.featGeoStamp,
             Icons.punch_clock_rounded,
-            subtitle: 'Печать геолокации/времени на фото',
+            subtitle: l10n.featGeoStampSub,
             onTap: () => _addTimestamp(context),
           ),
         ),
@@ -716,13 +643,14 @@ class _AllActionsScreenState extends State<AllActionsScreen>
   }
 
   Widget _buildShareTab() {
+    final l10n = AppLocalizations.of(context);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
       children: [
         _wideTile(
-          'Конвертировать в PDF',
+          l10n.featToPdf,
           Icons.picture_as_pdf,
-          subtitle: 'Изображения → один PDF-документ',
+          subtitle: l10n.featToPdfSub,
           iconColor: Colors.red.shade700,
           onTap: () => _convertToPdf(context),
         ),
@@ -731,14 +659,14 @@ class _AllActionsScreenState extends State<AllActionsScreen>
           _tile(
             'PDF → JPEG',
             Icons.image,
-            subtitle: 'Страницы PDF в изображения',
+            subtitle: l10n.featPdfToImagesSub,
             iconColor: Colors.green.shade700,
             onTap: () => _convertToJpeg(context),
           ),
           _tile(
-            'Печать',
+            l10n.featPrint,
             Icons.print,
-            subtitle: 'Распечатать документ',
+            subtitle: l10n.featPrintSub,
             onTap: () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => const PrintScreen(),
             )),
@@ -747,19 +675,19 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _pairRow(
           _tile(
-            'Добавить пароль',
+            l10n.featAddPassword,
             Icons.lock,
-            subtitle: 'Защита PDF',
+            subtitle: l10n.featAddPasswordSub,
             isPremium: true,
             onTap: () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => AddPasswordScreen(onSaved: widget.onDocumentImported),
             )),
           ),
           _tile(
-            'Удалить водяной знак',
+            l10n.featRemoveWatermark,
             Icons.auto_fix_normal,
             isPremium: true,
-            subtitle: 'Стереть лого/знак',
+            subtitle: l10n.featRemoveWatermarkSub,
             onTap: () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => RemoveWatermarkScreen(onSaved: widget.onDocumentImported),
             )),
@@ -768,9 +696,9 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _singleRow(
           _tile(
-            'Электронная почта',
+            l10n.featEmail,
             Icons.mail_outline,
-            subtitle: 'Отправить файл по почте',
+            subtitle: l10n.featEmailSub,
             onTap: () => _shareByEmail(context),
           ),
         ),
@@ -779,22 +707,23 @@ class _AllActionsScreenState extends State<AllActionsScreen>
   }
 
   Widget _buildImportTab() {
+    final l10n = AppLocalizations.of(context);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
       children: [
         _wideTile(
-          'Импорт документов',
+          l10n.featImportDocs,
           Icons.file_download,
-          subtitle: 'PDF, Word, TXT и другие форматы',
+          subtitle: l10n.featImportDocsSub,
           iconColor: const Color(0xFFE67E22),
           onTap: () => _showImportOptions(context),
         ),
         const SizedBox(height: 12),
         _singleRow(
           _tile(
-            'Импорт изображений',
+            l10n.featImportImages,
             Icons.image_outlined,
-            subtitle: 'Фото из галереи',
+            subtitle: l10n.featImportImagesSub,
             iconColor: Colors.blueAccent,
             onTap: () => _importImage(context),
           ),
@@ -804,13 +733,14 @@ class _AllActionsScreenState extends State<AllActionsScreen>
   }
 
   Widget _buildAiTab() {
+    final l10n = AppLocalizations.of(context);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
       children: [
         _wideTile(
-          'Извлечь суть и действия',
+          l10n.featAiContract,
           Icons.mobile_friendly,
-          subtitle: 'AI выделяет ключевые моменты договора',
+          subtitle: l10n.featAiContractSub,
           iconColor: Colors.red.shade700,
           onTap: () => Navigator.push(context, MaterialPageRoute(
             builder: (_) => DocumentAiScreen.analyze(),
@@ -819,18 +749,18 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _pairRow(
           _tile(
-            'AI-сканер документа',
+            l10n.featAiScanner,
             Icons.camera_alt,
-            subtitle: 'Снимок → мгновенный анализ',
+            subtitle: l10n.featAiScannerSub,
             iconColor: Colors.green.shade700,
             onTap: () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => DocumentAiScreen.camera(),
             )),
           ),
           _tile(
-            'Голосовая заметка',
+            l10n.featVoiceNote,
             Icons.voice_chat,
-            subtitle: 'Аудио-комментарий',
+            subtitle: l10n.featVoiceNoteSub,
             isPremium: true,
             onTap: () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => VoiceNoteScreen(onSaved: widget.onDocumentImported),
@@ -840,17 +770,17 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _pairRow(
           _tile(
-            'Горячая зона',
+            l10n.featHotZone,
             Icons.hot_tub,
-            subtitle: 'Визитка из подписи',
+            subtitle: l10n.featHotZoneSub,
             onTap: () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => const HotZoneScreen(),
             )),
           ),
           _tile(
-            'Эко упаковка',
+            l10n.featEcoPackage,
             Icons.eco,
-            subtitle: 'Анализ материалов',
+            subtitle: l10n.featEcoPackageSub,
             isPremium: true,
             iconColor: Colors.green.shade500,
             onTap: () => Navigator.push(context, MaterialPageRoute(
@@ -867,6 +797,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
   // ------------------------------------------------------------------
 
   void _showImportOptions(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -876,14 +807,14 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text('Импортировать документ',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(l10n.importVerbTitle,
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
             ),
             ListTile(
               leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
-              title: const Text('PDF документ'),
+              title: Text(l10n.importPdfDocument),
               onTap: () {
                 Navigator.pop(context);
                 _pickAndSaveFile(context, extensions: ['pdf']);
@@ -899,7 +830,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
             ),
             ListTile(
               leading: const Icon(Icons.folder, color: Colors.orange),
-              title: const Text('Любой файл'),
+              title: Text(l10n.importAnyFile),
               onTap: () {
                 Navigator.pop(context);
                 _pickAndSaveFile(context, extensions: null);
@@ -917,6 +848,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     required List<String>? extensions,
   }) async {
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context);
     final result = await FilePicker.platform.pickFiles(
       type: extensions != null ? FileType.custom : FileType.any,
       allowedExtensions: extensions,
@@ -948,17 +880,18 @@ class _AllActionsScreenState extends State<AllActionsScreen>
 
       widget.onDocumentImported?.call();
       messenger.showSnackBar(
-        SnackBar(content: Text('Импортировано: $fileName')),
+        SnackBar(content: Text(l10n.snackImported(fileName))),
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Ошибка импорта: $e')),
+        SnackBar(content: Text('${l10n.snackImportError}: $e')),
       );
     }
   }
 
   Future<void> _cropAndRotate(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context);
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
@@ -967,7 +900,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
       sourcePath: picked.path,
       uiSettings: [
         AndroidUiSettings(
-          toolbarTitle: 'Обрезать / Повернуть',
+          toolbarTitle: l10n.cropToolbarTitle,
           toolbarColor: Colors.blue,
           toolbarWidgetColor: Colors.white,
           initAspectRatio: CropAspectRatioPreset.original,
@@ -995,11 +928,12 @@ class _AllActionsScreenState extends State<AllActionsScreen>
       name: p.basenameWithoutExtension(fileName),
     ));
     widget.onDocumentImported?.call();
-    messenger.showSnackBar(SnackBar(content: Text('Сохранено: $fileName')));
+    messenger.showSnackBar(SnackBar(content: Text(l10n.snackSaved(fileName))));
   }
 
   Future<void> _addTimestamp(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context);
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
@@ -1061,11 +995,12 @@ class _AllActionsScreenState extends State<AllActionsScreen>
       name: p.basenameWithoutExtension(fileName),
     ));
     widget.onDocumentImported?.call();
-    messenger.showSnackBar(SnackBar(content: Text('Сохранено с меткой: $fileName')));
+    messenger.showSnackBar(SnackBar(content: Text(l10n.snackSavedWithStamp(fileName))));
   }
 
   Future<void> _convertToPdf(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context);
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['jpg', 'jpeg', 'png'],
@@ -1077,11 +1012,11 @@ class _AllActionsScreenState extends State<AllActionsScreen>
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => const AlertDialog(
+        builder: (_) => AlertDialog(
           content: Row(children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 16),
-            Text('Конвертация...'),
+            const CircularProgressIndicator(),
+            const SizedBox(width: 16),
+            Text(l10n.converting),
           ]),
         ),
       );
@@ -1123,16 +1058,17 @@ class _AllActionsScreenState extends State<AllActionsScreen>
 
       if (context.mounted) Navigator.pop(context);
       messenger.showSnackBar(
-        SnackBar(content: Text('PDF создан: $fileName'), backgroundColor: Colors.green),
+        SnackBar(content: Text(l10n.snackPdfCreated(fileName)), backgroundColor: Colors.green),
       );
     } catch (e) {
       if (context.mounted) Navigator.pop(context);
-      messenger.showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      messenger.showSnackBar(SnackBar(content: Text('${l10n.commonError}: $e')));
     }
   }
 
   Future<void> _convertToJpeg(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context);
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf'],
@@ -1147,11 +1083,11 @@ class _AllActionsScreenState extends State<AllActionsScreen>
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => const AlertDialog(
+        builder: (_) => AlertDialog(
           content: Row(children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 16),
-            Text('Конвертация...'),
+            const CircularProgressIndicator(),
+            const SizedBox(width: 16),
+            Text(l10n.converting),
           ]),
         ),
       );
@@ -1207,16 +1143,17 @@ class _AllActionsScreenState extends State<AllActionsScreen>
 
       if (context.mounted) Navigator.pop(context);
       messenger.showSnackBar(
-        SnackBar(content: Text('Сохранено $saved изображений'), backgroundColor: Colors.green),
+        SnackBar(content: Text(l10n.snackSavedImages(saved)), backgroundColor: Colors.green),
       );
     } catch (e) {
       if (context.mounted) Navigator.pop(context);
-      messenger.showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      messenger.showSnackBar(SnackBar(content: Text('${l10n.commonError}: $e')));
     }
   }
 
   Future<void> _shareByEmail(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context);
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: false,
       type: FileType.any,
@@ -1225,7 +1162,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
 
     final path = result.files.first.path!;
     if (!await File(path).exists()) {
-      messenger.showSnackBar(const SnackBar(content: Text('Файл не найден')));
+      messenger.showSnackBar(SnackBar(content: Text(l10n.docFileNotFound)));
       return;
     }
     await Share.shareXFiles([XFile(path)], subject: p.basename(path));
@@ -1233,6 +1170,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
 
   Future<void> _importImage(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context);
     final picker = ImagePicker();
     final file = await picker.pickImage(source: ImageSource.gallery);
     if (file == null) return;
@@ -1259,63 +1197,13 @@ class _AllActionsScreenState extends State<AllActionsScreen>
 
       widget.onDocumentImported?.call();
       messenger.showSnackBar(
-        SnackBar(content: Text('Изображение импортировано: $fileName')),
+        SnackBar(content: Text(l10n.snackImageImported(fileName))),
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Ошибка импорта: $e')),
+        SnackBar(content: Text('${l10n.snackImportError}: $e')),
       );
     }
   }
 }
 
-class _PremiumBenefitRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isDark;
-  final bool isLast;
-
-  const _PremiumBenefitRow({
-    required this.icon,
-    required this.label,
-    required this.isDark,
-    this.isLast = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final dividerColor = isDark ? Colors.white.withValues(alpha: 0.07) : Colors.grey.shade100;
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 11),
-          child: Row(
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, size: 18, color: Colors.amber.shade600),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: isDark ? Colors.white70 : const Color(0xFF3A4558),
-                  ),
-                ),
-              ),
-              Icon(Icons.check, size: 16, color: Colors.green.shade400),
-            ],
-          ),
-        ),
-        if (!isLast) Divider(height: 1, color: dividerColor),
-      ],
-    );
-  }
-}

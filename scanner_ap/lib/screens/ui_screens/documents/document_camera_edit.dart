@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'dart:io';
-import 'save_options_document.dart'; 
+import 'save_options_document.dart';
+import '../../../l10n/app_localizations.dart';
 
 
 class ImageEditState {
@@ -72,17 +73,18 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
   }
 
   Future<void> _cropImage() async {
+    final l10n = AppLocalizations.of(context);
     final cropped = await ImageCropper().cropImage(
       sourcePath: _currentEditState.path,
       uiSettings: [
         AndroidUiSettings(
-          toolbarTitle: 'Обрезать документ',
+          toolbarTitle: l10n.editCropDocTitle,
           toolbarColor: Colors.black,
           toolbarWidgetColor: Colors.white,
           initAspectRatio: CropAspectRatioPreset.original,
           lockAspectRatio: false,
         ),
-        IOSUiSettings(title: 'Обрезать документ'),
+        IOSUiSettings(title: l10n.editCropDocTitle),
       ],
     );
 
@@ -139,7 +141,7 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
 
   @override
   Widget build(BuildContext context) {
-  
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -150,15 +152,15 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
         ),
         title: Text(
           _isMultiPageMode
-              ? 'Редактирование (${_currentPageIndex + 1} из ${widget.imageFiles.length})'
-              : 'Редактирование',
+              ? l10n.editTitleWithCount(_currentPageIndex + 1, widget.imageFiles.length)
+              : l10n.editTitle,
           style: const TextStyle(color: Colors.white),
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.restart_alt, color: Colors.white),
             onPressed: _resetFilters,
-            tooltip: 'Сбросить',
+            tooltip: l10n.reset,
           ),
         ],
       ),
@@ -212,12 +214,12 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
                     children: [
                       _EditToolButton(
                         icon: Icons.rotate_right,
-                        label: 'Повернуть',
+                        label: l10n.toolRotate,
                         onTap: _rotateImage,
                       ),
                       _EditToolButton(
                         icon: Icons.filter_b_and_w,
-                        label: 'Ч/Б',
+                        label: l10n.editToolBW,
                         onTap: () {
                           setState(() {
                             _isGrayScale = !_isGrayScale;
@@ -227,19 +229,19 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
                       ),
                       _EditToolButton(
                         icon: Icons.crop,
-                        label: 'Обрезать',
+                        label: l10n.editToolCrop,
                         onTap: _cropImage,
                       ),
                       _EditToolButton(
                         icon: Icons.auto_awesome,
-                        label: 'Улучшить',
+                        label: l10n.editToolEnhance,
                         onTap: () {
                           setState(() {
                             _contrast = 1.2;
                             _brightness = 0.1;
                           });
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Автоулучшение применено')),
+                            SnackBar(content: Text(l10n.editAutoEnhanced)),
                           );
                         },
                       ),
@@ -272,9 +274,9 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          const SizedBox(
+                          SizedBox(
                             width: 60,
-                            child: Text('Яркость', style: TextStyle(color: Colors.white, fontSize: 12)),
+                            child: Text(l10n.colorBrightness, style: const TextStyle(color: Colors.white, fontSize: 12)),
                           ),
                         ],
                       ),
@@ -299,9 +301,9 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          const SizedBox(
+                          SizedBox(
                             width: 60,
-                            child: Text('Контраст', style: TextStyle(color: Colors.white, fontSize: 12)),
+                            child: Text(l10n.colorContrast, style: const TextStyle(color: Colors.white, fontSize: 12)),
                           ),
                         ],
                       ),
@@ -320,8 +322,8 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
                       icon: const Icon(Icons.save, color: Colors.white, size: 20),
                       label: Text(
                         _isMultiPageMode
-                            ? 'Сохранить все ${widget.imageFiles.length} страницы'
-                            : 'Сохранить изменения',
+                            ? l10n.editSaveAllPages(widget.imageFiles.length)
+                            : l10n.editSaveChanges,
                         style: const TextStyle(color: Colors.white, fontSize: 16),
                       ),
                       style: ElevatedButton.styleFrom(
@@ -354,6 +356,7 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
           itemCount: widget.imageFiles.length,
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           itemBuilder: (context, index) {
+            final l10n = AppLocalizations.of(context);
             final isSelected = _currentPageIndex == index;
 
             return Padding(
@@ -362,7 +365,7 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
                 avatar: isSelected
                     ? const Icon(Icons.check_circle, color: Colors.black, size: 18)
                     : null,
-                label: Text('Страница ${index + 1}'),
+                label: Text(l10n.pageLabel(index + 1)),
                 onPressed: () => _switchPage(index),
                 backgroundColor: isSelected ? Colors.amber : Colors.grey.shade800,
                 labelStyle: TextStyle(

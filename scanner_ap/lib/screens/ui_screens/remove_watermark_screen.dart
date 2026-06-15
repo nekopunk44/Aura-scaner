@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../l10n/app_localizations.dart';
 
 class RemoveWatermarkScreen extends StatefulWidget {
   final VoidCallback? onSaved;
@@ -31,6 +32,7 @@ class _RemoveWatermarkScreenState extends State<RemoveWatermarkScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
@@ -40,7 +42,7 @@ class _RemoveWatermarkScreenState extends State<RemoveWatermarkScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: Text('Удалить водяной знак',
+        title: Text(l10n.featRemoveWatermark,
             style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
         backgroundColor: appBarBg,
         iconTheme: IconThemeData(color: textColor),
@@ -49,7 +51,7 @@ class _RemoveWatermarkScreenState extends State<RemoveWatermarkScreen> {
           if (_imageFile != null && !_processing)
             TextButton(
               onPressed: _pickImage,
-              child: const Text('Сменить', style: TextStyle(color: Color(0xFF2CA5E0))),
+              child: Text(l10n.wmChange, style: const TextStyle(color: Color(0xFF2CA5E0))),
             ),
         ],
       ),
@@ -60,6 +62,7 @@ class _RemoveWatermarkScreenState extends State<RemoveWatermarkScreen> {
   }
 
   Widget _buildPicker(bool isDark, Color textColor, Color subColor) {
+    final l10n = AppLocalizations.of(context);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
     return Center(
       child: Padding(
@@ -76,10 +79,10 @@ class _RemoveWatermarkScreenState extends State<RemoveWatermarkScreen> {
               child: const Icon(Icons.auto_fix_high, color: Color(0xFF2CA5E0), size: 40),
             ),
             const SizedBox(height: 20),
-            Text('Удаление водяного знака',
+            Text(l10n.wmTitle,
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: textColor)),
             const SizedBox(height: 8),
-            Text('Выделите область с водяным знаком,\nприложение закрасит её фоном',
+            Text(l10n.wmInstructions,
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 13, color: subColor, height: 1.5)),
             const SizedBox(height: 32),
@@ -90,9 +93,9 @@ class _RemoveWatermarkScreenState extends State<RemoveWatermarkScreen> {
               ),
               child: Column(
                 children: [
-                  _buildSourceButton(Icons.image_outlined, 'Выбрать из галереи', ImageSource.gallery),
+                  _buildSourceButton(Icons.image_outlined, l10n.wmFromGallery, ImageSource.gallery),
                   Divider(height: 1, color: isDark ? Colors.white12 : const Color(0xFFE8EDF5)),
-                  _buildSourceButton(Icons.camera_alt_outlined, 'Сфотографировать', ImageSource.camera),
+                  _buildSourceButton(Icons.camera_alt_outlined, l10n.wmTakePhoto, ImageSource.camera),
                 ],
               ),
             ),
@@ -122,6 +125,7 @@ class _RemoveWatermarkScreenState extends State<RemoveWatermarkScreen> {
   }
 
   Widget _buildEditor(bool isDark, Color subColor) {
+    final l10n = AppLocalizations.of(context);
     final hasSelection = _selStart != null && _selEnd != null;
     return Column(
       children: [
@@ -129,8 +133,8 @@ class _RemoveWatermarkScreenState extends State<RemoveWatermarkScreen> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Text(
             hasSelection
-                ? 'Нажмите «Применить» чтобы удалить водяной знак'
-                : 'Нарисуйте прямоугольник поверх водяного знака',
+                ? l10n.wmApplyHint
+                : l10n.wmDrawHint,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: subColor),
           ),
@@ -175,7 +179,7 @@ class _RemoveWatermarkScreenState extends State<RemoveWatermarkScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: Text('Очистить', style: TextStyle(color: isDark ? Colors.white70 : Colors.grey.shade700)),
+                    child: Text(l10n.clearSelection, style: TextStyle(color: isDark ? Colors.white70 : Colors.grey.shade700)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -193,7 +197,7 @@ class _RemoveWatermarkScreenState extends State<RemoveWatermarkScreen> {
                     child: _processing
                         ? const SizedBox(width: 20, height: 20,
                             child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Text('Применить', style: TextStyle(fontWeight: FontWeight.w600)),
+                        : Text(l10n.wmApply, style: const TextStyle(fontWeight: FontWeight.w600)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -207,7 +211,7 @@ class _RemoveWatermarkScreenState extends State<RemoveWatermarkScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: const Text('Сохранить'),
+                    child: Text(l10n.actionSave),
                   ),
                 ),
               ],
@@ -375,12 +379,12 @@ class _RemoveWatermarkScreenState extends State<RemoveWatermarkScreen> {
       widget.onSaved?.call();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Сохранено'), backgroundColor: Colors.green),
+          SnackBar(content: Text(AppLocalizations.of(context).savedPlain), backgroundColor: Colors.green),
         );
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context).commonError}: $e')));
     } finally {
       if (mounted) setState(() => _processing = false);
     }

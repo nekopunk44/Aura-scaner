@@ -1,10 +1,17 @@
 // ignore_for_file: use_build_context_synchronously
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../config/server_config.dart';
 import '../../config/theme_config.dart';
+import '../../config/locale_config.dart';
 import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/premium_service.dart';
+import '../../services/biometric_service.dart';
+import '../../utils/error_messages.dart';
+import '../../l10n/app_localizations.dart';
 import '../auth/login_screen.dart';
 import 'premium_screen.dart';
 import 'main_screen/remote_documents_screen.dart';
@@ -17,25 +24,38 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProviderStateMixin {
+class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStateMixin {
   String _serverUrl = '';
+  String _version = '';
+  AuthUser? _user;
+  bool _biometricAvailable = false;
+  bool _biometricEnabled = false;
   late final AnimationController _pulseCtrl;
   late final Animation<double> _pulseAnim;
+  late final AnimationController _introCtrl;
 
   @override
   void initState() {
     super.initState();
     _loadUrl();
+    _loadProfile();
+    _loadVersion();
+    _loadBiometric();
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2800),
     )..repeat(reverse: true);
     _pulseAnim = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
+    _introCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 750),
+    )..forward();
   }
 
   @override
   void dispose() {
     _pulseCtrl.dispose();
+    _introCtrl.dispose();
     super.dispose();
   }
 
@@ -44,14 +64,200 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     if (mounted) setState(() => _serverUrl = ServerConfig().baseUrl);
   }
 
+  Future<void> _loadProfile() async {
+    final user = await AuthService().getProfile();
+    if (mounted) setState(() => _user = user);
+  }
+
+  Future<void> _loadVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    if (mounted) {
+      setState(() => _version = '${info.version} (${info.buildNumber})');
+    }
+  }
+
+  Future<void> _loadBiometric() async {
+    final available = await BiometricService().isAvailable();
+    final enabled = await BiometricService().isEnabled();
+    if (mounted) {
+      setState(() {
+        _biometricAvailable = available;
+        _biometricEnabled = enabled;
+      });
+    }
+  }
+
+  /// Включение биометрии требует успешной проверки прямо сейчас — иначе
+  /// пользователь рискует заблокировать себя нерабочим сенсором.
+  Future<void> _toggleBiometric(bool value) async {
+    final l10n = AppLocalizations.of(context);
+    if (value) {
+      final ok = await BiometricService().authenticate(l10n.biometricReason);
+      if (!ok) return;
+    }
+    await BiometricService().setEnabled(value);
+    if (mounted) setState(() => _biometricEnabled = value);
+  }
+
+  String _languageName(AppLocalizations l10n) {
+    final code = LocaleNotifier().locale?.languageCode;
+    return switch (code) {
+      'ru' => l10n.langRussian,
+      'en' => l10n.langEnglish,
+      _ => l10n.langSystem,
+    };
+  }
+
+  Future<void> _showLanguageDialog() async {
+    final l10n = AppLocalizations.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final current = LocaleNotifier().locale?.languageCode;
+
+    final options = <(String?, String)>[
+      (null, l10n.langSystem),
+      ('ru', l10n.langRussian),
+      ('en', l10n.langEnglish),
+    ];
+
+    final selected = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: bg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+              child: Text(l10n.settingsLanguage,
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: textColor)),
+            ),
+            for (final (code, label) in options)
+              InkWell(
+                onTap: () => Navigator.pop(ctx, code ?? '__system__'),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(label, style: TextStyle(color: textColor, fontSize: 15))),
+                      if (code == current)
+                        const Icon(Icons.check, color: Color(0xFF2CA5E0), size: 20),
+                    ],
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    await LocaleNotifier().setLocale(selected == '__system__' ? null : Locale(selected));
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _editProfile() async {
+    final l10n = AppLocalizations.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final nameCtrl = TextEditingController(text: _user?.name ?? '');
+    final emailCtrl = TextEditingController(text: _user?.email ?? '');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => _ThemedDialog(
+        isDark: isDark,
+        title: l10n.profileEditTitle,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _ThemedTextField(controller: nameCtrl, hint: l10n.fieldName, isDark: isDark, autofocus: true),
+            const SizedBox(height: 12),
+            _ThemedTextField(controller: emailCtrl, hint: l10n.fieldEmail, isDark: isDark),
+          ],
+        ),
+        actions: [
+          _DialogButton(label: l10n.actionCancel, onTap: () => Navigator.pop(ctx, false), isDark: isDark),
+          _DialogButton(label: l10n.actionSave, onTap: () => Navigator.pop(ctx, true), isDark: isDark, primary: true),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final newName = nameCtrl.text.trim();
+    final newEmail = emailCtrl.text.trim();
+    final nameChanged = newName.isNotEmpty && newName != _user?.name;
+    final emailChanged = newEmail.isNotEmpty && newEmail != _user?.email;
+
+    if (!nameChanged && !emailChanged) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.profileNothingChanged)),
+      );
+      return;
+    }
+
+    try {
+      final updated = await AuthService().updateProfile(
+        name: nameChanged ? newName : null,
+        email: emailChanged ? newEmail : null,
+      );
+      if (mounted) {
+        setState(() => _user = updated);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.profileSaved)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// Каскадное появление блоков: каждый следующий стартует чуть позже,
+  /// с fade + лёгким подъёмом снизу.
+  Widget _staggered(int index, Widget child) {
+    final anim = CurvedAnimation(
+      parent: _introCtrl,
+      curve: Interval(
+        (0.1 * index).clamp(0.0, 0.6),
+        1.0,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+    return FadeTransition(
+      opacity: anim,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.06),
+          end: Offset.zero,
+        ).animate(anim),
+        child: child,
+      ),
+    );
+  }
+
+  String get _initials {
+    final name = _user?.name.trim() ?? '';
+    if (name.isEmpty) return '';
+    final parts = name.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    final first = parts.first.characters.first;
+    final second = parts.length > 1 ? parts[1].characters.first : '';
+    return (first + second).toUpperCase();
+  }
+
   Future<void> _editServerUrl() async {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final controller = TextEditingController(text: _serverUrl);
     final newUrl = await showDialog<String>(
       context: context,
       builder: (ctx) => _ThemedDialog(
         isDark: isDark,
-        title: 'Адрес сервера',
+        title: l10n.settingsServerAddress,
         content: _ThemedTextField(
           controller: controller,
           hint: 'http://192.168.x.x:3000/api',
@@ -59,8 +265,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           autofocus: true,
         ),
         actions: [
-          _DialogButton(label: 'Отмена', onTap: () => Navigator.pop(ctx), isDark: isDark),
-          _DialogButton(label: 'Сохранить', onTap: () => Navigator.pop(ctx, controller.text.trim()), isDark: isDark, primary: true),
+          _DialogButton(label: l10n.actionCancel, onTap: () => Navigator.pop(ctx), isDark: isDark),
+          _DialogButton(label: l10n.actionSave, onTap: () => Navigator.pop(ctx, controller.text.trim()), isDark: isDark, primary: true),
         ],
       ),
     );
@@ -71,12 +277,13 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       if (mounted) setState(() => _serverUrl = ServerConfig().baseUrl);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(e))));
       }
     }
   }
 
   void _showPresetsDialog() async {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final presets = ServerConfig().presets;
     final selected = await showDialog<String>(
@@ -93,7 +300,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-                child: Text('Выберите адрес',
+                child: Text(l10n.settingsPresetsTitle,
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: textColor)),
               ),
               ...presets.entries.map((e) => InkWell(
@@ -125,6 +332,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   }
 
   Future<void> _changePassword() async {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final currentCtrl = TextEditingController();
     final newCtrl = TextEditingController();
@@ -136,13 +344,13 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => _ThemedDialog(
           isDark: isDark,
-          title: 'Смена пароля',
+          title: l10n.settingsChangePasswordTitle,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               _ThemedTextField(
                 controller: currentCtrl,
-                hint: 'Текущий пароль',
+                hint: l10n.settingsCurrentPassword,
                 isDark: isDark,
                 obscure: obscureCurrent,
                 suffix: IconButton(
@@ -154,7 +362,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               const SizedBox(height: 12),
               _ThemedTextField(
                 controller: newCtrl,
-                hint: 'Новый пароль',
+                hint: l10n.settingsNewPassword,
                 isDark: isDark,
                 obscure: obscureNew,
                 suffix: IconButton(
@@ -166,8 +374,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             ],
           ),
           actions: [
-            _DialogButton(label: 'Отмена', onTap: () => Navigator.pop(ctx, false), isDark: isDark),
-            _DialogButton(label: 'Сохранить', onTap: () => Navigator.pop(ctx, true), isDark: isDark, primary: true),
+            _DialogButton(label: l10n.actionCancel, onTap: () => Navigator.pop(ctx, false), isDark: isDark),
+            _DialogButton(label: l10n.actionSave, onTap: () => Navigator.pop(ctx, true), isDark: isDark, primary: true),
           ],
         ),
       ),
@@ -180,13 +388,13 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
     if (current.isEmpty || newPass.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Заполните оба поля')),
+        SnackBar(content: Text(l10n.settingsFillBothFields)),
       );
       return;
     }
     if (newPass.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Новый пароль — минимум 6 символов')),
+        SnackBar(content: Text(l10n.settingsNewPasswordMin)),
       );
       return;
     }
@@ -195,19 +403,20 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       await AuthService().changePassword(currentPassword: current, newPassword: newPass);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Пароль успешно изменён')),
+          SnackBar(content: Text(l10n.settingsPasswordChanged)),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+          SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
         );
       }
     }
   }
 
   Future<void> _logout() async {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -234,12 +443,12 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Выйти из аккаунта?',
+                  l10n.settingsLogoutConfirmTitle,
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: textColor),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Вы уверены? Вам потребуется\nвойти снова.',
+                  l10n.settingsLogoutConfirmBody,
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 14, color: subColor, height: 1.45),
                 ),
@@ -257,7 +466,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           padding: const EdgeInsets.symmetric(vertical: 13),
                         ),
-                        child: const Text('Отмена', style: TextStyle(fontWeight: FontWeight.w500)),
+                        child: Text(l10n.actionCancel, style: const TextStyle(fontWeight: FontWeight.w500)),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -271,7 +480,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           padding: const EdgeInsets.symmetric(vertical: 13),
                         ),
-                        child: const Text('Выйти', style: TextStyle(fontWeight: FontWeight.w600)),
+                        child: Text(l10n.actionLogout, style: const TextStyle(fontWeight: FontWeight.w600)),
                       ),
                     ),
                   ],
@@ -293,6 +502,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final titleColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final iconColor = isDark ? Colors.white60 : const Color(0xFF6B7A99);
@@ -352,7 +562,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                         ),
                       ),
                       Text(
-                        'Настройки',
+                        l10n.settingsTitle,
                         style: TextStyle(
                           color: titleColor,
                           fontSize: 22,
@@ -397,8 +607,9 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          // Градиентный заголовок
-          Container(
+          // Шапка-профиль: аватар с инициалами, имя, email и статус подписки.
+          // Пока профиль не загрузился (или нет сети) — фолбэк с брендом.
+          _staggered(0, Container(
             margin: const EdgeInsets.fromLTRB(16, 16, 16, 20),
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -421,132 +632,193 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                 Container(
                   width: 52,
                   height: 52,
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.white.withValues(alpha: 0.32),
+                        Colors.white.withValues(alpha: 0.12),
+                      ],
+                    ),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1.5),
                   ),
-                  child: const Icon(Icons.document_scanner, color: Colors.white, size: 26),
+                  child: _initials.isEmpty
+                      ? const Icon(Icons.document_scanner, color: Colors.white, size: 26)
+                      : Text(_initials,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
                 ),
                 const SizedBox(width: 16),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Aura Scanner',
-                        style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700)),
-                    Text('Версия 1.0.0',
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 13)),
-                  ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_user?.name ?? l10n.appName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 2),
+                      Text(_user?.email ?? l10n.splashTagline,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 13)),
+                      const SizedBox(height: 7),
+                      _PlanChip(isPremium: PremiumService().isPremium),
+                    ],
+                  ),
                 ),
-                const Spacer(),
-                // Переключатель темы прямо в баннере
-                GestureDetector(
-                  onTap: () => ThemeNotifier().toggle(),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 420),
-                    width: 56,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: isDark ? 0.15 : 0.25),
-                      borderRadius: BorderRadius.circular(15),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 1),
-                    ),
-                    child: Stack(
-                      children: [
-                        AnimatedAlign(
-                          duration: const Duration(milliseconds: 420),
-                          curve: Curves.easeInOut,
-                          alignment: isDark ? Alignment.centerRight : Alignment.centerLeft,
-                          child: Padding(
-                            padding: const EdgeInsets.all(3),
-                            child: Container(
-                              width: 24,
-                              height: 24,
-                              decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                              child: Icon(
-                                isDark ? Icons.dark_mode : Icons.light_mode,
-                                size: 14,
-                                color: isDark ? const Color(0xFF1A2A3F) : const Color(0xFF2CA5E0),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                const SizedBox(width: 8),
+                // Кнопка редактирования профиля (имя/email).
+                Material(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: _user == null ? null : _editProfile,
+                    child: const Padding(
+                      padding: EdgeInsets.all(9),
+                      child: Icon(Icons.edit_outlined, color: Colors.white, size: 18),
                     ),
                   ),
                 ),
               ],
             ),
-          ),
+          )),
 
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               children: [
-          _Section(title: 'Сервисы', isDark: isDark, children: [
+          // ── Безопасность ──────────────────────────────────────────
+          _staggered(1, _Section(title: l10n.secSectionSecurity, isDark: isDark, children: [
+            _SettingsTile(
+              icon: Icons.fingerprint,
+              iconColor: const Color(0xFF26C060),
+              title: l10n.secBiometricTitle,
+              subtitle: _biometricAvailable
+                  ? l10n.secBiometricSubtitle
+                  : l10n.secBiometricUnavailable,
+              isDark: isDark,
+              trailing: Switch.adaptive(
+                value: _biometricEnabled,
+                activeThumbColor: const Color(0xFF2CA5E0),
+                onChanged: _biometricAvailable ? _toggleBiometric : null,
+              ),
+            ),
+            _SettingsTile(
+              icon: Icons.lock_outline,
+              iconColor: Colors.blue,
+              title: l10n.settingsChangePasswordTile,
+              onTap: _changePassword,
+              isDark: isDark,
+            ),
+          ])),
+          const SizedBox(height: 12),
+
+          // ── Приложение ────────────────────────────────────────────
+          _staggered(2, _Section(title: l10n.secSectionApp, isDark: isDark, children: [
+            _SettingsTile(
+              icon: isDark ? Icons.dark_mode : Icons.light_mode,
+              iconColor: Colors.indigo,
+              title: l10n.settingsTheme,
+              subtitle: isDark ? l10n.settingsThemeDark : l10n.settingsThemeLight,
+              isDark: isDark,
+              trailing: Switch.adaptive(
+                value: isDark,
+                activeThumbColor: const Color(0xFF2CA5E0),
+                onChanged: (_) => ThemeNotifier().toggle(),
+              ),
+            ),
+            _SettingsTile(
+              icon: Icons.language,
+              iconColor: Colors.teal,
+              title: l10n.settingsLanguage,
+              subtitle: _languageName(l10n),
+              onTap: _showLanguageDialog,
+              isDark: isDark,
+            ),
+          ])),
+          const SizedBox(height: 12),
+
+          // ── Сервисы ───────────────────────────────────────────────
+          _staggered(3, _Section(title: l10n.settingsSectionServices, isDark: isDark, children: [
             _SettingsTile(
               icon: Icons.workspace_premium,
               iconColor: Colors.amber,
               title: 'Premium',
-              subtitle: 'Открыть все возможности',
+              subtitle: l10n.settingsPremiumSubtitle,
+              badge: const _ProBadge(),
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen())),
               isDark: isDark,
             ),
             _SettingsTile(
               icon: Icons.cloud_outlined,
               iconColor: Colors.blue,
-              title: 'Облако',
-              subtitle: 'Документы на сервере',
+              title: l10n.settingsCloud,
+              subtitle: l10n.settingsCloudSubtitle,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RemoteDocumentsScreen())),
               isDark: isDark,
             ),
-          ]),
+          ])),
           const SizedBox(height: 12),
-          _Section(title: 'Подключение', isDark: isDark, children: [
+
+          // Выбор сервера — инструмент разработки: в релизной сборке скрыт.
+          if (kDebugMode) ...[
+            _staggered(4, _Section(title: l10n.settingsSectionConnectionDebug, isDark: isDark, children: [
+              _SettingsTile(
+                icon: Icons.dns_outlined,
+                iconColor: Colors.blue,
+                title: l10n.settingsServerAddress,
+                subtitle: _serverUrl.isEmpty ? l10n.settingsNotSet : _serverUrl,
+                onTap: _editServerUrl,
+                isDark: isDark,
+              ),
+              _SettingsTile(
+                icon: Icons.tune_outlined,
+                iconColor: Colors.indigo,
+                title: l10n.settingsPresets,
+                subtitle: l10n.settingsPresetsSubtitle,
+                onTap: _showPresetsDialog,
+                isDark: isDark,
+              ),
+            ])),
+            const SizedBox(height: 12),
+          ],
+
+          // ── О приложении ──────────────────────────────────────────
+          _staggered(5, _Section(title: l10n.settingsSectionAbout, isDark: isDark, children: [
             _SettingsTile(
-              icon: Icons.dns_outlined,
-              iconColor: Colors.blue,
-              title: 'Адрес сервера',
-              subtitle: _serverUrl.isEmpty ? 'Не задан' : _serverUrl,
-              onTap: _editServerUrl,
+              icon: Icons.shield_outlined,
+              iconColor: Colors.teal,
+              title: l10n.settingsPrivacyPolicy,
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen())),
               isDark: isDark,
             ),
             _SettingsTile(
-              icon: Icons.tune_outlined,
-              iconColor: Colors.indigo,
-              title: 'Готовые адреса',
-              subtitle: 'Эмулятор, localhost, локальная сеть',
-              onTap: _showPresetsDialog,
+              icon: Icons.info_outline,
+              iconColor: Colors.blueGrey,
+              title: l10n.settingsVersion,
+              subtitle: _version.isEmpty ? '—' : _version,
               isDark: isDark,
             ),
-          ]),
+          ])),
           const SizedBox(height: 12),
-          _Section(title: 'Аккаунт', isDark: isDark, children: [
-            _SettingsTile(
-              icon: Icons.lock_outline,
-              iconColor: Colors.blue,
-              title: 'Сменить пароль',
-              onTap: _changePassword,
-              isDark: isDark,
-            ),
+
+          // ── Выход (отдельной карточкой, акцент красным) ────────────
+          _staggered(6, _Section(title: l10n.settingsSectionAccount, isDark: isDark, children: [
             _SettingsTile(
               icon: Icons.logout,
               iconColor: Colors.red,
-              title: 'Выйти из аккаунта',
+              title: l10n.settingsLogout,
               titleColor: Colors.red,
               onTap: _logout,
               isDark: isDark,
             ),
-          ]),
-          const SizedBox(height: 12),
-          _Section(title: 'О приложении', isDark: isDark, children: [
-            _SettingsTile(
-              icon: Icons.shield_outlined,
-              iconColor: Colors.teal,
-              title: 'Политика конфиденциальности',
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen())),
-              isDark: isDark,
-            ),
-          ]),
+          ])),
           const SizedBox(height: 20),
               ],
             ),
@@ -606,7 +878,82 @@ class _Section extends StatelessWidget {
   }
 }
 
-class _SettingsTile extends StatelessWidget {
+/// Чип статуса подписки в шапке-профиле.
+class _PlanChip extends StatelessWidget {
+  final bool isPremium;
+  const _PlanChip({required this.isPremium});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        gradient: isPremium
+            ? const LinearGradient(colors: [Color(0xFFFFC107), Color(0xFFFF8F00)])
+            : null,
+        color: isPremium ? null : Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(999),
+        border: isPremium
+            ? null
+            : Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isPremium ? Icons.workspace_premium : Icons.auto_awesome,
+            size: 11,
+            color: Colors.white,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            isPremium ? 'PREMIUM' : 'FREE',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Золотой бейдж «PRO» у тайла Premium.
+class _ProBadge extends StatelessWidget {
+  const _ProBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xFFFFC107), Color(0xFFFF8F00)]),
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFFFB300).withValues(alpha: 0.35),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: const Text(
+        'PRO',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1,
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsTile extends StatefulWidget {
   final IconData icon;
   final Color iconColor;
   final String title;
@@ -614,6 +961,8 @@ class _SettingsTile extends StatelessWidget {
   final Color? titleColor;
   final VoidCallback? onTap;
   final bool isDark;
+  final Widget? badge;
+  final Widget? trailing;
 
   const _SettingsTile({
     required this.icon,
@@ -623,33 +972,70 @@ class _SettingsTile extends StatelessWidget {
     this.subtitle,
     this.titleColor,
     this.onTap,
+    this.badge,
+    this.trailing,
   });
 
   @override
+  State<_SettingsTile> createState() => _SettingsTileState();
+}
+
+class _SettingsTileState extends State<_SettingsTile> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    final textColor = titleColor ?? (isDark ? Colors.white : const Color(0xFF1A1A2E));
+    final isDark = widget.isDark;
+    final textColor = widget.titleColor ?? (isDark ? Colors.white : const Color(0xFF1A1A2E));
     final subColor = isDark ? Colors.white38 : Colors.grey.shade500;
     final chevronColor = isDark ? Colors.white24 : Colors.grey.shade400;
 
-    return ListTile(
+    final trailingItems = <Widget>[
+      if (widget.badge != null) widget.badge!,
+      if (widget.trailing != null)
+        widget.trailing!
+      else if (widget.onTap != null) ...[
+        const SizedBox(width: 6),
+        Icon(Icons.chevron_right, color: chevronColor, size: 20),
+      ],
+    ];
+
+    final tile = ListTile(
       leading: Container(
         width: 36,
         height: 36,
         decoration: BoxDecoration(
-          color: iconColor.withValues(alpha: isDark ? 0.18 : 0.12),
+          color: widget.iconColor.withValues(alpha: isDark ? 0.18 : 0.12),
           borderRadius: BorderRadius.circular(9),
         ),
-        child: Icon(icon, color: iconColor, size: 20),
+        child: Icon(widget.icon, color: widget.iconColor, size: 20),
       ),
-      title: Text(title,
+      title: Text(widget.title,
           style: TextStyle(fontWeight: FontWeight.w500, fontSize: 15, color: textColor)),
-      subtitle: subtitle != null
-          ? Text(subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis,
+      subtitle: widget.subtitle != null
+          ? Text(widget.subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 12, color: subColor))
           : null,
-      trailing: onTap != null ? Icon(Icons.chevron_right, color: chevronColor, size: 20) : null,
-      onTap: onTap,
+      trailing: trailingItems.isNotEmpty
+          ? Row(mainAxisSize: MainAxisSize.min, children: trailingItems)
+          : null,
+      onTap: widget.onTap,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    );
+
+    if (widget.onTap == null) return tile;
+
+    // Лёгкое «проседание» при нажатии — тактильный отклик без haptic.
+    return Listener(
+      onPointerDown: (_) => setState(() => _pressed = true),
+      onPointerUp: (_) => setState(() => _pressed = false),
+      onPointerCancel: (_) => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.97 : 1.0,
+        duration: const Duration(milliseconds: 110),
+        curve: Curves.easeOut,
+        child: tile,
+      ),
     );
   }
 }

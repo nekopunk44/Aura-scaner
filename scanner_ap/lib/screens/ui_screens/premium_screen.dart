@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import '../../services/premium_service.dart';
+import '../../l10n/app_localizations.dart';
 
 // Идентификатор продукта — должен совпадать с тем, что настроен в
 // Google Play Console (subscriptions) и App Store Connect (auto-renewable)
@@ -102,7 +103,8 @@ class _PremiumScreenState extends State<PremiumScreen> {
           if (serverVerified) {
             _showSuccess();
           } else {
-            _showError('Не удалось подтвердить покупку: ${serverError ?? "ошибка сервера"}');
+            final l10n = AppLocalizations.of(context);
+            _showError(l10n.premiumPurchaseVerifyFailed(serverError ?? l10n.premiumServerError));
           }
         }
       } else if (purchase.status == PurchaseStatus.error) {
@@ -111,7 +113,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
         }
         if (mounted) {
           setState(() => _purchasing = false);
-          _showError(purchase.error?.message ?? 'Ошибка оплаты');
+          _showError(purchase.error?.message ?? AppLocalizations.of(context).premiumPaymentError);
         }
       } else if (purchase.status == PurchaseStatus.canceled) {
         if (purchase.pendingCompletePurchase) {
@@ -158,12 +160,13 @@ class _PremiumScreenState extends State<PremiumScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _purchasing = false);
-        _showError('Не удалось восстановить покупки: $e');
+        _showError('${AppLocalizations.of(context).premiumRestoreFailed}: $e');
       }
     }
   }
 
   void _showSuccess() {
+    final l10n = AppLocalizations.of(context);
     showDialog(
       context: context,
       builder: (ctx) {
@@ -182,11 +185,11 @@ class _PremiumScreenState extends State<PremiumScreen> {
                 child: const Icon(Icons.check_circle, color: Colors.green, size: 40),
               ),
               const SizedBox(height: 16),
-              Text('Premium активирован!',
+              Text(l10n.premiumActivatedTitle,
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: textColor)),
               const SizedBox(height: 8),
-              Text('Все возможности теперь доступны.',
+              Text(l10n.premiumUnlockedBody,
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : Colors.grey.shade600)),
               const SizedBox(height: 20),
@@ -203,7 +206,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text('Отлично!'),
+                  child: Text(l10n.premiumGreat),
                 ),
               ),
             ],
@@ -221,6 +224,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -271,10 +275,10 @@ class _PremiumScreenState extends State<PremiumScreen> {
                           child: const Icon(Icons.workspace_premium, size: 40, color: Colors.white),
                         ),
                         const SizedBox(height: 18),
-                        const Text('Aura Scanner Premium',
-                            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                        Text(l10n.premiumBrandTitle,
+                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
                         const SizedBox(height: 6),
-                        Text('Откройте все возможности приложения',
+                        Text(l10n.premiumHeadline,
                             style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.75))),
                         if (_isPremium) ...[
                           const SizedBox(height: 14),
@@ -285,12 +289,12 @@ class _PremiumScreenState extends State<PremiumScreen> {
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(color: Colors.green.withValues(alpha: 0.4)),
                             ),
-                            child: const Row(
+                            child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.check_circle, color: Colors.greenAccent, size: 16),
-                                SizedBox(width: 6),
-                                Text('Активна', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.w600)),
+                                const Icon(Icons.check_circle, color: Colors.greenAccent, size: 16),
+                                const SizedBox(width: 6),
+                                Text(l10n.premiumActive, style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.w600)),
                               ],
                             ),
                           ),
@@ -323,7 +327,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                               ] else if (!_storeAvailable) ...[
                                 Icon(Icons.store_mall_directory_outlined, size: 40, color: subColor),
                                 const SizedBox(height: 8),
-                                Text('Магазин недоступен', style: TextStyle(color: subColor)),
+                                Text(l10n.premiumStoreUnavailable, style: TextStyle(color: subColor)),
                                 const SizedBox(height: 16),
                               ] else ...[
                                 // Продукты не загружены — показываем fallback с ценами
@@ -346,18 +350,18 @@ class _PremiumScreenState extends State<PremiumScreen> {
                                           width: 20, height: 20,
                                           child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                                         )
-                                      : const Text('Оформить Premium',
-                                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                      : Text(l10n.premiumSubscribe,
+                                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              Text('Отменить можно в любой момент',
+                              Text(l10n.premiumCancelAnytime,
                                   style: TextStyle(fontSize: 12, color: subColor)),
                               const SizedBox(height: 4),
                               TextButton(
                                 onPressed: _purchasing ? null : _restore,
-                                child: Text('Восстановить покупки',
-                                    style: TextStyle(fontSize: 12, color: const Color(0xFF2CA5E0))),
+                                child: Text(l10n.premiumRestore,
+                                    style: const TextStyle(fontSize: 12, color: Color(0xFF2CA5E0))),
                               ),
                             ],
                           ),
@@ -384,7 +388,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                       children: [
                         Padding(
                           padding: const EdgeInsets.only(bottom: 12),
-                          child: Text('ЧТО ВХОДИТ В PREMIUM',
+                          child: Text(l10n.premiumWhatsIncluded,
                               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
                                   color: subColor, letterSpacing: 0.8)),
                         ),
@@ -400,22 +404,22 @@ class _PremiumScreenState extends State<PremiumScreen> {
                           child: Column(
                             children: [
                               _FeatureTile(icon: Icons.library_books, iconColor: Colors.purple,
-                                  title: '+10 страниц', subtitle: 'Пакетное сканирование без ограничений',
+                                  title: l10n.premiumFeat10PagesTitle, subtitle: l10n.premiumFeat10PagesSub,
                                   textColor: textColor, subColor: subColor, dividerColor: dividerColor),
                               _FeatureTile(icon: Icons.auto_fix_high_outlined, iconColor: Colors.orange,
-                                  title: 'Восстановление фото', subtitle: 'Улучшение качества и четкости',
+                                  title: l10n.premiumFeatRestoreTitle, subtitle: l10n.premiumFeatRestoreSub,
                                   textColor: textColor, subColor: subColor, dividerColor: dividerColor),
                               _FeatureTile(icon: Icons.highlight, iconColor: Colors.yellow.shade700,
-                                  title: 'Выделение текста', subtitle: 'Подсветка важных фрагментов',
+                                  title: l10n.premiumFeatHighlightTitle, subtitle: l10n.premiumFeatHighlightSub,
                                   textColor: textColor, subColor: subColor, dividerColor: dividerColor),
                               _FeatureTile(icon: Icons.lock_outline, iconColor: Colors.blue,
-                                  title: 'Защита паролем', subtitle: 'Шифрование PDF-документов',
+                                  title: l10n.premiumFeatPasswordTitle, subtitle: l10n.premiumFeatPasswordSub,
                                   textColor: textColor, subColor: subColor, dividerColor: dividerColor),
                               _FeatureTile(icon: Icons.voice_chat, iconColor: Colors.teal,
-                                  title: 'Голосовые заметки', subtitle: 'Аудио-комментарии к документам',
+                                  title: l10n.premiumFeatVoiceTitle, subtitle: l10n.premiumFeatVoiceSub,
                                   textColor: textColor, subColor: subColor, dividerColor: dividerColor),
                               _FeatureTile(icon: Icons.eco, iconColor: Colors.green,
-                                  title: 'Эко-сканер', subtitle: 'Распознавание эко-маркировки',
+                                  title: l10n.premiumFeatEcoTitle, subtitle: l10n.premiumFeatEcoSub,
                                   textColor: textColor, subColor: subColor, dividerColor: dividerColor, isLast: true),
                             ],
                           ),
@@ -423,8 +427,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                         const SizedBox(height: 16),
                         Center(
                           child: Text(
-                            'Подписка оформляется через ${Platform.isIOS ? "App Store" : "Google Play"}.\n'
-                            'Управление и отмена — в настройках магазина.',
+                            l10n.premiumStoreNote(Platform.isIOS ? 'App Store' : 'Google Play'),
                             textAlign: TextAlign.center,
                             style: TextStyle(fontSize: 11, color: subColor, height: 1.5),
                           ),
@@ -445,6 +448,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
     Color cardBg,
     Color cardBorder,
   ) {
+    final l10n = AppLocalizations.of(context);
     final expires = _expiresAt;
     final expiresText = expires != null
         ? '${expires.day.toString().padLeft(2, '0')}.'
@@ -480,11 +484,11 @@ class _PremiumScreenState extends State<PremiumScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Подписка активна',
+                    Text(l10n.premiumSubscriptionActive,
                         style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: textColor)),
                     const SizedBox(height: 2),
                     Text(
-                      expiresText != null ? 'Действует до $expiresText' : 'Премиум-доступ открыт',
+                      expiresText != null ? l10n.premiumValidUntil(expiresText) : l10n.premiumAccessOpen,
                       style: TextStyle(fontSize: 12, color: subColor),
                     ),
                   ],
@@ -499,7 +503,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
             child: OutlinedButton.icon(
               onPressed: _purchasing ? null : _openManageSubscription,
               icon: const Icon(Icons.settings_outlined, size: 18),
-              label: Text(Platform.isIOS ? 'Управление в App Store' : 'Управление в Google Play'),
+              label: Text(Platform.isIOS ? l10n.premiumManageAppStore : l10n.premiumManageGooglePlay),
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFF2CA5E0),
                 side: const BorderSide(color: Color(0xFF2CA5E0)),
@@ -514,7 +518,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
             child: TextButton.icon(
               onPressed: _purchasing ? null : _restore,
               icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('Восстановить покупки'),
+              label: Text(l10n.premiumRestore),
               style: TextButton.styleFrom(
                 foregroundColor: subColor,
               ),
@@ -526,9 +530,10 @@ class _PremiumScreenState extends State<PremiumScreen> {
   }
 
   Future<void> _openManageSubscription() async {
+    final l10n = AppLocalizations.of(context);
     final ok = await PremiumService().openManageSubscription();
     if (!ok && mounted) {
-      _showError('Не удалось открыть страницу управления подпиской');
+      _showError(l10n.premiumManageOpenFailed);
     }
   }
 
@@ -539,6 +544,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
     Color subColor,
     Color borderColor,
   ) {
+    final l10n = AppLocalizations.of(context);
     final isSelected = _selectedId == product.id;
     final isYearly = product.id == _kYearlyId;
     return GestureDetector(
@@ -581,7 +587,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                 children: [
                   Row(
                     children: [
-                      Text(isYearly ? 'Годовая подписка' : 'Месячная подписка',
+                      Text(isYearly ? l10n.premiumPlanYearly : l10n.premiumPlanMonthly,
                           style: TextStyle(fontWeight: FontWeight.w600, color: textColor, fontSize: 14)),
                       if (isYearly) ...[
                         const SizedBox(width: 8),
@@ -591,7 +597,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                             color: Colors.green.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: const Text('ВЫГОДНО', style: TextStyle(fontSize: 9, color: Colors.green, fontWeight: FontWeight.w700)),
+                          child: Text(l10n.premiumBestValue, style: const TextStyle(fontSize: 9, color: Colors.green, fontWeight: FontWeight.w700)),
                         ),
                       ],
                     ],
@@ -611,9 +617,10 @@ class _PremiumScreenState extends State<PremiumScreen> {
   }
 
   Widget _buildFallbackPlan(bool isDark, Color textColor, Color subColor, Color borderColor) {
+    final l10n = AppLocalizations.of(context);
     final plans = [
-      {'id': _kMonthlyId, 'title': 'Месячная подписка', 'price': '299 ₽/мес', 'yearly': false},
-      {'id': _kYearlyId, 'title': 'Годовая подписка', 'price': '1 990 ₽/год', 'yearly': true},
+      {'id': _kMonthlyId, 'title': l10n.premiumPlanMonthly, 'price': '299 ₽/мес', 'yearly': false},
+      {'id': _kYearlyId, 'title': l10n.premiumPlanYearly, 'price': '1 990 ₽/год', 'yearly': true},
     ];
     return Column(
       children: plans.map((plan) {
@@ -662,7 +669,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                             color: Colors.green.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: const Text('ВЫГОДНО', style: TextStyle(fontSize: 9, color: Colors.green, fontWeight: FontWeight.w700)),
+                          child: Text(l10n.premiumBestValue, style: const TextStyle(fontSize: 9, color: Colors.green, fontWeight: FontWeight.w700)),
                         ),
                       ],
                     ],

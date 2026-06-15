@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:pdfrx/pdfrx.dart';
+import 'l10n/app_localizations.dart';
 import 'screens/ui_screens/splash_screen.dart';
 import 'services/deep_link_service.dart';
 import 'services/premium_service.dart';
 import 'config/sentry_config.dart';
 import 'config/theme_config.dart';
+import 'config/locale_config.dart';
 
 void main() async {
   await bootstrapSentry(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    // Инициализация pdfrx (настройка pdfium + каталог кэша). Виджеты pdfrx
+    // делают это сами, но прямые вызовы PdfDocument.openFile (превью,
+    // PDF→JPEG, сжатие/слияние) — нет, и без этого падали с
+    // StateError: Pdfrx.getCacheDirectory not set.
+    pdfrxFlutterInitialize();
     DeepLinkService().init();
     await ThemeNotifier().load();
+    await LocaleNotifier().load();
     await PremiumService().load();
     runApp(const ScannerApp());
   });
@@ -21,7 +30,8 @@ class ScannerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: ThemeNotifier(),
+      // Перерисовываем при смене и темы, и языка.
+      listenable: Listenable.merge([ThemeNotifier(), LocaleNotifier()]),
       builder: (context, _) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
@@ -30,6 +40,12 @@ class ScannerApp extends StatelessWidget {
           themeMode: ThemeNotifier().mode,
           themeAnimationDuration: const Duration(milliseconds: 300),
           themeAnimationCurve: Curves.easeOut,
+          // Локализация: ru — основной язык, en — перевод. locale=null →
+          // язык по системной локали устройства; иначе — выбор пользователя
+          // из настроек. ru первый в supportedLocales — fallback по умолчанию.
+          locale: LocaleNotifier().locale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: const [Locale('ru'), Locale('en')],
           home: const SplashScreen(),
         );
       },

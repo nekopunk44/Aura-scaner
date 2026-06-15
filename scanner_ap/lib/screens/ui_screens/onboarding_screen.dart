@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/login_screen.dart';
+import '../../l10n/app_localizations.dart';
 
 const String onboardingCompletedKey = 'onboarding_completed';
 
@@ -14,30 +15,7 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _controller = PageController();
   int _currentPage = 0;
-
-  static const _pages = <_OnboardingPage>[
-    _OnboardingPage(
-      icon: Icons.document_scanner_outlined,
-      title: 'Сканируйте документы',
-      description:
-          'Снимайте паспорта, ID-карты и любые бумаги одним нажатием. '
-          'Автоматическое определение границ и коррекция перспективы.',
-    ),
-    _OnboardingPage(
-      icon: Icons.auto_awesome_outlined,
-      title: 'AI-обработка и OCR',
-      description:
-          'Распознавание текста на русском и английском, удаление пятен, '
-          'восстановление качества старых фото — всё в одном месте.',
-    ),
-    _OnboardingPage(
-      icon: Icons.cloud_sync_outlined,
-      title: 'Облачная синхронизация',
-      description:
-          'Документы доступны на всех устройствах, защищены вашим '
-          'аккаунтом. Подпись, PDF-инструменты, перевод текста.',
-    ),
-  ];
+  static const _pageCount = 3;
 
   @override
   void dispose() {
@@ -55,7 +33,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   void _next() {
-    if (_currentPage >= _pages.length - 1) {
+    if (_currentPage >= _pageCount - 1) {
       _finish();
       return;
     }
@@ -67,11 +45,30 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final subColor = isDark ? Colors.white70 : const Color(0xFF6B7A99);
-    final isLast = _currentPage == _pages.length - 1;
+    final isLast = _currentPage == _pageCount - 1;
+
+    final pages = [
+      _OnboardingPage(
+        icon: Icons.document_scanner_outlined,
+        title: l10n.onboarding1Title,
+        description: l10n.onboarding1Desc,
+      ),
+      _OnboardingPage(
+        icon: Icons.auto_awesome_outlined,
+        title: l10n.onboarding2Title,
+        description: l10n.onboarding2Desc,
+      ),
+      _OnboardingPage(
+        icon: Icons.cloud_sync_outlined,
+        title: l10n.onboarding3Title,
+        description: l10n.onboarding3Desc,
+      ),
+    ];
 
     return Scaffold(
       backgroundColor: bg,
@@ -83,7 +80,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               child: TextButton(
                 onPressed: _finish,
                 child: Text(
-                  'Пропустить',
+                  l10n.actionSkip,
                   style: TextStyle(color: subColor, fontSize: 14),
                 ),
               ),
@@ -91,14 +88,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             Expanded(
               child: PageView.builder(
                 controller: _controller,
-                itemCount: _pages.length,
+                itemCount: _pageCount,
                 onPageChanged: (i) => setState(() => _currentPage = i),
-                itemBuilder: (_, i) => _pages[i].build(textColor, subColor),
+                itemBuilder: (_, i) => pages[i].build(textColor, subColor),
               ),
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(_pages.length, (i) {
+              children: List.generate(_pageCount, (i) {
                 final active = i == _currentPage;
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
@@ -130,7 +127,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                   ),
                   child: Text(
-                    isLast ? 'Начать' : 'Далее',
+                    isLast ? l10n.onboardingStart : l10n.onboardingNext,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,

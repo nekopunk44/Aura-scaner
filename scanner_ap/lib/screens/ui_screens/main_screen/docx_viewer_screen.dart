@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:archive/archive.dart';
 import 'dart:convert';
+import '../../../l10n/app_localizations.dart';
 
 class DocxViewerScreen extends StatefulWidget {
   final String filePath;
@@ -25,18 +26,21 @@ class _DocxViewerScreenState extends State<DocxViewerScreen> {
   }
 
   Future<void> _loadDocxContent() async {
+    // Захватываем l10n до await — context гарантированно валиден здесь,
+    // и помощники получают его параметром (они чистые, без context).
+    final l10n = AppLocalizations.of(context);
     try {
       final file = File(widget.filePath);
       if (!await file.exists()) {
         setState(() {
-          _fileContent = 'Файл не найден: ${widget.filePath}';
+          _fileContent = l10n.docFileNotFoundNamed(widget.filePath);
           _isLoading = false;
         });
         return;
       }
 
       final bytes = await file.readAsBytes();
-      final text = await _extractTextFromDocx(bytes);
+      final text = await _extractTextFromDocx(bytes, l10n);
 
       setState(() {
         _fileContent = text;
@@ -45,29 +49,29 @@ class _DocxViewerScreenState extends State<DocxViewerScreen> {
     } catch (e) {
       debugPrint('Ошибка загрузки DOCX: $e');
       setState(() {
-        _fileContent = 'Ошибка загрузки файла: $e';
+        _fileContent = '${l10n.fileLoadError}: $e';
         _isLoading = false;
       });
     }
   }
 
-  Future<String> _extractTextFromDocx(List<int> bytes) async {
+  Future<String> _extractTextFromDocx(List<int> bytes, AppLocalizations l10n) async {
     try {
       final archive = ZipDecoder().decodeBytes(bytes);
       final documentFile = archive.findFile('word/document.xml');
       if (documentFile == null) {
-        return 'Не удалось найти текстовое содержимое в DOCX файле';
+        return l10n.docxNoTextContent;
       }
 
       final xmlContent = utf8.decode(documentFile.content);
-      return _parseWordXmlWithStructure(xmlContent);
+      return _parseWordXmlWithStructure(xmlContent, l10n);
 
     } catch (e) {
-      return 'Ошибка обработки DOCX: $e';
+      return '${l10n.docxProcessError}: $e';
     }
   }
 
-  String _parseWordXmlWithStructure(String xmlContent) {
+  String _parseWordXmlWithStructure(String xmlContent, AppLocalizations l10n) {
     try {
       final buffer = StringBuffer();
 
@@ -81,7 +85,7 @@ class _DocxViewerScreenState extends State<DocxViewerScreen> {
 
       return buffer.toString().trim();
     } catch (e) {
-      return 'Ошибка парсинга структуры: $e';
+      return '${l10n.docxParseError}: $e';
     }
   }
 
@@ -221,6 +225,7 @@ class _DocxViewerScreenState extends State<DocxViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -240,8 +245,8 @@ class _DocxViewerScreenState extends State<DocxViewerScreen> {
         elevation: 0,
         actions: [
           if (!_isLoading && _fileContent.isNotEmpty) ...[
-            IconButton(icon: Icon(Icons.vertical_align_top, color: textColor), tooltip: 'В начало', onPressed: _scrollToTop),
-            IconButton(icon: Icon(Icons.vertical_align_bottom, color: textColor), tooltip: 'В конец', onPressed: _scrollToBottom),
+            IconButton(icon: Icon(Icons.vertical_align_top, color: textColor), tooltip: l10n.tooltipToTop, onPressed: _scrollToTop),
+            IconButton(icon: Icon(Icons.vertical_align_bottom, color: textColor), tooltip: l10n.tooltipToBottom, onPressed: _scrollToBottom),
           ],
         ],
       ),
@@ -252,7 +257,7 @@ class _DocxViewerScreenState extends State<DocxViewerScreen> {
                 children: [
                   const CircularProgressIndicator(color: Color(0xFF2CA5E0)),
                   const SizedBox(height: 16),
-                  Text('Обработка документа...', style: TextStyle(fontSize: 15, color: subColor)),
+                  Text(l10n.docxProcessing, style: TextStyle(fontSize: 15, color: subColor)),
                 ],
               ),
             )
@@ -263,7 +268,7 @@ class _DocxViewerScreenState extends State<DocxViewerScreen> {
                 children: [
                   Icon(Icons.description, size: 64, color: subColor),
                   const SizedBox(height: 16),
-                  Text('Документ пуст', style: TextStyle(fontSize: 18, color: subColor)),
+                  Text(l10n.docxEmpty, style: TextStyle(fontSize: 18, color: subColor)),
                 ],
               ),
             )
@@ -284,7 +289,7 @@ class _DocxViewerScreenState extends State<DocxViewerScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Документ загружен. Таблицы и структура сохранены.',
+                            l10n.docxLoadedNote,
                             style: TextStyle(fontSize: 12, color: bannerText),
                           ),
                         ),

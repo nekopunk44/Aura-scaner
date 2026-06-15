@@ -9,6 +9,7 @@ import 'package:pdf/pdf.dart' hide PdfDocument;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdfrx/pdfrx.dart';
 import 'package:image/image.dart' as img;
+import '../../../l10n/app_localizations.dart';
 
 const _documentKey = 'saved_document_paths';
 const _scaleFactor = 2.0; // ~144 dpi
@@ -135,14 +136,15 @@ class _MergeDocumentsScreenState extends State<MergeDocumentsScreen> {
 
   Future<void> _merge() async {
     if (_selectedPaths.length < 2) return;
+    final l10n = AppLocalizations.of(context);
     setState(() {
       _isMerging = true;
-      _progressText = 'Подготовка...';
+      _progressText = l10n.mergePreparing;
       _progressValue = null;
     });
 
     try {
-      final outputPath = await _buildMergedPdf();
+      final outputPath = await _buildMergedPdf(l10n);
 
       final prefs = await SharedPreferences.getInstance();
       final paths = prefs.getStringList(_documentKey) ?? [];
@@ -156,7 +158,7 @@ class _MergeDocumentsScreenState extends State<MergeDocumentsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Объединено: ${p.basename(outputPath)}'),
+            content: Text(l10n.mergeDone(p.basename(outputPath))),
             backgroundColor: Colors.green,
           ),
         );
@@ -165,7 +167,7 @@ class _MergeDocumentsScreenState extends State<MergeDocumentsScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('${l10n.commonError}: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -178,7 +180,7 @@ class _MergeDocumentsScreenState extends State<MergeDocumentsScreen> {
     }
   }
 
-  Future<String> _buildMergedPdf() async {
+  Future<String> _buildMergedPdf(AppLocalizations l10n) async {
     final doc = pw.Document();
 
     final totalPages = await _countTotalPages();
@@ -194,25 +196,25 @@ class _MergeDocumentsScreenState extends State<MergeDocumentsScreen> {
 
     for (int i = 0; i < _selectedPaths.length; i++) {
       final path = _selectedPaths[i];
-      bumpProgress('Обработка ${i + 1}/${_selectedPaths.length}: ${p.basename(path)}');
+      bumpProgress(l10n.mergeProcessing(i + 1, _selectedPaths.length, p.basename(path)));
 
       final ext = p.extension(path).toLowerCase().replaceAll('.', '');
       if (ext == 'jpg' || ext == 'jpeg' || ext == 'png') {
         await _addImagePage(doc, path);
         processedPages++;
-        bumpProgress('Обработка ${i + 1}/${_selectedPaths.length}: ${p.basename(path)}');
+        bumpProgress(l10n.mergeProcessing(i + 1, _selectedPaths.length, p.basename(path)));
       } else if (ext == 'pdf') {
         await _addPdfPages(doc, path, onPage: (pageIndex, pageTotal) {
           processedPages++;
-          bumpProgress(
-              'Обработка ${i + 1}/${_selectedPaths.length}: ${p.basename(path)} (стр. $pageIndex/$pageTotal)');
+          bumpProgress(l10n.mergeProcessingPage(
+              i + 1, _selectedPaths.length, p.basename(path), pageIndex, pageTotal));
         });
       }
     }
 
     if (mounted) {
       setState(() {
-        _progressText = 'Сохранение...';
+        _progressText = l10n.mergeSaving;
         _progressValue = null;
       });
     }
@@ -303,17 +305,18 @@ class _MergeDocumentsScreenState extends State<MergeDocumentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Объединить файлы'),
+        title: Text(l10n.featMerge),
         actions: [
           if (_selectedPaths.length >= 2 && !_isMerging)
             TextButton.icon(
               icon: const Icon(Icons.merge_type),
-              label: const Text('Объединить'),
+              label: Text(l10n.mergeAction),
               onPressed: _merge,
             ),
         ],
@@ -343,7 +346,7 @@ class _MergeDocumentsScreenState extends State<MergeDocumentsScreen> {
                         Icon(Icons.merge_type, size: 72, color: subColor),
                         const SizedBox(height: 16),
                         Text(
-                          'Добавьте файлы для объединения\n(PDF и изображения)',
+                          l10n.mergeEmptyHint,
                           textAlign: TextAlign.center,
                           style: TextStyle(color: subColor, fontSize: 16),
                         ),
@@ -370,7 +373,7 @@ class _MergeDocumentsScreenState extends State<MergeDocumentsScreen> {
                           leading: _buildLeading(path, ext),
                           title: Text(name,
                               maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text('${index + 1}. Перетащите для изменения порядка',
+                          subtitle: Text(l10n.mergeItemSubtitle(index + 1),
                               style: const TextStyle(fontSize: 12)),
                           trailing: IconButton(
                             icon: Icon(Icons.close, color: subColor),
@@ -394,7 +397,7 @@ class _MergeDocumentsScreenState extends State<MergeDocumentsScreen> {
               children: [
                 OutlinedButton.icon(
                   icon: const Icon(Icons.add),
-                  label: const Text('Добавить файлы (PDF / фото)'),
+                  label: Text(l10n.mergeAddFiles),
                   onPressed: _isMerging ? null : _addFiles,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF2CA5E0),
@@ -409,7 +412,7 @@ class _MergeDocumentsScreenState extends State<MergeDocumentsScreen> {
                   ElevatedButton.icon(
                     icon: const Icon(Icons.merge_type, color: Colors.white),
                     label: Text(
-                      'Объединить ${_selectedPaths.length} файла в PDF',
+                      l10n.mergeCountToPdf(_selectedPaths.length),
                       style: const TextStyle(color: Colors.white),
                     ),
                     onPressed: _isMerging ? null : _merge,

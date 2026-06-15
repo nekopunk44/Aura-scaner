@@ -4,7 +4,8 @@ import 'package:image_cropper/image_cropper.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
-import 'save_options_passport.dart'; 
+import 'save_options_passport.dart';
+import '../../../l10n/app_localizations.dart';
 
 class PhotoEditScreen extends StatefulWidget {
   final List<XFile> imageFiles;
@@ -58,17 +59,18 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
   }
 
   Future<void> _cropImage() async {
+    final l10n = AppLocalizations.of(context);
     final cropped = await ImageCropper().cropImage(
       sourcePath: _editedPaths[_currentPageIndex],
       uiSettings: [
         AndroidUiSettings(
-          toolbarTitle: 'Обрезать фото',
+          toolbarTitle: l10n.editCropPhotoTitle,
           toolbarColor: Colors.black,
           toolbarWidgetColor: Colors.white,
           initAspectRatio: CropAspectRatioPreset.original,
           lockAspectRatio: false,
         ),
-        IOSUiSettings(title: 'Обрезать фото'),
+        IOSUiSettings(title: l10n.editCropPhotoTitle),
       ],
     );
 
@@ -153,7 +155,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
     );
   }
 
-  Widget _buildPageSwitchingControls() {
+  Widget _buildPageSwitchingControls(AppLocalizations l10n) {
     if (!_isMultiPageMode) return const SizedBox.shrink();
 
     return Container(
@@ -168,7 +170,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
               avatar: isSelected
                   ? const Icon(Icons.check_circle, color: Colors.black, size: 18)
                   : null,
-              label: Text('Страница ${index + 1}'),
+              label: Text(l10n.pageLabel(index + 1)),
               onPressed: () => _switchPage(index),
               backgroundColor: isSelected ? Colors.amber : Colors.grey.shade800,
               labelStyle: TextStyle(
@@ -206,6 +208,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -216,21 +219,21 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
         ),
         title: Text(
           _isMultiPageMode
-              ? 'Редактирование (${_currentPageIndex + 1} из ${widget.imageFiles.length})'
-              : 'Редактирование',
+              ? l10n.editTitleWithCount(_currentPageIndex + 1, widget.imageFiles.length)
+              : l10n.editTitle,
           style: const TextStyle(color: Colors.white),
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.restart_alt, color: Colors.white),
             onPressed: _resetFilters,
-            tooltip: 'Сбросить',
+            tooltip: l10n.reset,
           ),
         ],
       ),
       body: Column(
         children: [
-          _buildPageSwitchingControls(), 
+          _buildPageSwitchingControls(l10n),
 
           Expanded(
             child: Container(
@@ -279,12 +282,12 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                     children: [
                       _EditToolButton(
                         icon: Icons.rotate_right,
-                        label: 'Повернуть',
+                        label: l10n.toolRotate,
                         onTap: _rotateImage,
                       ),
                       _EditToolButton(
                         icon: Icons.filter_b_and_w,
-                        label: 'Ч/Б',
+                        label: l10n.editToolBW,
                         onTap: () {
                           setState(() {
                             _isGrayScale = !_isGrayScale;
@@ -295,12 +298,12 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                       ),
                       _EditToolButton(
                         icon: Icons.crop,
-                        label: 'Обрезать',
+                        label: l10n.editToolCrop,
                         onTap: _cropImage,
                       ),
                       _EditToolButton(
                         icon: Icons.auto_awesome,
-                        label: 'Улучшить',
+                        label: l10n.editToolEnhance,
                         onTap: () {
                           setState(() {
                             _contrast = 1.2;
@@ -309,7 +312,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                             _brightnessValues[_currentPageIndex] = _brightness;
                           });
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Автоулучшение применено')),
+                            SnackBar(content: Text(l10n.editAutoEnhanced)),
                           );
                         },
                       ),
@@ -341,11 +344,11 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const SizedBox(
+                        SizedBox(
                           width: 60,
                           child: Text(
-                            'Яркость',
-                            style: TextStyle(
+                            l10n.colorBrightness,
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 12,
                             ),
@@ -375,11 +378,11 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const SizedBox(
+                        SizedBox(
                           width: 60,
                           child: Text(
-                            'Контраст',
-                            style: TextStyle(
+                            l10n.colorContrast,
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 12,
                             ),
@@ -400,8 +403,8 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
                     icon: const Icon(Icons.save, color: Colors.white, size: 20),
                     label: Text(
                       _isMultiPageMode
-                          ? 'Сохранить все ${widget.imageFiles.length} страницы'
-                          : 'Сохранить изменения',
+                          ? l10n.editSaveAllPages(widget.imageFiles.length)
+                          : l10n.editSaveChanges,
                       style: const TextStyle(color: Colors.white, fontSize: 16),
                     ),
                     style: ElevatedButton.styleFrom(

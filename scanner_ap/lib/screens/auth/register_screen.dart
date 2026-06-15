@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/auth_service.dart';
 import '../../utils/app_notification.dart';
+import '../../utils/error_messages.dart';
 import '../ui_screens/main_screen/app_tabs_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -45,7 +47,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      AppNotification.show(context, message: e.toString());
+      AppNotification.show(context, message: friendlyError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -53,6 +55,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
@@ -93,7 +96,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       onPressed: () => Navigator.pop(context),
                     ),
                     Text(
-                      'Регистрация',
+                      l10n.registerTitle,
                       style: TextStyle(
                         color: textColor,
                         fontSize: 18,
@@ -134,7 +137,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         const SizedBox(height: 18),
 
                         Text(
-                          'Создайте аккаунт',
+                          l10n.registerHeadline,
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 26,
@@ -145,7 +148,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Заполните данные для регистрации',
+                          l10n.registerSubtitle,
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: 14, color: subtextColor),
                         ),
@@ -175,7 +178,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               children: [
                                 _Field(
                                   controller: _nameController,
-                                  label: 'Имя',
+                                  label: l10n.fieldName,
                                   icon: Icons.person_outline,
                                   textCapitalization: TextCapitalization.words,
                                   isDark: isDark,
@@ -185,14 +188,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   labelColor: labelColor,
                                   textColor: textColor,
                                   validator: (v) {
-                                    if (v == null || v.trim().isEmpty) return 'Введите имя';
+                                    if (v == null || v.trim().isEmpty) return l10n.validateNameRequired;
                                     return null;
                                   },
                                 ),
                                 const SizedBox(height: 14),
                                 _Field(
                                   controller: _emailController,
-                                  label: 'Email',
+                                  label: l10n.fieldEmail,
                                   icon: Icons.email_outlined,
                                   keyboardType: TextInputType.emailAddress,
                                   isDark: isDark,
@@ -202,15 +205,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   labelColor: labelColor,
                                   textColor: textColor,
                                   validator: (v) {
-                                    if (v == null || v.trim().isEmpty) return 'Введите email';
-                                    if (!v.contains('@')) return 'Некорректный email';
+                                    if (v == null || v.trim().isEmpty) return l10n.validateEmailRequired;
+                                    if (!v.contains('@')) return l10n.validateEmailInvalid;
                                     return null;
                                   },
                                 ),
                                 const SizedBox(height: 14),
                                 _Field(
                                   controller: _passwordController,
-                                  label: 'Пароль',
+                                  label: l10n.fieldPassword,
                                   icon: Icons.lock_outline,
                                   obscureText: _obscurePassword,
                                   isDark: isDark,
@@ -231,8 +234,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                         () => _obscurePassword = !_obscurePassword),
                                   ),
                                   validator: (v) {
-                                    if (v == null || v.isEmpty) return 'Введите пароль';
-                                    if (v.length < 6) return 'Минимум 6 символов';
+                                    if (v == null || v.isEmpty) return l10n.validatePasswordRequired;
+                                    if (v.length < 6) return l10n.validatePasswordMin;
                                     return null;
                                   },
                                 ),
@@ -257,9 +260,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                             child: CircularProgressIndicator(
                                                 strokeWidth: 2, color: Colors.white),
                                           )
-                                        : const Text(
-                                            'Зарегистрироваться',
-                                            style: TextStyle(
+                                        : Text(
+                                            l10n.actionRegister,
+                                            style: const TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w600,
                                                 color: Colors.white),
@@ -276,13 +279,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text('Уже есть аккаунт? ',
+                            Text(l10n.registerHaveAccount,
                                 style: TextStyle(color: subtextColor, fontSize: 14)),
                             GestureDetector(
                               onTap: () => Navigator.pop(context),
-                              child: const Text(
-                                'Войти',
-                                style: TextStyle(
+                              child: Text(
+                                l10n.actionLogin,
+                                style: const TextStyle(
                                     color: Color(0xFF2CA5E0),
                                     fontWeight: FontWeight.w600,
                                     fontSize: 14),

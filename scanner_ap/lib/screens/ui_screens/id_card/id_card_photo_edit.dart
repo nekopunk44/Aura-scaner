@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 
 import 'save_options_id_card.dart';
+import '../../../l10n/app_localizations.dart';
 
 
 class EditState {
@@ -112,17 +113,18 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
   }
 
   Future<void> _cropImage() async {
+    final l10n = AppLocalizations.of(context);
     final cropped = await ImageCropper().cropImage(
       sourcePath: _currentState.currentPath,
       uiSettings: [
         AndroidUiSettings(
-          toolbarTitle: 'Обрезать удостоверение',
+          toolbarTitle: l10n.editCropIdTitle,
           toolbarColor: Colors.black,
           toolbarWidgetColor: Colors.white,
           initAspectRatio: CropAspectRatioPreset.ratio16x9,
           lockAspectRatio: false,
         ),
-        IOSUiSettings(title: 'Обрезать удостоверение'),
+        IOSUiSettings(title: l10n.editCropIdTitle),
       ],
     );
 
@@ -256,10 +258,11 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('Редактирование Удостоверения'),
+        title: Text(l10n.editIdCardTitle),
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         centerTitle: true,
@@ -288,13 +291,13 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 _SideButton(
-                  label: 'Лицевая сторона',
+                  label: l10n.frontSide,
                   isSelected: _isEditingFront,
                   onPressed: () => _toggleSide(true),
                 ),
                 const SizedBox(width: 8),
                 _SideButton(
-                  label: 'Обратная сторона',
+                  label: l10n.backSide,
                   isSelected: !_isEditingFront,
                   onPressed: () => _toggleSide(false),
                 ),
@@ -307,9 +310,9 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
               child: _buildEditableImagePreview(),
             ),
           ),
-          _buildToolRow(),
+          _buildToolRow(l10n),
 
-          _buildSliderPanel(),
+          _buildSliderPanel(l10n),
 
           Padding(
             padding: const EdgeInsets.all(16.0),
@@ -320,7 +323,7 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
                 minimumSize: const Size(double.infinity, 50),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
-              child: const Text('Сохранить обе стороны', style: TextStyle(color: Colors.white, fontSize: 18)),
+              child: Text(l10n.editIdCardSaveBothSides, style: const TextStyle(color: Colors.white, fontSize: 18)),
             ),
           ),
         ],
@@ -330,7 +333,7 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
 
   // Вспомогательные виджеты
 
-  Widget _buildToolRow() {
+  Widget _buildToolRow(AppLocalizations l10n) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Row(
@@ -338,23 +341,23 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
         children: [
           _ToolIcon(
             icon: Icons.rotate_right,
-            label: 'Повернуть',
+            label: l10n.toolRotate,
             onTap: _rotateImage,
           ),
           _ToolIcon(
             icon: Icons.filter_b_and_w,
-            label: 'Ч/Б',
+            label: l10n.editToolBW,
             isActive: _currentState.isGrayscale,
             onTap: _applyFilter,
           ),
           _ToolIcon(
             icon: Icons.crop,
-            label: 'Обрезать',
+            label: l10n.editToolCrop,
             onTap: _cropImage,
           ),
           _ToolIcon(
             icon: Icons.auto_fix_high,
-            label: 'Улучшить',
+            label: l10n.editToolEnhance,
             onTap: _autoEnhance,
           ),
         ],
@@ -362,20 +365,20 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
     );
   }
 
-  Widget _buildSliderPanel() {
+  Widget _buildSliderPanel(AppLocalizations l10n) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Column(
         children: [
           _AdjustmentSlider(
             icon: Icons.wb_sunny,
-            label: 'Яркость',
+            label: l10n.colorBrightness,
             value: _currentState.brightness,
             onChanged: _updateBrightness,
           ),
           _AdjustmentSlider(
             icon: Icons.contrast,
-            label: 'Контраст',
+            label: l10n.colorContrast,
             value: _currentState.contrast,
             onChanged: _updateContrast,
           ),

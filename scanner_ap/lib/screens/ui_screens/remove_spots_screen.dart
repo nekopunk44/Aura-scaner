@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/image_editing_service.dart';
+import '../../l10n/app_localizations.dart';
 
 const String _documentKey = 'saved_document_paths';
 
@@ -68,7 +69,7 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('Ошибка обработки: $e')),
+        SnackBar(content: Text('${AppLocalizations.of(context).processingError}: $e')),
       );
     } finally {
       if (mounted) {
@@ -103,7 +104,7 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
       if (!mounted) return;
       messenger.showSnackBar(
         SnackBar(
-          content: Text('Сохранено: $fileName'),
+          content: Text(AppLocalizations.of(context).snackSaved(fileName)),
           backgroundColor: const Color(0xFF2CA5E0),
         ),
       );
@@ -111,7 +112,7 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('Ошибка сохранения: $e')),
+        SnackBar(content: Text('${AppLocalizations.of(context).saveError}: $e')),
       );
     } finally {
       if (mounted) {
@@ -122,6 +123,7 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -133,7 +135,7 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: Text('Убрать пятна', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        title: Text(l10n.featRemoveSpots, style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
         backgroundColor: appBarBg,
         iconTheme: IconThemeData(color: textColor),
         elevation: 0,
@@ -167,25 +169,25 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Выберите фильтр:', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: textColor)),
+                        Text(l10n.spotsSelectFilter, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: textColor)),
                         const SizedBox(height: 8),
                         RadioListTile<int>(
-                          title: Text('Медианный фильтр', style: TextStyle(color: textColor, fontSize: 14)),
-                          subtitle: Text('Лучший для пятен и артефактов', style: TextStyle(color: subColor, fontSize: 12)),
+                          title: Text(l10n.spotsMedianTitle, style: TextStyle(color: textColor, fontSize: 14)),
+                          subtitle: Text(l10n.spotsMedianSub, style: TextStyle(color: subColor, fontSize: 12)),
                           value: 0,
                           activeColor: const Color(0xFF2CA5E0),
                           contentPadding: EdgeInsets.zero,
                         ),
                         RadioListTile<int>(
-                          title: Text('Размытие Гаусса', style: TextStyle(color: textColor, fontSize: 14)),
-                          subtitle: Text('Мягче, для деликатных документов', style: TextStyle(color: subColor, fontSize: 12)),
+                          title: Text(l10n.spotsGaussTitle, style: TextStyle(color: textColor, fontSize: 14)),
+                          subtitle: Text(l10n.spotsGaussSub, style: TextStyle(color: subColor, fontSize: 12)),
                           value: 1,
                           activeColor: const Color(0xFF2CA5E0),
                           contentPadding: EdgeInsets.zero,
                         ),
                         RadioListTile<int>(
-                          title: Text('Комбинированный', style: TextStyle(color: textColor, fontSize: 14)),
-                          subtitle: Text('Медиана + размытие — рекомендуется', style: TextStyle(color: subColor, fontSize: 12)),
+                          title: Text(l10n.spotsCombinedTitle, style: TextStyle(color: textColor, fontSize: 14)),
+                          subtitle: Text(l10n.spotsCombinedSub, style: TextStyle(color: subColor, fontSize: 12)),
                           value: 2,
                           activeColor: const Color(0xFF2CA5E0),
                           contentPadding: EdgeInsets.zero,
@@ -197,7 +199,7 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
                               child: OutlinedButton.icon(
                                 onPressed: _isProcessing ? null : _pickImage,
                                 icon: const Icon(Icons.image, size: 18),
-                                label: const Text('Другое фото'),
+                                label: Text(l10n.otherPhoto),
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: const Color(0xFF2CA5E0),
                                   side: const BorderSide(color: Color(0xFF2CA5E0)),
@@ -211,7 +213,7 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
                               child: ElevatedButton.icon(
                                 onPressed: _isProcessing ? null : _saveImage,
                                 icon: const Icon(Icons.check, size: 18),
-                                label: const Text('Сохранить'),
+                                label: Text(l10n.actionSave),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF2CA5E0),
                                   disabledBackgroundColor: const Color(0xFF2CA5E0).withValues(alpha: 0.4),

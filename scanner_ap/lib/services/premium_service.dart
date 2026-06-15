@@ -8,7 +8,7 @@ class PremiumService {
   factory PremiumService() => _instance;
   PremiumService._internal();
 
-  static const _kAndroidPackage = 'com.example.scanner_ap';
+  static const _kAndroidPackage = 'com.aurascanner.app';
 
   bool _isPremium = false;
   DateTime? _expiresAt;

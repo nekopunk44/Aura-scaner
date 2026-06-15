@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'api_service.dart';
+import '../utils/error_messages.dart';
 
 class RemoteDocument {
   final String id;
@@ -95,13 +96,5 @@ class DocumentSyncService {
     }
   }
 
-  String _parseError(DioException e) {
-    final data = e.response?.data;
-    if (data is Map && data['message'] != null) return data['message'] as String;
-    if (e.type == DioExceptionType.connectionTimeout ||
-        e.type == DioExceptionType.receiveTimeout) {
-      return 'Нет соединения с сервером';
-    }
-    return 'Ошибка сети';
-  }
+  String _parseError(DioException e) => friendlyError(e);
 }

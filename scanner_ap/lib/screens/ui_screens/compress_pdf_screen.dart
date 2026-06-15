@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/pdf_service.dart';
+import '../../l10n/app_localizations.dart';
 
 const String _documentKey = 'saved_document_paths';
 
@@ -58,7 +59,7 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка: $e')),
+        SnackBar(content: Text('${AppLocalizations.of(context).commonError}: $e')),
       );
     }
   }
@@ -68,6 +69,7 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
 
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final dialogBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
@@ -91,8 +93,8 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
                 children: [
                   Text(
                     p.total == 0
-                        ? 'Сжатие PDF...'
-                        : 'Сжатие: ${p.current}/${p.total} стр.',
+                        ? l10n.compressInProgress
+                        : l10n.compressProgress(p.current, p.total),
                     style: TextStyle(color: textColor),
                   ),
                   const SizedBox(height: 12),
@@ -144,9 +146,11 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'PDF сжат на $reduction%\n'
-            'Было: ${(originalSize / 1024).toStringAsFixed(2)}KB → '
-            '${(compressedSize / 1024).toStringAsFixed(2)}KB',
+            l10n.compressResult(
+              reduction,
+              (originalSize / 1024).toStringAsFixed(2),
+              (compressedSize / 1024).toStringAsFixed(2),
+            ),
           ),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 3),
@@ -157,7 +161,7 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
       if (!mounted) return;
       navigator.pop();
       messenger.showSnackBar(
-        SnackBar(content: Text('Ошибка: $e')),
+        SnackBar(content: Text('${l10n.commonError}: $e')),
       );
     } finally {
       if (mounted) setState(() => _isProcessing = false);
@@ -166,6 +170,7 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -177,7 +182,7 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: Text('Сжать PDF', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        title: Text(l10n.featCompressPdf, style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
         backgroundColor: appBarBg,
         iconTheme: IconThemeData(color: textColor),
         elevation: 0,
@@ -200,21 +205,21 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Информация о файле',
+                          l10n.fileInfo,
                           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: textColor),
                         ),
                         const SizedBox(height: 12),
-                        _InfoRow(label: 'Имя файла', value: _pdfInfo!.fileName, textColor: textColor, subColor: subColor),
+                        _InfoRow(label: l10n.fileInfoName, value: _pdfInfo!.fileName, textColor: textColor, subColor: subColor),
                         const SizedBox(height: 6),
-                        _InfoRow(label: 'Размер', value: '${_pdfInfo!.fileSizeMB} MB', textColor: textColor, subColor: subColor),
+                        _InfoRow(label: l10n.fileInfoSize, value: '${_pdfInfo!.fileSizeMB} MB', textColor: textColor, subColor: subColor),
                         const SizedBox(height: 6),
-                        _InfoRow(label: 'Страниц', value: '${_pdfInfo!.pageCount}', textColor: textColor, subColor: subColor),
+                        _InfoRow(label: l10n.fileInfoPages, value: '${_pdfInfo!.pageCount}', textColor: textColor, subColor: subColor),
                       ],
                     ),
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    'Уровень сжатия',
+                    l10n.compressLevel,
                     style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: textColor),
                   ),
                   const SizedBox(height: 10),
@@ -229,13 +234,13 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
                       onChanged: (v) => setState(() => _qualityFactor = v!),
                       child: Column(
                         children: [
-                          _QualityOption(title: 'Максимальное качество', subtitle: 'Минимальное сжатие (0.9)', value: 0.9, textColor: textColor, subColor: subColor),
+                          _QualityOption(title: l10n.compressQMaxTitle, subtitle: l10n.compressQMaxSub, value: 0.9, textColor: textColor, subColor: subColor),
                           Divider(height: 1, color: dividerColor),
-                          _QualityOption(title: 'Хорошее качество', subtitle: 'Среднее сжатие (0.7) — рекомендуется', value: 0.7, textColor: textColor, subColor: subColor),
+                          _QualityOption(title: l10n.compressQGoodTitle, subtitle: l10n.compressQGoodSub, value: 0.7, textColor: textColor, subColor: subColor),
                           Divider(height: 1, color: dividerColor),
-                          _QualityOption(title: 'Среднее качество', subtitle: 'Хорошее сжатие (0.5)', value: 0.5, textColor: textColor, subColor: subColor),
+                          _QualityOption(title: l10n.compressQMedTitle, subtitle: l10n.compressQMedSub, value: 0.5, textColor: textColor, subColor: subColor),
                           Divider(height: 1, color: dividerColor),
-                          _QualityOption(title: 'Низкое качество', subtitle: 'Максимальное сжатие (0.3)', value: 0.3, textColor: textColor, subColor: subColor),
+                          _QualityOption(title: l10n.compressQLowTitle, subtitle: l10n.compressQLowSub, value: 0.3, textColor: textColor, subColor: subColor),
                         ],
                       ),
                     ),
@@ -255,8 +260,7 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Сжатие происходит путём снижения качества изображений. '
-                            'Текст останется читаемым, но качество графики может снизиться.',
+                            l10n.compressNote,
                             style: TextStyle(fontSize: 12, color: const Color(0xFF2CA5E0), height: 1.4),
                           ),
                         ),
@@ -270,7 +274,7 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
                         child: OutlinedButton.icon(
                           onPressed: _isProcessing ? null : _pickPdf,
                           icon: const Icon(Icons.folder_open, size: 18),
-                          label: const Text('Другой файл'),
+                          label: Text(l10n.otherFile),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: const Color(0xFF2CA5E0),
                             side: const BorderSide(color: Color(0xFF2CA5E0)),
@@ -284,7 +288,7 @@ class _CompressPdfScreenState extends State<CompressPdfScreen> {
                         child: ElevatedButton.icon(
                           onPressed: _isProcessing ? null : _compressAndSave,
                           icon: const Icon(Icons.compress, size: 18),
-                          label: const Text('Сжать'),
+                          label: Text(l10n.compressAction),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green.shade600,
                             disabledBackgroundColor: Colors.green.shade600.withValues(alpha: 0.4),

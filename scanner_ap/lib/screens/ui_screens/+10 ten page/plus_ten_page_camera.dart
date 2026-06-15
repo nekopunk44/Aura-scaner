@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../../../widgets/camera_controls_bar.dart';
+import '../../../l10n/app_localizations.dart';
 
 
 class UnlimitedDocumentView extends StatelessWidget {
@@ -63,7 +64,7 @@ class UnlimitedDocumentView extends StatelessWidget {
     );
   }
 
-  Widget _buildTopPanel() {
+  Widget _buildTopPanel(AppLocalizations l10n) {
     final String currentMode = captureModeController.captureMode as String;
 
     return SafeArea(
@@ -87,8 +88,8 @@ class UnlimitedDocumentView extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  _buildTopSegment("Авто", currentMode == "Автоматически", setCaptureModeAuto),
-                  _buildTopSegment("Ручн.", currentMode == "Вручную", setCaptureModeManual),
+                  _buildTopSegment(l10n.camAutoLabel, currentMode == "Автоматически", setCaptureModeAuto),
+                  _buildTopSegment(l10n.camManualLabel, currentMode == "Вручную", setCaptureModeManual),
                 ],
               ),
             ),
@@ -198,7 +199,7 @@ class UnlimitedDocumentView extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  'Готово ($currentBatchPageCount)',
+                  AppLocalizations.of(context).camDoneBatch(currentBatchPageCount),
                   style: TextStyle(
                     fontSize: 13,
                     color: isBatchActive ? Colors.white : Colors.white38,
@@ -223,15 +224,14 @@ class UnlimitedDocumentView extends StatelessWidget {
           child: CircularProgressIndicator(color: Colors.white));
     }
 
+    final l10n = AppLocalizations.of(context);
     final size = MediaQuery.of(context).size;
 
-  
     final double cameraHeightLimit = size.height * 0.85;
 
     final bool isAutoMode = (captureModeController as dynamic).captureMode == 'Автоматически';
-  
-    // const int maxPages = 10;
-    final String pageStatus = 'Страница ${currentBatchPageCount + 1}'; // Без ограничения
+
+    final String pageStatus = l10n.pageLabel(currentBatchPageCount + 1);
 
     return Container(
       color: Colors.transparent,
@@ -256,8 +256,9 @@ class UnlimitedDocumentView extends StatelessWidget {
               width: size.width,
               child: (captureModeController as dynamic).buildStatusOverlay(
                 isDocumentMode: true,
-                pageMode: pageStatus, // новый статус
-                featureName: "Неограниченный документ", 
+                pageMode: pageStatus,
+                featureName: "Неограниченный документ",
+                l10n: l10n,
               ) as Widget,
             ),
           ),
@@ -267,7 +268,7 @@ class UnlimitedDocumentView extends StatelessWidget {
             top: 0,
             left: 0,
             right: 0,
-            child: _buildTopPanel(),
+            child: _buildTopPanel(l10n),
           ),
 
           // 5. Нижняя панель (Кнопки действий)

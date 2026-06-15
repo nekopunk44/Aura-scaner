@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../l10n/app_localizations.dart';
 import '../ui_screens/main_screen/app_tabs_screen.dart';
 import '../ui_screens/onboarding_screen.dart';
 import '../../services/api_service.dart';
 import '../../services/premium_service.dart';
+import '../../services/biometric_service.dart';
 import '../../widgets/aura_logo.dart';
 import '../auth/login_screen.dart';
 
@@ -55,36 +57,18 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   void _navigateWithDelay() async {
-    await Future.delayed(const Duration(seconds: 3));
+    // Причину для биометрии берём до await — context здесь валиден.
+    final biometricReason = AppLocalizations.of(context).biometricReason;
+    // Инициализация (сеть, prefs) идёт ПАРАЛЛЕЛЬНО с анимацией логотипа.
+    // Сплеш висит минимум 1.6 с, чтобы анимация успела отыграть, но не
+    // ждёт фиксированные 3 с, как раньше: на быстрой сети холодный старт
+    // сокращается почти вдвое, на медленной — не растёт сверх таймаута.
+    final results = await Future.wait<Object?>([
+      _resolveNextScreen(biometricReason),
+      Future.delayed(const Duration(milliseconds: 1600)),
+    ]);
     if (!mounted) return;
-
-    bool isLoggedIn = false;
-    try {
-      await ApiService().syncBaseUrl();
-      isLoggedIn = await ApiService().isLoggedIn();
-      if (isLoggedIn) {
-        await PremiumService().syncWithServer();
-      }
-    } catch (e) {
-      debugPrint('Ошибка инициализации: $e');
-    }
-    if (!mounted) return;
-
-    final prefs = await SharedPreferences.getInstance();
-    final seenOnboarding = prefs.getBool(onboardingCompletedKey) ?? false;
-    if (!mounted) return;
-
-    // Онбординг показываем только незалогиненному пользователю при первом
-    // запуске — у залогиненного он уже был, либо пропускаем (миграция со
-    // старой версии без онбординга).
-    final Widget next;
-    if (isLoggedIn) {
-      next = const MainScreen();
-    } else if (!seenOnboarding) {
-      next = const OnboardingScreen();
-    } else {
-      next = const LoginScreen();
-    }
+    final next = results.first as Widget;
 
     // Не оборачиваем переход в FadeTransition: фон splash и фон login
     // — один и тот же LinearGradient, поэтому видимого «появления»
@@ -101,8 +85,48 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
+  /// Решает, какой экран показать после сплеша. Сетевая часть ограничена
+  /// таймаутом — недоступный сервер не должен держать пользователя на
+  /// сплеше дольше нескольких секунд.
+  Future<Widget> _resolveNextScreen(String biometricReason) async {
+    bool isLoggedIn = false;
+    try {
+      await ApiService().syncBaseUrl();
+      isLoggedIn = await ApiService().isLoggedIn();
+      if (isLoggedIn) {
+        await PremiumService()
+            .syncWithServer()
+            .timeout(const Duration(seconds: 5));
+      }
+    } catch (e) {
+      debugPrint('Ошибка инициализации: $e');
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final seenOnboarding = prefs.getBool(onboardingCompletedKey) ?? false;
+
+    // Онбординг показываем только незалогиненному пользователю при первом
+    // запуске — у залогиненного он уже был, либо пропускаем (миграция со
+    // старой версии без онбординга).
+    if (isLoggedIn) {
+      // Биометрический замок: если включён и доступен — требуем разблокировку
+      // перед входом в приложение. При отказе/ошибке отправляем на логин
+      // (токен в secure storage не трогаем — повторный вход по паролю вернёт
+      // того же пользователя).
+      if (await BiometricService().isEnabled() &&
+          await BiometricService().isAvailable()) {
+        final ok = await BiometricService().authenticate(biometricReason);
+        if (!ok) return const LoginScreen();
+      }
+      return const MainScreen();
+    }
+    if (!seenOnboarding) return const OnboardingScreen();
+    return const LoginScreen();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     // Цвета фона splash совпадают с фоном login_screen (тот же
     // LinearGradient в shell обоих экранов) — Hero логотип плывёт по
@@ -143,7 +167,7 @@ class _SplashScreenState extends State<SplashScreen>
                 // Flutter сам интерполирует пропорцию между 170 и 88.
                 Hero(
                   tag: kAuraLogoHeroTag,
-                  child: const AuraLogo(size: 170),
+                  child: const AuraLogo(size: 170, animate: true),
                 ),
                 const SizedBox(height: 28),
                 FadeTransition(
@@ -159,7 +183,7 @@ class _SplashScreenState extends State<SplashScreen>
                     child: Column(
                       children: [
                         Text(
-                          'Aura Scanner',
+                          l10n.appName,
                           style: TextStyle(
                             fontSize: 30,
                             fontWeight: FontWeight.w800,
@@ -169,7 +193,7 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Документы, OCR и AI в кармане',
+                          l10n.splashTagline,
                           style: TextStyle(
                             fontSize: 13,
                             color: subColor,

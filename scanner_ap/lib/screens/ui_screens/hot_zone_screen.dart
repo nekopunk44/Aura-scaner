@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:path_provider/path_provider.dart';
+import '../../l10n/app_localizations.dart';
 
 class HotZoneScreen extends StatefulWidget {
   const HotZoneScreen({super.key});
@@ -43,6 +44,7 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
   Future<void> _captureAndAnalyze(TapDownDetails details, BoxConstraints constraints) async {
     if (_processing || _camCtrl == null || !_cameraReady) return;
     setState(() { _processing = true; _card = null; });
+    final l10n = AppLocalizations.of(context);
 
     try {
       final xFile = await _camCtrl!.takePicture();
@@ -51,7 +53,6 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
       final frame = await codec.getNextFrame();
       final fullImage = frame.image;
 
-      // Crop a region around the tap point (40% of image dimensions)
       final tapX = details.localPosition.dx / constraints.maxWidth;
       final tapY = details.localPosition.dy / constraints.maxHeight;
 
@@ -60,7 +61,6 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
       final cropX = ((fullImage.width * tapX) - cropW / 2).clamp(0, fullImage.width - cropW).round();
       final cropY = ((fullImage.height * tapY) - cropH / 2).clamp(0, fullImage.height - cropH).round();
 
-      // Re-encode cropped region
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
       canvas.drawImageRect(
@@ -89,7 +89,9 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _processing = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${l10n.commonError}: $e')),
+        );
       }
     }
   }
@@ -134,13 +136,15 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('Горячая зона', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+        title: Text(l10n.hotZoneTitle,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
         backgroundColor: Colors.black,
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
@@ -150,7 +154,6 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
           : LayoutBuilder(builder: (ctx, constraints) {
               return Stack(
                 children: [
-                  // Camera preview
                   GestureDetector(
                     onTapDown: (d) => _captureAndAnalyze(d, constraints),
                     child: SizedBox.expand(
@@ -158,7 +161,6 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
                     ),
                   ),
 
-                  // Tap hint overlay
                   if (!_processing && _card == null)
                     Positioned(
                       bottom: 120,
@@ -170,43 +172,41 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
                             color: Colors.black54,
                             borderRadius: BorderRadius.circular(24),
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.touch_app, color: Colors.white70, size: 18),
-                              SizedBox(width: 8),
-                              Text('Нажмите на подпись или текст',
-                                  style: TextStyle(color: Colors.white70, fontSize: 13)),
+                              const Icon(Icons.touch_app, color: Colors.white70, size: 18),
+                              const SizedBox(width: 8),
+                              Text(l10n.hotZoneTapHint,
+                                  style: const TextStyle(color: Colors.white70, fontSize: 13)),
                             ],
                           ),
                         ),
                       ),
                     ),
 
-                  // Processing indicator
                   if (_processing)
                     Positioned.fill(
                       child: Container(
                         color: Colors.black54,
-                        child: const Center(
+                        child: Center(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              CircularProgressIndicator(color: Color(0xFF2CA5E0)),
-                              SizedBox(height: 16),
-                              Text('Распознаю текст...',
-                                  style: TextStyle(color: Colors.white, fontSize: 14)),
+                              const CircularProgressIndicator(color: Color(0xFF2CA5E0)),
+                              const SizedBox(height: 16),
+                              Text(l10n.hotZoneProcessing,
+                                  style: const TextStyle(color: Colors.white, fontSize: 14)),
                             ],
                           ),
                         ),
                       ),
                     ),
 
-                  // Contact card result
                   if (_card != null)
                     Positioned(
                       left: 16, right: 16, bottom: 24,
-                      child: _buildContactCard(_card!, isDark, textColor),
+                      child: _buildContactCard(_card!, isDark, textColor, l10n),
                     ),
                 ],
               );
@@ -214,7 +214,7 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
     );
   }
 
-  Widget _buildContactCard(_ContactCard card, bool isDark, Color textColor) {
+  Widget _buildContactCard(_ContactCard card, bool isDark, Color textColor, AppLocalizations l10n) {
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
 
     return Container(
@@ -226,7 +226,6 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header
           Container(
             padding: const EdgeInsets.fromLTRB(20, 18, 16, 14),
             decoration: const BoxDecoration(
@@ -252,7 +251,7 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(card.name ?? 'Контакт',
+                      Text(card.name ?? l10n.hotZoneContact,
                           style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
                           overflow: TextOverflow.ellipsis),
                       if (card.extras.isNotEmpty)
@@ -270,7 +269,6 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
             ),
           ),
 
-          // Details
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
             child: Column(
@@ -289,14 +287,13 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
             ),
           ),
 
-          // Retry button
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Сканировать снова'),
+                label: Text(l10n.hotZoneScanAgain),
                 onPressed: () => setState(() => _card = null),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF2CA5E0),

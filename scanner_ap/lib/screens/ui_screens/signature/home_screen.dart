@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'signature_pad.dart';
+import '../../../l10n/app_localizations.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -34,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -44,7 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: Text('Подпись', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        title: Text(l10n.featSignature, style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
         backgroundColor: appBarBg,
         elevation: 0,
         iconTheme: IconThemeData(color: textColor),
@@ -58,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Icon(Icons.check_circle, size: 16, color: Colors.green.shade400),
                     const SizedBox(width: 4),
                     Text(
-                      'Сохранено',
+                      l10n.savedPlain,
                       style: TextStyle(
                           color: Colors.green.shade400, fontWeight: FontWeight.w600),
                     ),
@@ -90,13 +92,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     Icon(Icons.draw_outlined, size: 52,
                         color: const Color(0xFF2CA5E0).withValues(alpha: 0.6)),
                     const SizedBox(height: 12),
-                    Text('Добавьте свою подпись',
+                    Text(l10n.sigAddYours,
                         style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 18,
                             color: textColor)),
                     const SizedBox(height: 4),
-                    Text('Нарисуйте подпись пальцем',
+                    Text(l10n.sigDrawFinger,
                         style: TextStyle(fontSize: 13, color: subColor)),
                   ],
                 ),
@@ -125,7 +127,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 icon: Icon(
                     signatureImage == null ? Icons.draw : Icons.edit, size: 18),
                 label: Text(
-                    signatureImage == null ? 'Добавить подпись' : 'Изменить подпись'),
+                    signatureImage == null ? l10n.sigAdd : l10n.sigChange),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF2CA5E0),
                   foregroundColor: Colors.white,
@@ -153,7 +155,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 height: 52,
                 child: ElevatedButton.icon(
                   icon: const Icon(Icons.save_outlined, size: 18),
-                  label: const Text('Сохранить в файлы'),
+                  label: Text(l10n.sigSaveToFiles),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green.shade600,
                     disabledBackgroundColor:
@@ -169,8 +171,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           final messenger = ScaffoldMessenger.of(context);
                           await _saveSignatureToFile(signatureImage!);
                           if (!mounted) return;
-                          messenger.showSnackBar(const SnackBar(
-                            content: Text('Подпись сохранена в "Мои файлы"'),
+                          messenger.showSnackBar(SnackBar(
+                            content: Text(l10n.sigSavedToMyFiles),
                             backgroundColor: Colors.green,
                           ));
                         },

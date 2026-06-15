@@ -6,6 +6,7 @@ import 'package:image_editor_plus/image_editor_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../l10n/app_localizations.dart';
 
 const _documentKey = 'saved_document_paths';
 
@@ -102,7 +103,7 @@ class _RestorePhotoScreenState extends State<RestorePhotoScreen> {
       widget.onSaved?.call();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Сохранено'), backgroundColor: Colors.green),
+          SnackBar(content: Text(AppLocalizations.of(context).savedPlain), backgroundColor: Colors.green),
         );
         Navigator.pop(context);
       }
@@ -113,6 +114,7 @@ class _RestorePhotoScreenState extends State<RestorePhotoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -122,7 +124,7 @@ class _RestorePhotoScreenState extends State<RestorePhotoScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: const Text('Восстановить фото'),
+        title: Text(l10n.featRestorePhoto),
         backgroundColor: isDark ? const Color(0xFF141E2B) : Colors.white,
         foregroundColor: textColor,
         elevation: 0,
@@ -158,7 +160,7 @@ class _RestorePhotoScreenState extends State<RestorePhotoScreen> {
                             Icon(Icons.add_photo_alternate_outlined,
                                 size: 52, color: const Color(0xFF2CA5E0)),
                             const SizedBox(height: 12),
-                            Text('Выбрать фото',
+                            Text(l10n.importChoosePhoto,
                                 style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
@@ -184,7 +186,7 @@ class _RestorePhotoScreenState extends State<RestorePhotoScreen> {
                           child: OutlinedButton.icon(
                             onPressed: _isProcessing ? null : _autoEnhance,
                             icon: const Icon(Icons.auto_fix_high, size: 18),
-                            label: const Text('Авто улучшение'),
+                            label: Text(l10n.restoreAuto),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: const Color(0xFF2CA5E0),
                               side: const BorderSide(color: Color(0xFF2CA5E0)),
@@ -199,7 +201,7 @@ class _RestorePhotoScreenState extends State<RestorePhotoScreen> {
                           child: OutlinedButton.icon(
                             onPressed: _isProcessing ? null : _openEditor,
                             icon: const Icon(Icons.edit, size: 18),
-                            label: const Text('Редактор'),
+                            label: Text(l10n.restoreEditor),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: textColor,
                               side: BorderSide(
@@ -231,8 +233,8 @@ class _RestorePhotoScreenState extends State<RestorePhotoScreen> {
                                 child: CircularProgressIndicator(
                                     strokeWidth: 2, color: Colors.white),
                               )
-                            : const Text('Сохранить',
-                                style: TextStyle(
+                            : Text(l10n.actionSave,
+                                style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.white)),

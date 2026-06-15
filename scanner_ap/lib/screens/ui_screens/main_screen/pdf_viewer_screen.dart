@@ -3,8 +3,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:pdfx/pdfx.dart';
+import 'package:pdfrx/pdfrx.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../../l10n/app_localizations.dart';
 
 class PdfViewerScreen extends StatefulWidget {
   final String filePath;
@@ -17,9 +18,6 @@ class PdfViewerScreen extends StatefulWidget {
 }
 
 class _PdfViewerScreenState extends State<PdfViewerScreen> {
-  late PdfControllerPinch pdfController;
-  bool _isLoading = true;
-
   EditingMode _currentMode = EditingMode.none;
   final List<PdfAnnotation> _annotations = [];
   PdfAnnotation? _currentAnnotation;
@@ -40,34 +38,6 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   final GlobalKey _captureKey = GlobalKey();
   bool _isSaving = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadPdf();
-  }
-
-  Future<void> _loadPdf() async {
-    try {
-      pdfController = PdfControllerPinch(
-        document: PdfDocument.openFile(widget.filePath),
-      );
-      setState(() {
-        _isLoading = false;
-      });
-    } catch (e) {
-      debugPrint('Error loading PDF: $e');
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    pdfController.dispose();
-    super.dispose();
-  }
-
   void _rotateDocument() {
     setState(() {
       _rotation = (_rotation + 90) % 360;
@@ -75,6 +45,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   }
 
   void _showMoreOptions() {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final sheetBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
@@ -94,17 +65,17 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             const SizedBox(height: 8),
             ListTile(
               leading: Icon(Icons.save, color: const Color(0xFF2CA5E0)),
-              title: Text('Сохранить изменения', style: TextStyle(color: textColor)),
+              title: Text(l10n.pdfSaveChanges, style: TextStyle(color: textColor)),
               onTap: () { Navigator.pop(ctx); _saveDocument(); },
             ),
             ListTile(
               leading: Icon(Icons.undo, color: const Color(0xFF2CA5E0)),
-              title: Text('Отменить последнее', style: TextStyle(color: textColor)),
+              title: Text(l10n.pdfUndoLast, style: TextStyle(color: textColor)),
               onTap: () { Navigator.pop(ctx); _undoLastAction(); },
             ),
             ListTile(
               leading: Icon(Icons.clear_all, color: Colors.red.shade400),
-              title: Text('Очистить аннотации', style: TextStyle(color: textColor)),
+              title: Text(l10n.pdfClearAnnotations, style: TextStyle(color: textColor)),
               onTap: () { Navigator.pop(ctx); _clearAllAnnotations(); },
             ),
             const SizedBox(height: 8),
@@ -139,12 +110,12 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Сохранено: $outPath')),
+        SnackBar(content: Text(AppLocalizations.of(context).snackSaved(outPath))),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось сохранить: $e')),
+        SnackBar(content: Text('${AppLocalizations.of(context).pdfSaveFailed}: $e')),
       );
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -238,31 +209,39 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? Center(child: CircularProgressIndicator(color: const Color(0xFF2CA5E0)))
-          : RepaintBoundary(
-              key: _captureKey,
-              child: Stack(
-                children: [
-                  Transform.rotate(
-                    angle: _rotation * 3.14159 / 180,
-                    child: GestureDetector(
-                      onPanStart: _handlePanStart,
-                      onPanUpdate: _handlePanUpdate,
-                      onPanEnd: _handlePanEnd,
-                      child: PdfViewPinch(controller: pdfController),
+      body: RepaintBoundary(
+        key: _captureKey,
+        child: Stack(
+          children: [
+            Transform.rotate(
+              angle: _rotation * 3.14159 / 180,
+              child: GestureDetector(
+                onPanStart: _handlePanStart,
+                onPanUpdate: _handlePanUpdate,
+                onPanEnd: _handlePanEnd,
+                child: PdfViewer.file(
+                  widget.filePath,
+                  params: PdfViewerParams(
+                    backgroundColor: isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC),
+                    loadingBannerBuilder: (context, bytesDownloaded, totalBytes) =>
+                        const Center(
+                      child: CircularProgressIndicator(color: Color(0xFF2CA5E0)),
                     ),
                   ),
-                  ..._annotations.map(_buildAnnotation),
-                  if (_currentAnnotation != null) _buildAnnotation(_currentAnnotation!),
-                ],
+                ),
               ),
             ),
+            ..._annotations.map(_buildAnnotation),
+            if (_currentAnnotation != null) _buildAnnotation(_currentAnnotation!),
+          ],
+        ),
+      ),
       bottomNavigationBar: _buildToolbar(isDark),
     );
   }
 
   Widget _buildToolbar(bool isDark) {
+    final l10n = AppLocalizations.of(context);
     final toolbarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
     final activeColor = const Color(0xFF2CA5E0);
     final inactiveColor = isDark ? Colors.white38 : Colors.black45;
@@ -308,10 +287,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildToolbarButton(icon: Icons.rotate_right, label: 'Повернуть', isActive: false, activeColor: activeColor, inactiveColor: inactiveColor, onTap: _rotateDocument),
+                _buildToolbarButton(icon: Icons.rotate_right, label: l10n.toolRotate, isActive: false, activeColor: activeColor, inactiveColor: inactiveColor, onTap: _rotateDocument),
                 _buildToolbarButton(
                   icon: Icons.edit,
-                  label: 'Ручка',
+                  label: l10n.toolPen,
                   isActive: _currentMode == EditingMode.pen,
                   activeColor: activeColor,
                   inactiveColor: inactiveColor,
@@ -319,13 +298,13 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                 ),
                 _buildToolbarButton(
                   icon: Icons.highlight,
-                  label: 'Выделить',
+                  label: l10n.toolHighlight,
                   isActive: _currentMode == EditingMode.highlight,
                   activeColor: activeColor,
                   inactiveColor: inactiveColor,
                   onTap: () => setState(() => _currentMode = _currentMode == EditingMode.highlight ? EditingMode.none : EditingMode.highlight),
                 ),
-                _buildToolbarButton(icon: Icons.more_vert, label: 'Ещё', isActive: false, activeColor: activeColor, inactiveColor: inactiveColor, onTap: _showMoreOptions),
+                _buildToolbarButton(icon: Icons.more_vert, label: l10n.toolMore, isActive: false, activeColor: activeColor, inactiveColor: inactiveColor, onTap: _showMoreOptions),
               ],
             ),
           ),

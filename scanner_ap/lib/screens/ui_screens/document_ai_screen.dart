@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:image/image.dart' as img;
 import '../../services/ai_service.dart';
+import '../../l10n/app_localizations.dart';
 
 enum AiMode { analyze, eco }
 
@@ -30,7 +31,8 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
 
   bool get _isEco => widget.mode == AiMode.eco;
 
-  String get _title => _isEco ? 'Эко упаковка' : 'Анализ документа';
+  String _titleText(AppLocalizations l10n) =>
+      _isEco ? l10n.aiTitleEco : l10n.aiTitleAnalyze;
 
   @override
   void initState() {
@@ -41,6 +43,7 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
   }
 
   Future<void> _pickSource(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
@@ -65,8 +68,8 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
             ),
             const SizedBox(height: 16),
             ListTile(
-              leading: Icon(Icons.photo_library_outlined, color: const Color(0xFF2CA5E0)),
-              title: Text('Из галереи', style: TextStyle(color: textColor)),
+              leading: const Icon(Icons.photo_library_outlined, color: Color(0xFF2CA5E0)),
+              title: Text(l10n.fromGallery, style: TextStyle(color: textColor)),
               onTap: () async {
                 Navigator.pop(context);
                 await _pickImage();
@@ -75,7 +78,7 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
             if (!_isEco)
               ListTile(
                 leading: Icon(Icons.picture_as_pdf, color: Colors.red.shade400),
-                title: Text('PDF документ', style: TextStyle(color: textColor)),
+                title: Text(l10n.importPdfDocument, style: TextStyle(color: textColor)),
                 onTap: () async {
                   Navigator.pop(context);
                   await _pickPdf();
@@ -83,7 +86,7 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
               ),
             ListTile(
               leading: Icon(Icons.camera_alt_outlined, color: Colors.green.shade400),
-              title: Text('Сфотографировать', style: TextStyle(color: textColor)),
+              title: Text(l10n.wmTakePhoto, style: TextStyle(color: textColor)),
               onTap: () async {
                 Navigator.pop(context);
                 await _takePicture();
@@ -146,6 +149,7 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
 
   Future<void> _analyze() async {
     if (_imageFile == null) return;
+    final l10n = AppLocalizations.of(context);
     setState(() {
       _isLoading = true;
       _result = null;
@@ -158,7 +162,7 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('${l10n.commonError}: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -168,6 +172,7 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -177,7 +182,7 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: Text(_title),
+        title: Text(_titleText(l10n)),
         backgroundColor: isDark ? const Color(0xFF141E2B) : Colors.white,
         foregroundColor: textColor,
         elevation: 0,
@@ -185,7 +190,6 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Превью изображения
           GestureDetector(
             onTap: () => _pickSource(context),
             child: Container(
@@ -214,14 +218,14 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          _isEco
-                              ? 'Выберите фото упаковки'
-                              : 'Выберите документ или фото',
+                          _isEco ? l10n.aiSelectEcoPhoto : l10n.aiSelectDocOrPhoto,
                           style: TextStyle(fontSize: 15, color: subColor),
                         ),
                         const SizedBox(height: 4),
-                        Text('Нажмите чтобы выбрать',
-                            style: TextStyle(fontSize: 12, color: subColor.withValues(alpha: 0.6))),
+                        Text(
+                          l10n.aiTapToSelect,
+                          style: TextStyle(fontSize: 12, color: subColor.withValues(alpha: 0.6)),
+                        ),
                       ],
                     ),
             ),
@@ -229,14 +233,13 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
 
           const SizedBox(height: 12),
 
-          // Кнопки
           Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => _pickSource(context),
                   icon: const Icon(Icons.upload_file, size: 18),
-                  label: Text(_imageFile != null ? 'Сменить' : 'Выбрать'),
+                  label: Text(_imageFile != null ? l10n.wmChange : l10n.aiSelectFile),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF2CA5E0),
                     side: const BorderSide(color: Color(0xFF2CA5E0)),
@@ -255,7 +258,7 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                         )
                       : Icon(_isEco ? Icons.eco : Icons.auto_awesome, size: 18),
-                  label: Text(_isLoading ? 'Анализирую...' : 'Анализировать'),
+                  label: Text(_isLoading ? l10n.aiAnalyzing : l10n.aiAnalyze),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _isEco ? Colors.green.shade600 : const Color(0xFF2CA5E0),
                     disabledBackgroundColor:
@@ -271,7 +274,6 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
             ],
           ),
 
-          // Результат
           if (_result != null) ...[
             const SizedBox(height: 20),
             Container(
@@ -296,7 +298,7 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'Результат анализа',
+                        l10n.aiResultTitle,
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,

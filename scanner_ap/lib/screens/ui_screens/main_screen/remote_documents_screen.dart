@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../config/server_config.dart';
 import '../../../services/api_service.dart';
 import '../../../services/document_sync_service.dart';
+import '../../../l10n/app_localizations.dart';
 
 const _documentKey = 'saved_document_paths';
 
@@ -73,6 +74,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
   }
 
   Future<void> _pickAndUpload() async {
+    final l10n = AppLocalizations.of(context);
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: false,
       type: FileType.custom,
@@ -81,19 +83,19 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
     if (result == null || result.files.first.path == null) return;
 
     final file = File(result.files.first.path!);
-    _setBusy('Загрузка в облако…');
+    _setBusy(l10n.remoteUploadBusy);
     try {
       await _apiService.syncBaseUrl();
       await _syncService.upload(file);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Загружено в облако: ${p.basename(file.path)}')),
+        SnackBar(content: Text(l10n.remoteUploaded(p.basename(file.path)))),
       );
       await _loadRemoteDocuments();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка загрузки: $e')),
+        SnackBar(content: Text(l10n.remoteUploadError(e.toString()))),
       );
     } finally {
       _setBusy(null);
@@ -101,7 +103,8 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
   }
 
   Future<void> _downloadDocument(RemoteDocument doc) async {
-    _setBusy('Скачивание…');
+    final l10n = AppLocalizations.of(context);
+    _setBusy(l10n.remoteDownloadBusy);
     try {
       await _apiService.syncBaseUrl();
       final dir = await getApplicationDocumentsDirectory();
@@ -120,12 +123,12 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
       if (!mounted) return;
       widget.onLocalDocumentImported?.call();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Скачано: $fileName')),
+        SnackBar(content: Text(l10n.remoteDownloaded(fileName))),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка скачивания: $e')),
+        SnackBar(content: Text(l10n.remoteDownloadError(e.toString()))),
       );
     } finally {
       _setBusy(null);
@@ -140,6 +143,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
   }
 
   Future<void> _renameRemoteDocument(RemoteDocument doc) async {
+    final l10n = AppLocalizations.of(context);
     final controller = TextEditingController(text: doc.name);
     final newName = await showDialog<String>(
       context: context,
@@ -148,23 +152,23 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
         return AlertDialog(
           backgroundColor: isDarkDialog ? const Color(0xFF1E2A3A) : Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Переименовать в облаке'),
+          title: Text(l10n.remoteRenameTitle),
           content: TextField(
             controller: controller,
             autofocus: true,
-            decoration: const InputDecoration(
-              hintText: 'Новое имя документа',
+            decoration: InputDecoration(
+              hintText: l10n.remoteNewName,
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Отмена'),
+              child: Text(l10n.actionCancel),
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-              child: const Text('Сохранить',
-                  style: TextStyle(color: Color(0xFF2CA5E0))),
+              child: Text(l10n.actionSave,
+                  style: const TextStyle(color: Color(0xFF2CA5E0))),
             ),
           ],
         );
@@ -173,7 +177,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
 
     if (newName == null || newName.isEmpty || newName == doc.name) return;
 
-    _setBusy('Переименование…');
+    _setBusy(l10n.remoteRenameBusy);
     try {
       await _apiService.syncBaseUrl();
       await _syncService.rename(doc.id, newName);
@@ -181,12 +185,12 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
       await _loadRemoteDocuments();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Имя облачного документа обновлено')),
+        SnackBar(content: Text(l10n.remoteRenamed)),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка переименования: $e')),
+        SnackBar(content: Text(l10n.remoteRenameError(e.toString()))),
       );
     } finally {
       _setBusy(null);
@@ -194,6 +198,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
   }
 
   Future<void> _deleteRemoteDocument(RemoteDocument doc) async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
@@ -201,12 +206,12 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
         return AlertDialog(
           backgroundColor: isDarkDialog ? const Color(0xFF1E2A3A) : Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Удалить из облака'),
-          content: Text('Удалить "${doc.name}" с сервера?'),
+          title: Text(l10n.remoteDeleteTitle),
+          content: Text(l10n.remoteDeleteConfirm(doc.name)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Отмена'),
+              child: Text(l10n.actionCancel),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(dialogContext, true),
@@ -214,7 +219,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
                 backgroundColor: Theme.of(dialogContext).colorScheme.error,
                 foregroundColor: Theme.of(dialogContext).colorScheme.onError,
               ),
-              child: const Text('Удалить'),
+              child: Text(l10n.actionDelete),
             ),
           ],
         );
@@ -223,7 +228,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
 
     if (confirmed != true) return;
 
-    _setBusy('Удаление…');
+    _setBusy(l10n.remoteDeleteBusy);
     try {
       await _apiService.syncBaseUrl();
       await _syncService.delete(doc.id);
@@ -231,12 +236,12 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
       await _loadRemoteDocuments();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Документ удалён из облака')),
+        SnackBar(content: Text(l10n.remoteDeleted)),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка удаления: $e')),
+        SnackBar(content: Text(l10n.remoteDeleteError(e.toString()))),
       );
     } finally {
       _setBusy(null);
@@ -246,6 +251,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
   Future<void> _editServerUrl() async {
     await ServerConfig().load();
     if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
     final controller = TextEditingController(text: ServerConfig().baseUrl);
     final newUrl = await showDialog<String>(
       context: context,
@@ -254,7 +260,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
         return AlertDialog(
           backgroundColor: isDarkDialog ? const Color(0xFF1E2A3A) : Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Адрес сервера'),
+          title: Text(l10n.dialogRename),
           content: TextField(
             controller: controller,
             autofocus: true,
@@ -265,12 +271,12 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Отмена'),
+              child: Text(l10n.actionCancel),
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-              child: const Text('Сохранить',
-                  style: TextStyle(color: Color(0xFF2CA5E0))),
+              child: Text(l10n.actionSave,
+                  style: const TextStyle(color: Color(0xFF2CA5E0))),
             ),
           ],
         );
@@ -289,7 +295,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка сохранения адреса: $e')),
+        SnackBar(content: Text(l10n.remoteServerSaveError(e.toString()))),
       );
     }
   }
@@ -313,18 +319,19 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Облачные документы'),
+        title: Text(l10n.remoteDocTitle),
         actions: [
           IconButton(
             icon: const Icon(Icons.link),
-            tooltip: 'Адрес сервера',
+            tooltip: l10n.dialogRename,
             onPressed: _isBusy ? null : _editServerUrl,
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Обновить',
+            tooltip: l10n.remoteRefresh,
             onPressed: _isBusy ? null : _loadRemoteDocuments,
           ),
         ],
@@ -332,7 +339,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _isBusy ? null : _pickAndUpload,
         icon: const Icon(Icons.cloud_upload),
-        label: const Text('Загрузить'),
+        label: Text(l10n.remoteUpload),
       ),
       body: Builder(
         builder: (context) {
@@ -355,7 +362,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Сервер: $_serverUrl',
+                    l10n.remoteServerLabel(_serverUrl),
                     style: const TextStyle(fontSize: 13),
                   ),
                 ),
@@ -377,7 +384,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
                       Icon(Icons.cloud_off, size: 64, color: subColor),
                       const SizedBox(height: 16),
                       Text(
-                        'Не удалось загрузить облачные документы.\n$_error',
+                        l10n.remoteLoadError(_error!),
                         textAlign: TextAlign.center,
                         style: TextStyle(color: subColor),
                       ),
@@ -388,7 +395,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
                           backgroundColor: const Color(0xFF2CA5E0),
                           foregroundColor: Colors.white,
                         ),
-                        child: const Text('Повторить'),
+                        child: Text(l10n.actionRetry),
                       ),
                     ],
                   ),
@@ -406,7 +413,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
                       Icon(Icons.cloud_queue, size: 72, color: subColor),
                       const SizedBox(height: 16),
                       Text(
-                        'В облаке пока нет документов',
+                        l10n.remoteEmpty,
                         style: TextStyle(fontSize: 16, color: subColor),
                       ),
                     ],
@@ -449,18 +456,18 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
                                   break;
                               }
                             },
-                            itemBuilder: (_) => const [
+                            itemBuilder: (_) => [
                               PopupMenuItem(
                                 value: 'download',
-                                child: Text('Скачать в локальные'),
+                                child: Text(l10n.remoteDownloadLocal),
                               ),
                               PopupMenuItem(
                                 value: 'rename',
-                                child: Text('Переименовать'),
+                                child: Text(l10n.dialogRename),
                               ),
                               PopupMenuItem(
                                 value: 'delete',
-                                child: Text('Удалить'),
+                                child: Text(l10n.actionDelete),
                               ),
                             ],
                           ),

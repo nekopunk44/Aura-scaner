@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import '../../../l10n/app_localizations.dart';
 
 class TextFileViewerScreen extends StatefulWidget {
   final String filePath;
@@ -13,6 +14,7 @@ class TextFileViewerScreen extends StatefulWidget {
 
 class _TextFileViewerScreenState extends State<TextFileViewerScreen> {
   String _fileContent = '';
+  String? _loadError;
   bool _isLoading = true;
 
   @override
@@ -31,7 +33,7 @@ class _TextFileViewerScreenState extends State<TextFileViewerScreen> {
       });
     } catch (e) {
       setState(() {
-        _fileContent = 'Ошибка загрузки файла: $e';
+        _loadError = e.toString();
         _isLoading = false;
       });
     }
@@ -58,7 +60,9 @@ class _TextFileViewerScreenState extends State<TextFileViewerScreen> {
               padding: const EdgeInsets.all(16),
               child: SingleChildScrollView(
                 child: SelectableText(
-                  _fileContent,
+                  _loadError != null
+                      ? '${AppLocalizations.of(context).fileLoadError}: $_loadError'
+                      : _fileContent,
                   style: TextStyle(fontSize: 15, height: 1.6, color: textColor),
                 ),
               ),

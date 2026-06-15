@@ -7,6 +7,7 @@ import 'package:pdfrx/pdfrx.dart';
 import 'package:pdf/pdf.dart' hide PdfDocument;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:image/image.dart' as img;
+import '../../l10n/app_localizations.dart';
 
 const String _documentKey = 'saved_document_paths';
 
@@ -55,7 +56,7 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка загрузки PDF: $e')),
+        SnackBar(content: Text('${AppLocalizations.of(context).reorderLoadError}: $e')),
       );
     }
   }
@@ -68,6 +69,7 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
 
   Future<void> _savePdf() async {
     if (_pdfDoc == null || _pageOrder.isEmpty) return;
+    final l10n = AppLocalizations.of(context);
 
     try {
       setState(() => _isProcessing = true);
@@ -125,7 +127,7 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('PDF сохранён: $fileName'),
+            content: Text(l10n.reorderSaved(fileName)),
             backgroundColor: Colors.green,
           ),
         );
@@ -134,7 +136,7 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка сохранения: $e')),
+        SnackBar(content: Text('${l10n.reorderSaveError}: $e')),
       );
     } finally {
       if (mounted) {
@@ -151,6 +153,7 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -162,7 +165,7 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: Text('Порядок страниц PDF', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        title: Text(l10n.reorderTitle, style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
         backgroundColor: appBarBg,
         iconTheme: IconThemeData(color: textColor),
         elevation: 0,
@@ -172,7 +175,7 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
             icon: Icon(_isDeleteMode ? Icons.layers : Icons.delete_outline,
                 color: _isDeleteMode ? const Color(0xFF2CA5E0) : Colors.red.shade400, size: 18),
             label: Text(
-              _isDeleteMode ? 'Порядок' : 'Удалить',
+              _isDeleteMode ? l10n.reorderModeReorder : l10n.actionDelete,
               style: TextStyle(color: _isDeleteMode ? const Color(0xFF2CA5E0) : Colors.red.shade400),
             ),
           ),
@@ -227,7 +230,7 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
                                   child: Text(
-                                    'Страница $pageNum',
+                                    l10n.pageLabel(pageNum),
                                     style: TextStyle(fontSize: 15, color: textColor, fontWeight: FontWeight.w500),
                                   ),
                                 ),
@@ -260,7 +263,7 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
                           child: ElevatedButton.icon(
                             onPressed: _selectedPages.contains(true) ? _deleteSelectedPages : null,
                             icon: const Icon(Icons.delete, size: 18),
-                            label: const Text('Удалить выбранные'),
+                            label: Text(l10n.reorderDeleteSelected),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.red.shade600,
                               disabledBackgroundColor: Colors.red.shade600.withValues(alpha: 0.4),
@@ -273,7 +276,7 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
                         )
                       else
                         Text(
-                          'Перетаскивайте страницы для переупорядочивания',
+                          l10n.reorderDragHint,
                           textAlign: TextAlign.center,
                           style: TextStyle(color: subColor, fontSize: 13),
                         ),
@@ -284,7 +287,7 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
                             child: OutlinedButton.icon(
                               onPressed: _isProcessing ? null : _pickPdf,
                               icon: const Icon(Icons.folder_open, size: 18),
-                              label: const Text('Другой PDF'),
+                              label: Text(l10n.reorderOtherPdf),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: const Color(0xFF2CA5E0),
                                 side: const BorderSide(color: Color(0xFF2CA5E0)),
@@ -298,7 +301,7 @@ class _ReorderPdfPagesScreenState extends State<ReorderPdfPagesScreen> {
                             child: ElevatedButton.icon(
                               onPressed: _isProcessing ? null : _savePdf,
                               icon: const Icon(Icons.check, size: 18),
-                              label: const Text('Сохранить'),
+                              label: Text(l10n.actionSave),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green.shade600,
                                 disabledBackgroundColor: Colors.green.shade600.withValues(alpha: 0.4),

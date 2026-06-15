@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:syncfusion_flutter_pdf/pdf.dart' as spdf;
+import '../../l10n/app_localizations.dart';
 
 class AddPasswordScreen extends StatefulWidget {
   final VoidCallback? onSaved;
@@ -39,16 +40,17 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
   }
 
   Future<void> _protect() async {
+    final l10n = AppLocalizations.of(context);
     if (_selectedFile == null) {
-      _snack('Выберите PDF файл');
+      _snack(l10n.pwdSelectPdf);
       return;
     }
     if (_passwordCtrl.text.isEmpty) {
-      _snack('Введите пароль');
+      _snack(l10n.validatePasswordRequired);
       return;
     }
     if (_passwordCtrl.text != _confirmCtrl.text) {
-      _snack('Пароли не совпадают');
+      _snack(l10n.pwdMismatch);
       return;
     }
 
@@ -72,11 +74,11 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
 
       widget.onSaved?.call();
       if (mounted) {
-        _snack('Сохранено: ${p.basename(outPath)}', success: true);
+        _snack(l10n.snackSaved(p.basename(outPath)), success: true);
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) _snack('Ошибка: $e', error: true);
+      if (mounted) _snack('${l10n.commonError}: $e', error: true);
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -91,6 +93,7 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -102,7 +105,7 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: const Text('Добавить пароль'),
+        title: Text(l10n.featAddPassword),
         backgroundColor: isDark ? const Color(0xFF141E2B) : Colors.white,
         foregroundColor: textColor,
         elevation: 0,
@@ -119,7 +122,7 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('PDF документ', style: TextStyle(fontSize: 13, color: subColor, fontWeight: FontWeight.w600)),
+                Text(l10n.importPdfDocument, style: TextStyle(fontSize: 13, color: subColor, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 10),
                 GestureDetector(
                   onTap: _pickPdf,
@@ -144,7 +147,7 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
                           child: Text(
                             _selectedFile != null
                                 ? p.basename(_selectedFile!.path)
-                                : 'Выбрать PDF файл',
+                                : l10n.pwdSelectPdfFile,
                             style: TextStyle(
                               color: _selectedFile != null ? textColor : subColor,
                               fontSize: 14,
@@ -170,11 +173,11 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Пароль', style: TextStyle(fontSize: 13, color: subColor, fontWeight: FontWeight.w600)),
+                Text(l10n.fieldPassword, style: TextStyle(fontSize: 13, color: subColor, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 10),
                 _PasswordField(
                   controller: _passwordCtrl,
-                  hint: 'Введите пароль',
+                  hint: l10n.validatePasswordRequired,
                   obscure: _obscurePassword,
                   onToggle: () => setState(() => _obscurePassword = !_obscurePassword),
                   isDark: isDark,
@@ -184,7 +187,7 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
                 const SizedBox(height: 12),
                 _PasswordField(
                   controller: _confirmCtrl,
-                  hint: 'Повторите пароль',
+                  hint: l10n.pwdRepeatPassword,
                   obscure: _obscureConfirm,
                   onToggle: () => setState(() => _obscureConfirm = !_obscureConfirm),
                   isDark: isDark,
@@ -211,8 +214,8 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                     )
-                  : const Text('Защитить пароль',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
+                  : Text(l10n.pwdProtectAction,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
             ),
           ),
         ],

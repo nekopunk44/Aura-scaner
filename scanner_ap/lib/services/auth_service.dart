@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'api_service.dart';
+import '../utils/error_messages.dart';
 
 class AuthUser {
   final String id;
@@ -99,6 +100,32 @@ class AuthService {
     }
   }
 
+  /// Профиль текущего пользователя (GET /auth/profile).
+  /// null — если не залогинен или сервер недоступен: вызывающий экран
+  /// показывает фолбэк без персональных данных.
+  Future<AuthUser?> getProfile() async {
+    try {
+      final response = await _api.dio.get('/auth/profile');
+      return AuthUser.fromJson(response.data as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Обновляет имя/email (PATCH /auth/profile). Передавайте только то, что
+  /// изменилось. Возвращает обновлённый профиль.
+  Future<AuthUser> updateProfile({String? name, String? email}) async {
+    try {
+      final response = await _api.dio.patch('/auth/profile', data: {
+        if (name != null) 'name': name,
+        if (email != null) 'email': email,
+      });
+      return AuthUser.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
   Future<void> saveTokens(String token, String? refreshToken) async {
     await _api.saveToken(token);
     if (refreshToken != null && refreshToken.isNotEmpty) {
@@ -113,15 +140,5 @@ class AuthService {
     );
   }
 
-  String _parseError(DioException e) {
-    final data = e.response?.data;
-    if (data is Map && data['message'] != null) {
-      return data['message'] as String;
-    }
-    if (e.type == DioExceptionType.connectionTimeout ||
-        e.type == DioExceptionType.receiveTimeout) {
-      return 'Нет соединения с сервером';
-    }
-    return 'Неизвестная ошибка';
-  }
+  String _parseError(DioException e) => friendlyError(e);
 }

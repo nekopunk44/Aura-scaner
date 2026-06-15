@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/pdf_service.dart';
+import '../../l10n/app_localizations.dart';
 
 const String _documentKey = 'saved_document_paths';
 
@@ -51,7 +52,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка: $e')),
+        SnackBar(content: Text('${AppLocalizations.of(context).commonError}: $e')),
       );
     }
   }
@@ -86,7 +87,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
       setState(() {});
     } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Неверный формат диапазона')),
+        SnackBar(content: Text(AppLocalizations.of(context).extractInvalidRange)),
       );
     }
   }
@@ -102,9 +103,10 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
   }
 
   Future<void> _extractPages() async {
+    final l10n = AppLocalizations.of(context);
     if (_selectedPdfPath == null || !_selectedPages.contains(true)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Выберите хотя бы одну страницу')),
+        SnackBar(content: Text(l10n.extractSelectAtLeastOne)),
       );
       return;
     }
@@ -127,7 +129,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
             children: [
               const CircularProgressIndicator(color: Color(0xFF2CA5E0)),
               const SizedBox(width: 16),
-              Text('Извлечение страниц...', style: TextStyle(color: textColor)),
+              Text(l10n.extractInProgress, style: TextStyle(color: textColor)),
             ],
           ),
         ),
@@ -162,7 +164,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
       navigator.pop();
       messenger.showSnackBar(
         SnackBar(
-          content: Text('Извлечено ${selectedPageNumbers.length} страниц(ы)'),
+          content: Text(l10n.extractDone(selectedPageNumbers.length)),
           backgroundColor: Colors.green,
         ),
       );
@@ -171,7 +173,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
       if (!mounted) return;
       navigator.pop();
       messenger.showSnackBar(
-        SnackBar(content: Text('Ошибка: $e')),
+        SnackBar(content: Text('${l10n.commonError}: $e')),
       );
     } finally {
       if (mounted) setState(() => _isProcessing = false);
@@ -180,6 +182,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -191,7 +194,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: Text('Извлечь страницы', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        title: Text(l10n.featExtractPages, style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
         backgroundColor: appBarBg,
         iconTheme: IconThemeData(color: textColor),
         elevation: 0,
@@ -218,7 +221,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '${_pdfInfo!.pageCount} страниц · ${_pdfInfo!.fileSizeMB} MB',
+                              l10n.pagesAndSize(_pdfInfo!.pageCount, _pdfInfo!.fileSizeMB),
                               style: TextStyle(fontSize: 12, color: subColor),
                             ),
                           ],
@@ -250,7 +253,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Введите номера страниц',
+                        l10n.extractEnterPageNumbers,
                         style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: textColor),
                       ),
                       const SizedBox(height: 8),
@@ -258,7 +261,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
                         onChanged: _parseRangeInput,
                         style: TextStyle(color: textColor),
                         decoration: InputDecoration(
-                          hintText: 'Например: 1,3,5 или 1-5',
+                          hintText: l10n.extractHintExample,
                           hintStyle: TextStyle(color: subColor),
                           filled: true,
                           fillColor: cardBg,
@@ -279,7 +282,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Форматы: 1,3,5 (отдельные) · 1-5 (диапазон) · комбинация',
+                        l10n.extractFormatsHelp,
                         style: TextStyle(fontSize: 11, color: subColor),
                       ),
                     ],
@@ -293,7 +296,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
                         child: ElevatedButton.icon(
                           onPressed: _selectAll,
                           icon: const Icon(Icons.check_box, size: 16),
-                          label: const Text('Все'),
+                          label: Text(l10n.selectAll),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF2CA5E0),
                             foregroundColor: Colors.white,
@@ -308,7 +311,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
                         child: OutlinedButton.icon(
                           onPressed: _deselectAll,
                           icon: const Icon(Icons.check_box_outline_blank, size: 16),
-                          label: const Text('Очистить'),
+                          label: Text(l10n.clearSelection),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: subColor,
                             side: BorderSide(color: dividerColor),
@@ -328,7 +331,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
                     itemBuilder: (ctx, idx) {
                       return CheckboxListTile(
                         title: Text(
-                          'Страница ${idx + 1}',
+                          l10n.pageLabel(idx + 1),
                           style: TextStyle(fontSize: 14, color: textColor),
                         ),
                         value: _selectedPages[idx],
@@ -350,7 +353,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
                         child: OutlinedButton.icon(
                           onPressed: _isProcessing ? null : _pickPdf,
                           icon: const Icon(Icons.folder_open, size: 18),
-                          label: const Text('Другой файл'),
+                          label: Text(l10n.otherFile),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: const Color(0xFF2CA5E0),
                             side: const BorderSide(color: Color(0xFF2CA5E0)),
@@ -364,7 +367,7 @@ class _ExtractPdfPagesScreenState extends State<ExtractPdfPagesScreen> {
                         child: ElevatedButton.icon(
                           onPressed: _isProcessing ? null : _extractPages,
                           icon: const Icon(Icons.content_cut, size: 18),
-                          label: const Text('Извлечь'),
+                          label: Text(l10n.extractAction),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green.shade600,
                             disabledBackgroundColor: Colors.green.shade600.withValues(alpha: 0.4),

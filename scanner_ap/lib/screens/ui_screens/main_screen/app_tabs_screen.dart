@@ -5,6 +5,7 @@ import '../all_actions_screen.dart';
 import 'my_documents_screen.dart';
 import '../camera.dart';
 import '../settings_screen.dart';
+import '../../../l10n/app_localizations.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -284,7 +285,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
                     child: _NavItem(
                       icon: Icons.description_outlined,
                       activeIcon: Icons.description,
-                      label: 'Файлы',
+                      label: AppLocalizations.of(context).tabFiles,
                       isSelected: _currentScreenIndex == 0,
                       selectedColor: navSelected,
                       unselectedColor: navUnselected,
@@ -296,7 +297,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
                     child: _NavItem(
                       icon: Icons.grid_view_outlined,
                       activeIcon: Icons.grid_view,
-                      label: 'Инструменты',
+                      label: AppLocalizations.of(context).tabTools,
                       isSelected: _currentScreenIndex == 1,
                       selectedColor: navSelected,
                       unselectedColor: navUnselected,

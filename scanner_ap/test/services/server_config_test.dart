@@ -10,12 +10,14 @@ void main() {
   });
 
   group('ServerConfig — значения по умолчанию', () {
-    test('baseUrl равен localhost после load() с пустым хранилищем', () {
+    test('baseUrl равен defaultServerUrl после load() с пустым хранилищем', () {
       expect(ServerConfig().baseUrl, defaultServerUrl);
     });
 
-    test('defaultServerUrl содержит порт 3000', () {
-      expect(defaultServerUrl, contains('3000'));
+    test('defaultServerUrl — продакшен по HTTPS, не локальный дев-адрес', () {
+      expect(defaultServerUrl, startsWith('https://'));
+      expect(defaultServerUrl, isNot(contains('localhost')));
+      expect(defaultServerUrl, isNot(contains('10.0.2.2')));
     });
   });
 

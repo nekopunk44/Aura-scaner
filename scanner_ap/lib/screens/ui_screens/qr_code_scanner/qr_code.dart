@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
+import '../../../l10n/app_localizations.dart';
 
 /// Экран сканирования QR-кодов.
 ///
@@ -44,8 +45,8 @@ class _QrCodeScreenState extends State<QrCodeScreen> {
             flex: 1,
             child: Center(
               child: (result != null)
-                  ? Text("Barcode Data: ${result!.code ?? 'Нет данных'}")
-                  : const Text("Сканируйте QR-код"),
+                  ? Text(AppLocalizations.of(context).qrBarcodeData(result!.code ?? AppLocalizations.of(context).qrNoData))
+                  : Text(AppLocalizations.of(context).qrScanHint),
             ),
           ),
         ],
@@ -104,7 +105,7 @@ class _QrCodeScreenState extends State<QrCodeScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Невозможно открыть ссылку: $string."),
+            content: Text(AppLocalizations.of(context).qrCantOpenLink(string)),
             duration: const Duration(seconds: 4),
           ),
         );

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 
 /// Контроллер режимов съёмки документов.
 ///
@@ -68,6 +69,7 @@ class CaptureModeController {
     required bool isDocumentMode,
     required String pageMode,
     required String featureName,
+    AppLocalizations? l10n,
   }) {
     if (!isDocumentMode || captureMode == 'Вручную') {
       return const SizedBox.shrink();
@@ -77,17 +79,15 @@ class CaptureModeController {
     Color color;
 
     if (isScanning) {
-      text = 'Обработка...';
+      text = l10n?.camProcessing ?? 'Обработка...';
       color = Colors.amber;
     } else if (isDocumentDetected) {
       return const SizedBox.shrink();
     } else {
       if (featureName == '+100 страниц' || featureName == 'Пакетный Документ') {
-        
-        text = 'Ожидание документа $pageMode'; 
+        text = l10n?.camWaitingDocBatch(pageMode) ?? 'Ожидание документа $pageMode';
       } else {
-        
-        text = 'Ожидание документа ($featureName — $pageMode)'; 
+        text = l10n?.camWaitingDocMode(featureName, pageMode) ?? 'Ожидание документа ($featureName — $pageMode)';
       }
 
       color = Colors.white;

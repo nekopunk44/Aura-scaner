@@ -7,6 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   desktop_webview_window
   file_selector_linux
   flutter_doc_scanner
+  flutter_secure_storage_linux
   gtk
   printing
   record_linux

@@ -1,4 +1,6 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/server_config.dart';
@@ -124,39 +126,79 @@ class ApiService {
     _dio.options.baseUrl = ServerConfig().baseUrl;
   }
 
+  // Токены живут в защищённом хранилище (Keychain / Android Keystore),
+  // а не в SharedPreferences: plain-prefs читаются на рутованном
+  // устройстве и попадают в облачный бэкап.
+  static const _secureStorage = FlutterSecureStorage();
+
+  // Кэш в памяти: interceptor читает токен на каждый запрос, незачем
+  // каждый раз ходить в platform channel.
+  String? _cachedToken;
+  String? _cachedRefreshToken;
+  Future<void>? _migration;
+
+  /// Одноразовый перенос токенов из SharedPreferences (где они лежали
+  /// до перехода на secure storage), чтобы не разлогинить пользователей
+  /// при обновлении приложения.
+  Future<void> _ensureMigrated() => _migration ??= () async {
+        final prefs = await SharedPreferences.getInstance();
+        final legacyToken = prefs.getString(_tokenKey);
+        if (legacyToken != null) {
+          await _secureStorage.write(key: _tokenKey, value: legacyToken);
+          await prefs.remove(_tokenKey);
+        }
+        final legacyRefresh = prefs.getString(_refreshTokenKey);
+        if (legacyRefresh != null) {
+          await _secureStorage.write(key: _refreshTokenKey, value: legacyRefresh);
+          await prefs.remove(_refreshTokenKey);
+        }
+      }();
+
   Future<void> saveToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
+    _cachedToken = token;
+    await _secureStorage.write(key: _tokenKey, value: token);
   }
 
   Future<void> saveRefreshToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_refreshTokenKey, token);
+    _cachedRefreshToken = token;
+    await _secureStorage.write(key: _refreshTokenKey, value: token);
   }
 
   Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_tokenKey);
+    if (_cachedToken != null) return _cachedToken;
+    await _ensureMigrated();
+    return _cachedToken = await _secureStorage.read(key: _tokenKey);
   }
 
   Future<String?> getRefreshToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_refreshTokenKey);
+    if (_cachedRefreshToken != null) return _cachedRefreshToken;
+    await _ensureMigrated();
+    return _cachedRefreshToken = await _secureStorage.read(key: _refreshTokenKey);
   }
 
   Future<void> clearToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
+    _cachedToken = null;
+    await _secureStorage.delete(key: _tokenKey);
   }
 
   Future<void> clearAllTokens() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
-    await prefs.remove(_refreshTokenKey);
+    _cachedToken = null;
+    _cachedRefreshToken = null;
+    await _secureStorage.delete(key: _tokenKey);
+    await _secureStorage.delete(key: _refreshTokenKey);
   }
 
   Future<bool> isLoggedIn() async {
     final token = await getToken();
     return token != null && token.isNotEmpty;
+  }
+
+  /// Сбрасывает in-memory кэш токенов и флаг миграции. Только для тестов:
+  /// [ApiService] — синглтон, и без сброса состояние течёт между кейсами.
+  @visibleForTesting
+  void resetForTesting() {
+    _cachedToken = null;
+    _cachedRefreshToken = null;
+    _migration = null;
   }
 }

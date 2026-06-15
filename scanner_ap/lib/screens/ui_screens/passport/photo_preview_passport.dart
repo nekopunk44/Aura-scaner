@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'dart:io';
 import 'photo_edit_passport.dart';
+import '../../../l10n/app_localizations.dart';
 
 class PhotoPreviewScreen extends StatelessWidget {
   final XFile imageFile;
@@ -21,7 +22,8 @@ class PhotoPreviewScreen extends StatelessWidget {
     this.onRetake,
   });
 
-  Widget _buildImagePreview(BuildContext context, XFile file, String label) {
+  Widget _buildImagePreview(BuildContext context, XFile file, int index) {
+    final l10n = AppLocalizations.of(context);
     final double screenWidth = MediaQuery.of(context).size.width;
     final double containerWidth = screenWidth - 32.0;
 
@@ -35,7 +37,7 @@ class PhotoPreviewScreen extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Text(
-            'Страница $label',
+            l10n.pageLabel(index),
             style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ),
@@ -62,6 +64,7 @@ class PhotoPreviewScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final List<XFile> filesToEdit = [imageFile];
     if (isTwoPageMode && secondImageFile != null) {
       filesToEdit.add(secondImageFile!);
@@ -78,11 +81,11 @@ class PhotoPreviewScreen extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 60, bottom: 120),
                   child: Column(
                     children: [
-                      _buildImagePreview(context, imageFile, '1'),
+                      _buildImagePreview(context, imageFile, 1),
 
                       if (isTwoPageMode && secondImageFile != null) ...[
                         const SizedBox(height: 20),
-                        _buildImagePreview(context, secondImageFile!, '2'),
+                        _buildImagePreview(context, secondImageFile!, 2),
                       ],
                     ],
                   ),
@@ -111,7 +114,7 @@ class PhotoPreviewScreen extends StatelessWidget {
                 ElevatedButton.icon(
                   onPressed: onRetake,
                   icon: const Icon(Icons.refresh, color: Colors.white),
-                  label: const Text('Повторить'),
+                  label: Text(l10n.actionRetry),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.grey.shade800,
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -123,7 +126,7 @@ class PhotoPreviewScreen extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                         builder: (_) => PhotoEditScreen(
-                          imageFiles: filesToEdit, 
+                          imageFiles: filesToEdit,
                           onSave: (editedPaths) {
                             Navigator.popUntil(context, (route) => route.isFirst);
                             if (onConfirm != null) {
@@ -135,7 +138,7 @@ class PhotoPreviewScreen extends StatelessWidget {
                     );
                   },
                   icon: const Icon(Icons.check_circle, color: Colors.white),
-                  label: Text(filesToEdit.length > 1 ? 'Редактировать (${filesToEdit.length})' : 'Использовать'),
+                  label: Text(filesToEdit.length > 1 ? l10n.editCount(filesToEdit.length) : l10n.passportUseButton),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green.shade600,
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),

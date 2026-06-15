@@ -7,6 +7,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import '../../../models/save_format.dart';
 import '../save_success_screen.dart';
+import '../../../l10n/app_localizations.dart';
 
 class SaveOptionsScreen extends StatelessWidget {
   final List<String> sourceFilePaths;
@@ -14,6 +15,7 @@ class SaveOptionsScreen extends StatelessWidget {
   const SaveOptionsScreen({super.key, required this.sourceFilePaths});
 
   Future<String?> _showRenameDialog(BuildContext context, String currentFileName) async {
+    final l10n = AppLocalizations.of(context);
     final controller = TextEditingController(text: currentFileName);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final dialogBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -24,15 +26,15 @@ class SaveOptionsScreen extends StatelessWidget {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: dialogBg,
-        title: Text('Имя файла', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        title: Text(l10n.fileNameTitle, style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
         content: TextField(
           controller: controller,
           autofocus: true,
           style: TextStyle(color: textColor),
           decoration: InputDecoration(
-            labelText: 'Имя файла',
+            labelText: l10n.fileNameTitle,
             labelStyle: TextStyle(color: subColor),
-            hintText: 'Введите имя',
+            hintText: l10n.fileNameHint,
             hintStyle: TextStyle(color: subColor),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
@@ -48,7 +50,7 @@ class SaveOptionsScreen extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(null),
-            child: Text('Отмена', style: TextStyle(color: subColor)),
+            child: Text(l10n.actionCancel, style: TextStyle(color: subColor)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
@@ -57,7 +59,7 @@ class SaveOptionsScreen extends StatelessWidget {
               foregroundColor: Colors.white,
               elevation: 0,
             ),
-            child: const Text('Сохранить'),
+            child: Text(l10n.actionSave),
           ),
         ],
       ),
@@ -93,11 +95,12 @@ class SaveOptionsScreen extends StatelessWidget {
   }
 
   Future<void> _handleSave(BuildContext context, SaveFormat format) async {
+    final l10n = AppLocalizations.of(context);
     final defaultName = 'Scan_${DateTime.now().year}-${DateTime.now().month}-${DateTime.now().day}';
     final newFileName = await _showRenameDialog(context, defaultName);
     if (!context.mounted) return;
     if (newFileName == null || newFileName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Сохранение отменено.')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.docSaveCancelled)));
       return;
     }
 
@@ -108,7 +111,7 @@ class SaveOptionsScreen extends StatelessWidget {
           : await _saveAsPdf(newFileName);
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.saveErrorMsg(e.toString()))));
       return;
     }
 
@@ -129,6 +132,7 @@ class SaveOptionsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
@@ -146,20 +150,20 @@ class SaveOptionsScreen extends StatelessWidget {
               Icon(Icons.drive_file_rename_outline, color: const Color(0xFF2CA5E0), size: 72),
               const SizedBox(height: 16),
               Text(
-                'Выберите формат сохранения',
+                l10n.saveFmtTitle,
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 6),
               Text(
-                '${sourceFilePaths.length} ${sourceFilePaths.length == 1 ? 'страница' : 'страниц(ы)'}',
+                l10n.savePageCount(sourceFilePaths.length),
                 style: TextStyle(fontSize: 14, color: subColor),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 36),
               _buildOptionButton(
                 icon: Icons.image_outlined,
-                text: 'Сохранить как изображение',
+                text: l10n.saveAsImage,
                 subText: '(JPG)',
                 color: const Color(0xFF2CA5E0),
                 onTap: () => _handleSave(context, SaveFormat.img),
@@ -167,7 +171,7 @@ class SaveOptionsScreen extends StatelessWidget {
               const SizedBox(height: 14),
               _buildOptionButton(
                 icon: Icons.picture_as_pdf,
-                text: 'Сохранить в PDF',
+                text: l10n.saveAsPdf,
                 subText: '(${sourceFilePaths.length} стр.)',
                 color: Colors.red.shade600,
                 onTap: () => _handleSave(context, SaveFormat.pdf),

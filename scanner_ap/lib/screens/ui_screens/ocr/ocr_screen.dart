@@ -6,6 +6,7 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:image_picker/image_picker.dart';
 
 import '../translate/apis/recognition_api.dart';
+import '../../../l10n/app_localizations.dart';
 
 class OcrScreen extends StatefulWidget {
   const OcrScreen({super.key});
@@ -42,7 +43,7 @@ class _OcrScreenState extends State<OcrScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка OCR: $e')),
+        SnackBar(content: Text('${AppLocalizations.of(context).ocrError}: $e')),
       );
     } finally {
       if (mounted) {
@@ -55,14 +56,15 @@ class _OcrScreenState extends State<OcrScreen> {
     if (_recognizedText == null || _recognizedText!.isEmpty) return;
     Clipboard.setData(ClipboardData(text: _recognizedText!));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Текст скопирован'),
-        duration: Duration(seconds: 2),
+      SnackBar(
+        content: Text(AppLocalizations.of(context).textCopied),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
 
   void _showPickerSheet() {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
@@ -75,7 +77,7 @@ class _OcrScreenState extends State<OcrScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.camera_alt, color: Color(0xFF2CA5E0)),
-              title: const Text('Сделать фото'),
+              title: Text(l10n.takePhoto),
               onTap: () {
                 Navigator.pop(ctx);
                 _pickImage(ImageSource.camera);
@@ -83,7 +85,7 @@ class _OcrScreenState extends State<OcrScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.photo, color: Color(0xFF2CA5E0)),
-              title: const Text('Выбрать из галереи'),
+              title: Text(l10n.wmFromGallery),
               onTap: () {
                 Navigator.pop(ctx);
                 _pickImage(ImageSource.gallery);
@@ -97,19 +99,20 @@ class _OcrScreenState extends State<OcrScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
     final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Распознавание текста'),
+        title: Text(l10n.ocrTitle),
         centerTitle: true,
         actions: [
           if (_recognizedText != null && _recognizedText!.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.copy),
-              tooltip: 'Копировать',
+              tooltip: l10n.copy,
               onPressed: _copyText,
             ),
         ],
@@ -126,6 +129,7 @@ class _OcrScreenState extends State<OcrScreen> {
   }
 
   Widget _buildEmptyState(Color subColor) {
+    final l10n = AppLocalizations.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -135,13 +139,13 @@ class _OcrScreenState extends State<OcrScreen> {
             Icon(Icons.text_fields, size: 72, color: subColor),
             const SizedBox(height: 16),
             Text(
-              'Выберите фото для извлечения текста',
+              l10n.ocrSelectPhoto,
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 16, color: subColor),
             ),
             const SizedBox(height: 8),
             Text(
-              'Поддерживаются латиница и кириллица',
+              l10n.ocrSupports,
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: subColor),
             ),
@@ -152,6 +156,7 @@ class _OcrScreenState extends State<OcrScreen> {
   }
 
   Widget _buildResult(Color subColor, Color cardBg, bool isDark) {
+    final l10n = AppLocalizations.of(context);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -169,7 +174,7 @@ class _OcrScreenState extends State<OcrScreen> {
           else if (_recognizedText == null || _recognizedText!.isEmpty)
             Center(
               child: Text(
-                'Текст не обнаружен',
+                l10n.ocrNoText,
                 style: TextStyle(color: subColor, fontSize: 16),
               ),
             )
@@ -177,14 +182,14 @@ class _OcrScreenState extends State<OcrScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Распознанный текст:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                Text(
+                  l10n.ocrRecognizedText,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                 ),
                 TextButton.icon(
                   onPressed: _copyText,
                   icon: const Icon(Icons.copy, size: 18),
-                  label: const Text('Копировать'),
+                  label: Text(l10n.copy),
                 ),
               ],
             ),

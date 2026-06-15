@@ -2,9 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:scanner_ap/l10n/app_localizations.dart';
 import 'package:scanner_ap/screens/auth/login_screen.dart';
 
-Widget _wrap(Widget child) => MaterialApp(home: child);
+// Локаль форсим на ru, чтобы ассерты на русские строки оставались
+// валидны после перевода экрана на AppLocalizations.
+Widget _wrap(Widget child) => MaterialApp(
+      locale: const Locale('ru'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: const [Locale('ru'), Locale('en')],
+      home: child,
+    );
 
 void main() {
   setUp(() {

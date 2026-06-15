@@ -1,0 +1,8 @@
+# Конфигурация flutter gen-l10n.
+# Шаблон — русский (app_ru.arb): приложение русскоязычное, это источник
+# истины для ключей и метаданных. Переводы — в app_en.arb и т.д.
+arb-dir: lib/l10n
+template-arb-file: app_ru.arb
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+nullable-getter: false

@@ -6,6 +6,7 @@ import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../../l10n/app_localizations.dart';
 
 class VoiceNoteScreen extends StatefulWidget {
   final VoidCallback? onSaved;
@@ -75,11 +76,12 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
   }
 
   Future<void> _startRecording() async {
+    final l10n = AppLocalizations.of(context);
     final status = await Permission.microphone.request();
     if (!status.isGranted) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Нет разрешения на использование микрофона')),
+          SnackBar(content: Text(l10n.voiceNoMicPermission)),
         );
       }
       return;
@@ -123,6 +125,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
   }
 
   Future<void> _renameNote(_VoiceNote note) async {
+    final l10n = AppLocalizations.of(context);
     final originalExt = note.name.contains('.')
         ? note.name.substring(note.name.lastIndexOf('.'))
         : '';
@@ -140,20 +143,20 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
         return AlertDialog(
           backgroundColor: bg,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text('Переименовать', style: TextStyle(color: textColor)),
+          title: Text(l10n.dialogRename, style: TextStyle(color: textColor)),
           content: TextField(
             controller: controller,
             autofocus: true,
-            decoration: const InputDecoration(hintText: 'Новое имя'),
+            decoration: InputDecoration(hintText: l10n.voiceNewName),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Отмена'),
+              child: Text(l10n.actionCancel),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: const Text('Сохранить'),
+              child: Text(l10n.actionSave),
             ),
           ],
         );
@@ -173,7 +176,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
     if (await File(newPath).exists()) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Файл с таким именем уже существует')),
+        SnackBar(content: Text(l10n.voiceFileExists)),
       );
       return;
     }
@@ -184,7 +187,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось переименовать: $e')),
+        SnackBar(content: Text(l10n.voiceRenameError(e.toString()))),
       );
       return;
     }
@@ -199,6 +202,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
   }
 
   Future<void> _deleteNote(_VoiceNote note) async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) {
@@ -208,16 +212,16 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
         return AlertDialog(
           backgroundColor: bg,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text('Удалить заметку?', style: TextStyle(color: textColor)),
+          title: Text(l10n.voiceDeleteTitle, style: TextStyle(color: textColor)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Отмена'),
+              child: Text(l10n.actionCancel),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-              child: const Text('Удалить'),
+              child: Text(l10n.actionDelete),
             ),
           ],
         );
@@ -238,6 +242,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -248,7 +253,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: Text('Голосовые заметки',
+        title: Text(l10n.voiceNotesTitle,
             style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
         backgroundColor: appBarBg,
         iconTheme: IconThemeData(color: textColor),
@@ -296,7 +301,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  _isRecording ? 'Идёт запись...' : 'Нажмите для записи',
+                  _isRecording ? l10n.voiceRecording : l10n.voicePressToRecord,
                   style: TextStyle(fontSize: 13, color: subColor),
                 ),
                 const SizedBox(height: 20),
@@ -306,7 +311,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
                   child: ElevatedButton.icon(
                     onPressed: _isRecording ? _stopRecording : _startRecording,
                     icon: Icon(_isRecording ? Icons.stop : Icons.fiber_manual_record, size: 20),
-                    label: Text(_isRecording ? 'Остановить' : 'Записать'),
+                    label: Text(_isRecording ? l10n.voiceStop : l10n.voiceRecord),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _isRecording ? Colors.red : const Color(0xFF2CA5E0),
                       foregroundColor: Colors.white,
@@ -323,7 +328,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                Text('Записи (${_notes.length})',
+                Text(l10n.voiceNoteCount(_notes.length),
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
                         color: subColor, letterSpacing: 0.5)),
               ],
@@ -339,7 +344,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
                       children: [
                         Icon(Icons.voice_chat, size: 48, color: subColor),
                         const SizedBox(height: 12),
-                        Text('Нет записей', style: TextStyle(color: subColor, fontSize: 14)),
+                        Text(l10n.voiceEmpty, style: TextStyle(color: subColor, fontSize: 14)),
                       ],
                     ),
                   )
@@ -389,19 +394,19 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(fontWeight: FontWeight.w500, color: textColor, fontSize: 14)),
                                   if (isCurrentlyPlaying)
-                                    Text('Воспроизведение...',
-                                        style: TextStyle(fontSize: 11, color: const Color(0xFF2CA5E0))),
+                                    Text(l10n.voicePlaying,
+                                        style: const TextStyle(fontSize: 11, color: Color(0xFF2CA5E0))),
                                 ],
                               ),
                             ),
                             IconButton(
                               icon: Icon(Icons.drive_file_rename_outline, color: subColor, size: 20),
-                              tooltip: 'Переименовать',
+                              tooltip: l10n.dialogRename,
                               onPressed: () => _renameNote(note),
                             ),
                             IconButton(
                               icon: Icon(Icons.delete_outline, color: Colors.red.shade400, size: 20),
-                              tooltip: 'Удалить',
+                              tooltip: l10n.actionDelete,
                               onPressed: () => _deleteNote(note),
                             ),
                           ],

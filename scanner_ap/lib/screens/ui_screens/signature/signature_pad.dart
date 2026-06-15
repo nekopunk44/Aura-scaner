@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:signature/signature.dart';
+import '../../../l10n/app_localizations.dart';
 
 class SignatureScreen extends StatefulWidget {
   const SignatureScreen({super.key});
@@ -52,6 +53,7 @@ class _SignatureScreenState extends State<SignatureScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -71,17 +73,17 @@ class _SignatureScreenState extends State<SignatureScreen> {
         elevation: 0,
         iconTheme: IconThemeData(color: textColor),
         title: Text(
-          'Добавить подпись',
+          l10n.sigAddTitle,
           style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
         ),
         actions: [
           IconButton(
-            tooltip: 'Отменить',
+            tooltip: l10n.undo,
             onPressed: canUndo ? _controller.undo : null,
             icon: Icon(Icons.undo, color: canUndo ? textColor : subColor),
           ),
           IconButton(
-            tooltip: 'Повторить',
+            tooltip: l10n.redo,
             onPressed: _controller.redo,
             icon: Icon(Icons.redo, color: textColor),
           ),
@@ -125,7 +127,7 @@ class _SignatureScreenState extends State<SignatureScreen> {
                                     ),
                                     const SizedBox(height: 12),
                                     Text(
-                                      'Поставьте подпись пальцем',
+                                      l10n.sigHint,
                                       style: TextStyle(
                                         color: const Color(0xFF6B7A99),
                                         fontSize: 14,
@@ -167,7 +169,7 @@ class _SignatureScreenState extends State<SignatureScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Толщина пера',
+                      l10n.sigPenWidth,
                       style: TextStyle(
                         color: subColor,
                         fontSize: 12,
@@ -203,7 +205,7 @@ class _SignatureScreenState extends State<SignatureScreen> {
                     child: OutlinedButton.icon(
                       onPressed: canUndo ? _controller.clear : null,
                       icon: const Icon(Icons.refresh, size: 18),
-                      label: const Text('Очистить'),
+                      label: Text(l10n.clearSelection),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: canUndo ? const Color(0xFFE74C3C) : subColor,
                         side: BorderSide(color: canUndo ? const Color(0xFFE74C3C) : subColor.withValues(alpha: 0.3)),
@@ -228,7 +230,7 @@ class _SignatureScreenState extends State<SignatureScreen> {
                               }
                             : null,
                         icon: const Icon(Icons.check, size: 18),
-                        label: const Text('Готово'),
+                        label: Text(l10n.actionDone),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: accent,
                           disabledBackgroundColor: accent.withValues(alpha: 0.35),

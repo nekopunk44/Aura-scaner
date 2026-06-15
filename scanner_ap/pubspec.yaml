@@ -30,7 +30,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_pdfview: ^1.4.3
+  flutter_localizations:
+    sdk: flutter
 
 
   # The following adds the Cupertino Icons font to your application.
@@ -50,7 +51,6 @@ dependencies:
   shared_preferences: ^2.5.3
   pdfrx: ^2.2.4
   open_filex: ^4.7.0
-  pdfx: ^2.9.2
   syncfusion_flutter_xlsio: ^31.2.3
   syncfusion_flutter_pdf: ^31.2.3
   docx_to_text: ^1.0.1
@@ -72,7 +72,7 @@ dependencies:
   crypto: ^3.0.0
   http: ^1.6.0
   get_it: ^7.6.0
-  intl: ^0.19.0
+  intl: ^0.20.2
   font_awesome_flutter: ^10.8.0
   record: ^5.2.0
   audioplayers: ^6.4.0
@@ -80,6 +80,9 @@ dependencies:
   in_app_purchase: ^3.2.0
   sign_in_with_apple: ^6.1.4
   sentry_flutter: ^8.13.0
+  flutter_secure_storage: ^10.3.1
+  package_info_plus: ^9.0.1
+  local_auth: ^3.0.1
 
 
 
@@ -96,10 +99,11 @@ dependency_overrides:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: 'assets/images/icons_scanner.png'
-  background_color: '#2CA5E0'
-  adaptive_icon_background: '#2CA5E0'
-  adaptive_icon_foreground: 'assets/images/icons_scanner.png'
+  image_path: 'assets/icon/app_icon.png'
+  remove_alpha_ios: true
+  background_color: '#0E1B33'
+  adaptive_icon_background: 'assets/icon/icon_bg.png'
+  adaptive_icon_foreground: 'assets/icon/icon_fg.png'
 
 dev_dependencies:
   flutter_test:
@@ -119,6 +123,9 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+
+  # Включает кодогенерацию локализаций из lib/l10n/*.arb (см. l10n.yaml).
+  generate: true
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

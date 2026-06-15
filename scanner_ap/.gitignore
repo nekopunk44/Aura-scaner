@@ -33,6 +33,10 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Сгенерированные локализации (gen-l10n). Пересоздаются `flutter pub get`
+# из lib/l10n/*.arb — в репозитории хранить не нужно.
+/lib/l10n/app_localizations*.dart
+
 # Symbolication related
 app.*.symbols
 

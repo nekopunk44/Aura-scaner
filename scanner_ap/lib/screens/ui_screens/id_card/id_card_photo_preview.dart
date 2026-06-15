@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'dart:io';
 import 'id_card_photo_edit.dart';
+import '../../../l10n/app_localizations.dart';
 
 class IdCardPhotoPreviewScreen extends StatelessWidget {
   final XFile frontImage;
@@ -38,6 +39,7 @@ class IdCardPhotoPreviewScreen extends StatelessWidget {
             style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ),
+
         Container(
           height: calculatedHeight,
           width: double.infinity,
@@ -61,6 +63,7 @@ class IdCardPhotoPreviewScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -73,12 +76,12 @@ class IdCardPhotoPreviewScreen extends StatelessWidget {
                   child: Column(
                     children: [
                       // Первая сторона
-                      _buildImagePreview(context, frontImage, 'Лицевая сторона'),
+                      _buildImagePreview(context, frontImage, l10n.frontSide),
 
                       const SizedBox(height: 20),
 
                       // Вторая сторона
-                      _buildImagePreview(context, backImage, 'Обратная сторона'),
+                      _buildImagePreview(context, backImage, l10n.backSide),
                     ],
                   ),
                 ),
@@ -109,7 +112,7 @@ class IdCardPhotoPreviewScreen extends StatelessWidget {
                 ElevatedButton.icon(
                   onPressed: onRetake,
                   icon: const Icon(Icons.refresh, color: Colors.white),
-                  label: const Text('Переснять'),
+                  label: Text(l10n.camRetake),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.grey.shade800,
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -135,7 +138,7 @@ class IdCardPhotoPreviewScreen extends StatelessWidget {
                     );
                   },
                   icon: const Icon(Icons.check_circle, color: Colors.white),
-                  label: const Text('Редактировать (2)'),
+                  label: Text(l10n.editCount(2)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green.shade600,
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),

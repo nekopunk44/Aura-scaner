@@ -13,6 +13,7 @@
 // Путь добавляется в SharedPreferences по ключу 'documents'.
 import 'package:flutter/material.dart';
 import 'dart:io';
+import '../../../l10n/app_localizations.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -84,6 +85,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
 
   // --- Диалоговое окно для переименования ---
   Future<String?> _showRenameDialog(BuildContext context, String currentFileName) async {
+    final l10n = AppLocalizations.of(context);
     final controller = TextEditingController(text: currentFileName);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final dialogBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -94,15 +96,15 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: dialogBg,
-        title: Text('Имя файла', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        title: Text(l10n.fileNameTitle, style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
         content: TextField(
           controller: controller,
           autofocus: true,
           style: TextStyle(color: textColor),
           decoration: InputDecoration(
-            labelText: 'Имя файла',
+            labelText: l10n.fileNameTitle,
             labelStyle: TextStyle(color: subColor),
-            hintText: 'Введите имя',
+            hintText: l10n.fileNameHint,
             hintStyle: TextStyle(color: subColor),
             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE8EDF5))),
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF2CA5E0))),
@@ -112,12 +114,12 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(null),
-            child: Text('Отмена', style: TextStyle(color: subColor)),
+            child: Text(l10n.actionCancel, style: TextStyle(color: subColor)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2CA5E0), foregroundColor: Colors.white, elevation: 0),
-            child: const Text('Сохранить'),
+            child: Text(l10n.actionSave),
           ),
         ],
       ),
@@ -222,6 +224,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
 
 
   Future<void> _handleSave(SaveFormat format) async {
+    final l10n = AppLocalizations.of(context);
     String defaultName = 'Scan_${DateTime.now().year}-${DateTime.now().month}-${DateTime.now().day}';
     final newFileName = await _showRenameDialog(context, defaultName);
 
@@ -229,7 +232,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
 
     if (newFileName == null || newFileName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Сохранение отменено.')),
+        SnackBar(content: Text(l10n.docSaveCancelled)),
       );
       return;
     }
@@ -281,7 +284,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
 
       setState(() {
         _isSaving = false;
-        _errorMessage = 'Ошибка сохранения: ${e.toString()}';
+        _errorMessage = l10n.saveErrorDetail(e.toString());
       });
     }
   }
@@ -299,10 +302,11 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
     final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: Text('Сохранение документа', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        title: Text(l10n.saveDocumentTitle, style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
         backgroundColor: appBarBg,
         iconTheme: IconThemeData(color: textColor),
         elevation: 0,
@@ -312,6 +316,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
   }
 
   Widget _buildOptionsScreen(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
@@ -331,13 +336,13 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Выберите формат сохранения',
+            l10n.saveFmtTitle,
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 6),
           Text(
-            '$pageCount ${pageCount == 1 ? 'страница' : 'страниц(ы)'}',
+            l10n.savePageCount(pageCount),
             style: TextStyle(fontSize: 14, color: subColor),
             textAlign: TextAlign.center,
           ),
@@ -345,7 +350,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
           _buildOptionButton(
             context,
             icon: Icons.image_outlined,
-            text: 'Сохранить как изображение',
+            text: l10n.saveAsImage,
             color: const Color(0xFF2CA5E0),
             subText: '(JPG)',
             onTap: () => _handleSave(SaveFormat.img),
@@ -355,7 +360,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
           _buildOptionButton(
             context,
             icon: Icons.picture_as_pdf,
-            text: 'Сохранить в PDF',
+            text: l10n.saveAsPdf,
             color: Colors.red.shade600,
             subText: '($pageCount стр.)',
             onTap: () => _handleSave(SaveFormat.pdf),
@@ -366,6 +371,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
   }
 
   Widget _buildSavingInProgressScreen(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
@@ -378,18 +384,19 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
           children: [
             const CircularProgressIndicator(color: Color(0xFF2CA5E0)),
             const SizedBox(height: 20),
-            Text('Сохранение документа...', style: TextStyle(fontSize: 16, color: subColor)),
+            Text(l10n.savingInProgress, style: TextStyle(fontSize: 16, color: subColor)),
           ],
         ),
       ),
     );
   }
 
-  String get formatText {
-    return _finalFormat == SaveFormat.pdf ? 'PDF-файл' : 'Фото/Изображение';
+  String _formatText(AppLocalizations l10n) {
+    return _finalFormat == SaveFormat.pdf ? l10n.saveFormatPdf : l10n.saveFormatImage;
   }
 
   Widget _buildSaveSuccessScreen(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
@@ -409,13 +416,13 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
                 child: const Icon(Icons.check_rounded, color: Colors.green, size: 52),
               ),
               const SizedBox(height: 24),
-              Text('Документ сохранён!',
+              Text(l10n.saveDocSaved,
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: textColor),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 10),
               Text(
-                '$formatText успешно сохранён и доступен в разделе "Мои файлы".',
+                l10n.saveSuccessBody(_formatText(l10n)),
                 style: TextStyle(fontSize: 15, color: subColor, height: 1.45),
                 textAlign: TextAlign.center,
               ),
@@ -435,7 +442,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: const Text('Перейти в "Мои файлы"', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  child: Text(l10n.saveGoToMyFiles, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                 ),
               ),
             ],
@@ -446,6 +453,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
   }
 
   Widget _buildErrorScreen(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
@@ -454,7 +462,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: Text('Ошибка', style: TextStyle(color: textColor)),
+        title: Text(l10n.commonError, style: TextStyle(color: textColor)),
         backgroundColor: appBarBg,
         iconTheme: IconThemeData(color: textColor),
         elevation: 0,
@@ -467,7 +475,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
             children: [
               const Icon(Icons.error_outline, color: Colors.red, size: 72),
               const SizedBox(height: 20),
-              Text('Не удалось сохранить файл:', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: textColor)),
+              Text(l10n.saveFailedLabel, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: textColor)),
               const SizedBox(height: 10),
               Text(_errorMessage!, textAlign: TextAlign.center, style: TextStyle(color: Colors.red.shade400, fontSize: 14)),
               const SizedBox(height: 40),
@@ -480,7 +488,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text('Повторить'),
+                child: Text(l10n.actionRetry),
               ),
             ],
           ),
