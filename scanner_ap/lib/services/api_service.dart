@@ -193,6 +193,33 @@ class ApiService {
     return token != null && token.isNotEmpty;
   }
 
+  /// Проверяет, действительна ли сессия на сервере (вызывается на splash
+  /// перед входом). В отличие от [isLoggedIn] не довольствуется наличием
+  /// токена, а делает реальный запрос — interceptor при этом сам попытается
+  /// освежить протухший access-токен.
+  ///
+  /// Возвращает:
+  /// - `false` — токена нет, либо сервер отверг (401) и refresh не помог
+  ///   (токены к этому моменту уже очищены interceptor'ом) → нужен повторный
+  ///   вход;
+  /// - `true` — сервер принял запрос ИЛИ проверить не удалось из-за сети
+  ///   (таймаут/нет соединения). Оффлайн-пользователя НЕ разлогиниваем —
+  ///   валидность перепроверится при следующем онлайн-запросе.
+  Future<bool> validateSession() async {
+    final token = await getToken();
+    if (token == null || token.isEmpty) return false;
+    try {
+      await _dio.get('/auth/profile');
+      return true;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) return false;
+      // Сеть недоступна / таймаут / 5xx — не разлогиниваем оптимистично.
+      return true;
+    } catch (_) {
+      return true;
+    }
+  }
+
   /// Сбрасывает in-memory кэш токенов и флаг миграции. Только для тестов:
   /// [ApiService] — синглтон, и без сброса состояние течёт между кейсами.
   @visibleForTesting

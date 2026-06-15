@@ -105,9 +105,19 @@ class _SplashScreenState extends State<SplashScreen>
       await ApiService().syncBaseUrl();
       isLoggedIn = await ApiService().isLoggedIn();
       if (isLoggedIn) {
-        await PremiumService()
-            .syncWithServer()
-            .timeout(const Duration(seconds: 5));
+        // Не довольствуемся наличием токена: проверяем сессию на сервере
+        // (с авто-refresh внутри). Если сервер отверг — отправляем на логин.
+        // Оффлайн validateSession вернёт true и пустит оптимистично.
+        final valid = await ApiService()
+            .validateSession()
+            .timeout(const Duration(seconds: 8), onTimeout: () => true);
+        if (!valid) {
+          isLoggedIn = false;
+        } else {
+          await PremiumService()
+              .syncWithServer()
+              .timeout(const Duration(seconds: 5));
+        }
       }
     } catch (e) {
       debugPrint('Ошибка инициализации: $e');
