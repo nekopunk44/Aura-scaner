@@ -38,7 +38,15 @@ class _SplashScreenState extends State<SplashScreen>
       if (mounted) _textCtrl.forward();
     });
     _checkCameras();
-    _navigateWithDelay();
+    // _navigateWithDelay() читает AppLocalizations.of(context) синхронно в
+    // начале — это dependOnInheritedWidgetOfExactType, и вызывать его прямо
+    // в initState нельзя (в debug это ассерт «called before initState
+    // completed», из-за которого splash зависал; в release ассерт вырезан,
+    // поэтому APK работал). Откладываем до первого кадра, когда контекст
+    // уже полностью смонтирован.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _navigateWithDelay();
+    });
   }
 
   @override
@@ -57,7 +65,10 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   void _navigateWithDelay() async {
-    // Причину для биометрии берём до await — context здесь валиден.
+    // Вызывается из post-frame callback (см. initState), поэтому контекст
+    // смонтирован и AppLocalizations.of(context) безопасен. Причину для
+    // биометрии берём здесь, до первого await.
+    if (!mounted) return;
     final biometricReason = AppLocalizations.of(context).biometricReason;
     // Инициализация (сеть, prefs) идёт ПАРАЛЛЕЛЬНО с анимацией логотипа.
     // Сплеш висит минимум 1.6 с, чтобы анимация успела отыграть, но не
