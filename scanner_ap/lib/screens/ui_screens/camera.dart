@@ -21,10 +21,11 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 import '../../l10n/app_localizations.dart';
-import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'camera_features.dart';
 import 'capture_modes.dart';
@@ -75,10 +76,24 @@ class _CameraScreenState extends State<CameraScreen>
   int _cameraSessionId = 0;
 
 
-  final GlobalKey _qrKey = GlobalKey(debugLabel: "QR");
-  QRViewController? _qrController;
-  Barcode? _qrResult;
+  // QR/штрихкоды распознаются через ML Kit на ОБЩЕЙ камере (_cameraController),
+  // а не отдельным плагином — поэтому при входе в режим QR камера больше не
+  // пересоздаётся (нет «выключилась/включилась»).
+  final BarcodeScanner _barcodeScanner = BarcodeScanner();
+  String? _qrCode;
   bool _qrFlashOn = false;
+  bool _isQrStreaming = false;   // активен ли image-stream сканирования
+  bool _isBarcodeBusy = false;   // обрабатывается ли текущий кадр
+  bool _qrCooldown = false;      // пауза после успешного скана (3 с)
+  CameraDescription? _cameraDescription;
+
+  // Соответствие ориентации устройства углу компенсации (Android).
+  static const _orientations = {
+    DeviceOrientation.portraitUp: 0,
+    DeviceOrientation.landscapeLeft: 90,
+    DeviceOrientation.portraitDown: 180,
+    DeviceOrientation.landscapeRight: 270,
+  };
   
 
   final List<Map<String, dynamic>> _features = [...cameraFeatures];
@@ -134,11 +149,19 @@ class _CameraScreenState extends State<CameraScreen>
       _selectedFeature = _features.first['name']!;
     }
 
-    if (_importedDocumentPath == null && _selectedFeature != 'Сканер qr-код') {
-      _initializeCamera();
-      // Для «Перевод» и «OCR» детекция документа не нужна: захват ручной,
-      // а активный image-stream помешал бы takePicture().
-      if (_selectedFeature != 'Перевод' && _selectedFeature != 'OCR') {
+    if (_importedDocumentPath == null) {
+      // QR теперь тоже работает на общей камере, поэтому инициализируем её
+      // во всех режимах и при QR сразу запускаем сканирование штрихкодов.
+      _initializeCamera().then((_) {
+        if (mounted && _selectedFeature == 'Сканер qr-код') {
+          _startBarcodeScanning();
+        }
+      });
+      // Для «Перевод», «OCR» и «QR» детекция документа не нужна: захват
+      // ручной, а активный image-stream помешал бы takePicture().
+      if (_selectedFeature != 'Перевод' &&
+          _selectedFeature != 'OCR' &&
+          _selectedFeature != 'Сканер qr-код') {
         Future.delayed(const Duration(milliseconds: 300), _startDocumentDetectionStream);
       }
     }
@@ -151,7 +174,7 @@ class _CameraScreenState extends State<CameraScreen>
 
     unawaited(_disposeCameraController());
 
-    _qrController = null;
+    unawaited(_barcodeScanner.close());
 
     captureModeController.detectionTimer?.cancel();
     captureModeController.detectionTimer = null;
@@ -169,6 +192,8 @@ class _CameraScreenState extends State<CameraScreen>
     _cameraController = null;
     _cameraSessionId++;
     _isInitializingCamera = false;
+    // Стрим QR останавливается вместе с контроллером — сбрасываем флаг.
+    _isQrStreaming = false;
 
     if (mounted) {
       setState(() => _isCameraInitialized = false);
@@ -187,26 +212,23 @@ class _CameraScreenState extends State<CameraScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_selectedFeature != 'Сканер qr-код') {
-      if (state == AppLifecycleState.inactive ||
-          state == AppLifecycleState.paused ||
-          state == AppLifecycleState.hidden) {
-        if (_cameraController != null && _cameraController!.value.isInitialized) {
-          unawaited(_disposeCameraController());
-        }
-      } else if (state == AppLifecycleState.resumed) {
-        // Камера могла быть выгружена, когда системная галерея/share/etc.
-        // перевели приложение в фон. На resumed всегда восстанавливаем.
-        if (_cameraController == null && !_isInitializingCamera) {
-          unawaited(_initializeCamera());
-        }
+    // QR теперь работает на общей камере, поэтому путь один для всех режимов.
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      if (_cameraController != null && _cameraController!.value.isInitialized) {
+        unawaited(_disposeCameraController());
       }
-    }
-    if (_selectedFeature == 'Сканер qr-код' && _qrController != null) {
-      if (state == AppLifecycleState.resumed) {
-        _qrController?.resumeCamera();
-      } else if (state == AppLifecycleState.inactive) {
-        _qrController?.pauseCamera();
+    } else if (state == AppLifecycleState.resumed) {
+      // Камера могла быть выгружена, когда системная галерея/share/etc.
+      // перевели приложение в фон. На resumed всегда восстанавливаем —
+      // и, если активен режим QR, заново запускаем сканирование.
+      if (_cameraController == null && !_isInitializingCamera) {
+        unawaited(_initializeCamera().then((_) {
+          if (mounted && _selectedFeature == 'Сканер qr-код') {
+            _startBarcodeScanning();
+          }
+        }));
       }
     }
   }
@@ -215,22 +237,20 @@ class _CameraScreenState extends State<CameraScreen>
   /// возврата из инструментальных экранов — там image_picker открывал
   /// системную галерею и мог уронить контроллер.
   Future<void> _ensureCameraReady() async {
-    if (_selectedFeature == 'Сканер qr-код') return;
-    if (_cameraController != null && _cameraController!.value.isInitialized) return;
-    if (_isInitializingCamera) return;
-    await _initializeCamera();
-  }
-
-  Future<void> _initializeCamera() async {
-    if (_selectedFeature == 'Сканер qr-код') {
-      if (mounted) {
-        setState(() => _isCameraInitialized = true);
-      } else {
-        _isCameraInitialized = true;
+    if (_cameraController != null && _cameraController!.value.isInitialized) {
+      if (_selectedFeature == 'Сканер qr-код' && !_isQrStreaming) {
+        _startBarcodeScanning();
       }
       return;
     }
+    if (_isInitializingCamera) return;
+    await _initializeCamera();
+    if (mounted && _selectedFeature == 'Сканер qr-код') {
+      _startBarcodeScanning();
+    }
+  }
 
+  Future<void> _initializeCamera() async {
     if (_isInitializingCamera) return;
     _isInitializingCamera = true;
     final sessionId = ++_cameraSessionId;
@@ -250,12 +270,16 @@ class _CameraScreenState extends State<CameraScreen>
             (camera) => camera.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
+      _cameraDescription = backCamera;
 
       final controller = CameraController(
         backCamera,
         ResolutionPreset.veryHigh,
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.yuv420,
+        // Формат для ML Kit barcode: NV21 (Android) / BGRA8888 (iOS).
+        imageFormatGroup: Platform.isAndroid
+            ? ImageFormatGroup.nv21
+            : ImageFormatGroup.bgra8888,
       );
 
       await controller.initialize();
@@ -742,43 +766,124 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  /// Фонарик в режиме QR работает через QRViewController (отдельный от
-  /// CameraController пакет qr_code_scanner_plus).
+  /// Фонарик в режиме QR теперь использует общий CameraController.
   Future<void> _toggleQrFlash() async {
-    if (_qrController == null) return;
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) return;
     try {
-      await _qrController!.toggleFlash();
-      final status = await _qrController!.getFlashStatus();
-      if (mounted) setState(() => _qrFlashOn = status ?? !_qrFlashOn);
+      final on = controller.value.flashMode == FlashMode.torch;
+      await controller.setFlashMode(on ? FlashMode.off : FlashMode.torch);
+      if (mounted) setState(() => _qrFlashOn = !on);
     } catch (e) {
       debugPrint('Ошибка переключения фонарика QR: $e');
     }
   }
 
-  void _onQrViewCreated(QRViewController controller) {
-    _qrController = controller;
+  /// Запускает image-stream и распознавание штрихкодов на общей камере.
+  Future<void> _startBarcodeScanning() async {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) return;
+    if (_isQrStreaming || controller.value.isStreamingImages) return;
+    try {
+      _isQrStreaming = true;
+      await controller.startImageStream(_processBarcodeImage);
+    } catch (e) {
+      _isQrStreaming = false;
+      debugPrint('Ошибка запуска стрима QR: $e');
+    }
+  }
 
-    controller.scannedDataStream.listen((scanData) {
-      String? code = scanData.code;
-
-      if (code != null && _qrResult == null) {
-
-        _qrController?.pauseCamera();
-
-        setState(() {
-          _qrResult = scanData;
-        });
-
-        unawaited(_launchInBrowser(code));
-
-        Future.delayed(const Duration(seconds: 3), () {
-          if (mounted && _selectedFeature == 'Сканер qr-код') {
-            setState(() => _qrResult = null);
-            _qrController?.resumeCamera();
-          }
-        });
+  /// Останавливает распознавание штрихкодов (перед сменой режима/выгрузкой).
+  Future<void> _stopBarcodeScanning() async {
+    final controller = _cameraController;
+    if (!_isQrStreaming) return;
+    _isQrStreaming = false;
+    try {
+      if (controller != null && controller.value.isStreamingImages) {
+        await controller.stopImageStream();
       }
-    });
+    } catch (e) {
+      debugPrint('Ошибка остановки стрима QR: $e');
+    }
+  }
+
+  Future<void> _processBarcodeImage(CameraImage image) async {
+    if (_isBarcodeBusy || _qrCooldown || !mounted) return;
+    _isBarcodeBusy = true;
+    try {
+      final inputImage = _inputImageFromCameraImage(image);
+      if (inputImage == null) return;
+
+      final barcodes = await _barcodeScanner.processImage(inputImage);
+      if (!mounted || _qrCooldown) return;
+
+      final code = barcodes
+          .map((b) => b.rawValue)
+          .firstWhere((v) => v != null && v.isNotEmpty, orElse: () => null);
+      if (code == null) return;
+
+      // Пауза после успешного скана — чтобы не открывать ссылку повторно
+      // каждый кадр. Через 3 с снова разрешаем сканирование.
+      _qrCooldown = true;
+      setState(() => _qrCode = code);
+      unawaited(_launchInBrowser(code));
+      Future.delayed(const Duration(seconds: 3), () {
+        if (!mounted) return;
+        _qrCooldown = false;
+        if (_selectedFeature == 'Сканер qr-код') {
+          setState(() => _qrCode = null);
+        }
+      });
+    } catch (e) {
+      debugPrint('Ошибка распознавания QR: $e');
+    } finally {
+      _isBarcodeBusy = false;
+    }
+  }
+
+  /// Конвертирует кадр камеры в InputImage для ML Kit с учётом поворота
+  /// сенсора и ориентации устройства (стандартный helper из примера ML Kit).
+  InputImage? _inputImageFromCameraImage(CameraImage image) {
+    final controller = _cameraController;
+    final camera = _cameraDescription;
+    if (controller == null || camera == null) return null;
+
+    final sensorOrientation = camera.sensorOrientation;
+    InputImageRotation? rotation;
+    if (Platform.isIOS) {
+      rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
+    } else {
+      var rotationCompensation =
+          _orientations[controller.value.deviceOrientation];
+      if (rotationCompensation == null) return null;
+      if (camera.lensDirection == CameraLensDirection.front) {
+        rotationCompensation = (sensorOrientation + rotationCompensation) % 360;
+      } else {
+        rotationCompensation =
+            (sensorOrientation - rotationCompensation + 360) % 360;
+      }
+      rotation = InputImageRotationValue.fromRawValue(rotationCompensation);
+    }
+    if (rotation == null) return null;
+
+    final format = InputImageFormatValue.fromRawValue(image.format.raw);
+    if (format == null ||
+        (Platform.isAndroid && format != InputImageFormat.nv21) ||
+        (Platform.isIOS && format != InputImageFormat.bgra8888)) {
+      return null;
+    }
+    if (image.planes.length != 1) return null;
+    final plane = image.planes.first;
+
+    return InputImage.fromBytes(
+      bytes: plane.bytes,
+      metadata: InputImageMetadata(
+        size: Size(image.width.toDouble(), image.height.toDouble()),
+        rotation: rotation,
+        format: format,
+        bytesPerRow: plane.bytesPerRow,
+      ),
+    );
   }
 
   void _afterToolReturn(_) {
@@ -864,16 +969,10 @@ class _CameraScreenState extends State<CameraScreen>
 
   Widget _buildQrCodeView() {
     final l10n = AppLocalizations.of(context);
+    // Превью камеры рисует общий persistentCameraPreview под этим оверлеем
+    // (камера теперь не пересоздаётся при входе в QR — нет мерцания).
     return Stack(
       children: [
-        // Камера сканера на весь экран.
-        Positioned.fill(
-          child: QRView(
-            key: _qrKey,
-            onQRViewCreated: _onQrViewCreated,
-          ),
-        ),
-
         // Рамка-видоискатель в верхней половине (как на экране Паспорт),
         // чтобы не перекрывалась нижней плашкой и селектором режимов.
         Align(
@@ -883,7 +982,7 @@ class _CameraScreenState extends State<CameraScreen>
             height: MediaQuery.of(context).size.width * 0.66,
             decoration: BoxDecoration(
               border: Border.all(
-                color: _qrResult != null ? Colors.greenAccent : Colors.white,
+                color: _qrCode != null ? Colors.greenAccent : Colors.white,
                 width: 3,
               ),
               borderRadius: BorderRadius.circular(16),
@@ -965,7 +1064,7 @@ class _CameraScreenState extends State<CameraScreen>
               height: 78,
               child: Center(
                 child: Text(
-                  _qrResult?.code ?? '',
+                  _qrCode ?? '',
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -1040,30 +1139,37 @@ class _CameraScreenState extends State<CameraScreen>
                 _resetMultiPageState();
 
                 if (_selectedFeature != 'Сканер qr-код') {
-                  _qrResult = null; 
+                  _qrCode = null;
                 }
               });
 
               if (newFeature == 'Сканер qr-код') {
-               
-                unawaited(_disposeCameraController());
-
-                
+                // Камеру НЕ пересоздаём — запускаем сканирование штрихкодов
+                // на уже работающем контроллере (нет мерцания). Детекцию
+                // документа выключаем.
                 captureModeController.detectionTimer?.cancel();
                 captureModeController.resetDetectionState();
                 setState(() => _isDocumentDetected = false);
+
+                if (_cameraController == null) {
+                  unawaited(_initializeCamera().then((_) {
+                    if (mounted && _selectedFeature == 'Сканер qr-код') {
+                      _startBarcodeScanning();
+                    }
+                  }));
+                } else {
+                  _startBarcodeScanning();
+                }
               } else {
-                // Останавливаем камеру QR перед сменой режима
-                _qrController?.pauseCamera();
-                _qrController = null;
+                // Уходим из QR — останавливаем стрим, иначе takePicture()
+                // в документных режимах конфликтует с активным image-stream.
+                unawaited(_stopBarcodeScanning());
 
                 if (_cameraController == null) {
                   unawaited(_initializeCamera());
                 }
 
-                
                 if (newFeature != 'Перевод' && newFeature != 'OCR') {
-
                   Future.delayed(const Duration(milliseconds: 500), _startDocumentDetectionStream);
                 } else {
                   captureModeController.resetDetectionState();
@@ -1186,7 +1292,7 @@ class _CameraScreenState extends State<CameraScreen>
     });
 
   
-    if (!_isCameraInitialized && _selectedFeature != 'Сканер qr-код' && _selectedFeature != 'Перевод') {
+    if (!_isCameraInitialized && _selectedFeature != 'Перевод') {
       return const Scaffold(
         backgroundColor: Colors.black,
         body: Center(
@@ -1299,9 +1405,10 @@ class _CameraScreenState extends State<CameraScreen>
           ),
         );
 
+    // QR теперь использует общий persistentCameraPreview (раньше был
+    // исключён — отдельный плагин рисовал своё превью).
     final bool showPersistentPreview = _isCameraInitialized
-        && _cameraController != null
-        && _selectedFeature != 'Сканер qr-код';
+        && _cameraController != null;
 
     return Scaffold(
       backgroundColor: Colors.black,

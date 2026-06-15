@@ -58,9 +58,9 @@ dependencies:
   google_mlkit_translation: ^0.13.1
   google_mlkit_text_recognition: ^0.15.1
   google_mlkit_language_id: ^0.13.1
+  google_mlkit_barcode_scanning: ^0.14.1
   flutter_tesseract_ocr: ^0.4.10
   signature: ^6.3.0
-  qr_code_scanner_plus: ^2.0.14
   url_launcher: ^6.3.2
   app_links: ^6.4.0
   webview_flutter: ^4.10.0

@@ -557,6 +557,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.7.0"
+  google_mlkit_barcode_scanning:
+    dependency: "direct main"
+    description:
+      name: google_mlkit_barcode_scanning
+      sha256: dbf4df99cb490b12e95dcedde3e6741ce711942904f7049da601dfede91c1e0f
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.14.2"
   google_mlkit_commons:
     dependency: transitive
     description:
@@ -1141,14 +1149,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.2"
-  qr_code_scanner_plus:
-    dependency: "direct main"
-    description:
-      name: qr_code_scanner_plus
-      sha256: b764e5004251c58d9dee0c295e6006e05bd8d249e78ac3383abdb5afe0a996cd
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.14"
   record:
     dependency: "direct main"
     description:

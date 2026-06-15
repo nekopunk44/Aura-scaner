@@ -23,7 +23,6 @@ import 'package:pdf/pdf.dart' hide PdfDocument;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdfrx/pdfrx.dart';
 import 'package:image/image.dart' as img;
-import 'qr_code_scanner/qr_code.dart';
 import 'ocr/ocr_screen.dart';
 import 'merge/merge_documents_screen.dart';
 import 'signature/home_screen.dart' as sig;
@@ -475,7 +474,9 @@ class _AllActionsScreenState extends State<AllActionsScreen>
               if (!mounted) return;
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const QrCodeScreen()),
+                MaterialPageRoute(
+                  builder: (_) => CameraScreen(initialFeature: 'Сканер qr-код'),
+                ),
               );
             },
           ),
