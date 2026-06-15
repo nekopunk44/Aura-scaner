@@ -78,7 +78,10 @@ class AIService {
   Future<String> _send(List<Map<String, dynamic>> messages) async {
     try {
       final response = await ApiService().dio.post(
-        '/api/ai/analyze',
+        // baseUrl уже заканчивается на /api (ServerConfig), поэтому путь
+        // БЕЗ префикса /api — иначе получался двойной /api/api/ai/analyze
+        // и сервер отвечал 404 (как все остальные вызовы: /auth, /documents).
+        '/ai/analyze',
         data: {'messages': messages},
         // AI обращается к внешнему OpenRouter, у которого периодически висит upstream.
         // Без таймаута клиент висит вечно — лучше упасть через 90 секунд.
