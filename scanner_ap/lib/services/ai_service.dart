@@ -3,6 +3,15 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'api_service.dart';
 
+/// Категория ошибки AI-анализа — экран маппит её в локализованный текст,
+/// чтобы пользователь не видел сырой DioException.
+enum AiErrorKind { unavailable, timeout, generic }
+
+class AiException implements Exception {
+  final AiErrorKind kind;
+  AiException(this.kind);
+}
+
 class AIService {
   static final AIService _instance = AIService._internal();
   factory AIService() => _instance;
@@ -91,17 +100,22 @@ class AIService {
         ),
       );
       final result = response.data?['result'];
-      if (result == null) throw Exception('Пустой ответ от AI сервиса');
-      if (result is! String) throw Exception('Некорректный формат ответа от AI сервиса');
-      if (result.isEmpty) throw Exception('AI сервис вернул пустой результат');
+      if (result is! String || result.isEmpty) {
+        throw AiException(AiErrorKind.generic);
+      }
       return result;
     } on DioException catch (e) {
       if (e.type == DioExceptionType.receiveTimeout ||
           e.type == DioExceptionType.sendTimeout ||
           e.type == DioExceptionType.connectionTimeout) {
-        throw Exception('AI сервис не отвечает. Попробуйте позже.');
+        throw AiException(AiErrorKind.timeout);
       }
-      rethrow;
+      final status = e.response?.statusCode ?? 0;
+      // 5xx / 0 (нет связи) — сервис недоступен; остальное — общая ошибка.
+      if (status >= 500 || status == 0) {
+        throw AiException(AiErrorKind.unavailable);
+      }
+      throw AiException(AiErrorKind.generic);
     }
   }
 }

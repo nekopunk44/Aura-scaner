@@ -656,6 +656,17 @@
   "aiResultTitle": "Результат анализа",
   "@aiResultTitle": {"description": "Заголовок блока результата ИИ-анализа."},
 
+  "aiErrorUnavailable": "AI-сервис временно недоступен. Попробуйте позже.",
+  "@aiErrorUnavailable": {"description": "Ошибка: сервис AI вернул 5xx."},
+  "aiErrorTimeout": "AI-сервис не отвечает. Попробуйте позже.",
+  "@aiErrorTimeout": {"description": "Ошибка: таймаут запроса к AI."},
+  "aiErrorGeneric": "Не удалось проанализировать. Попробуйте ещё раз.",
+  "@aiErrorGeneric": {"description": "Общая ошибка анализа документа."},
+  "aiHint": "ИИ извлечёт суть, ключевые моменты, даты и нужные действия",
+  "@aiHint": {"description": "Подзаголовок на экране AI-анализа."},
+  "aiHintEco": "ИИ оценит упаковку: материалы, переработка, утилизация",
+  "@aiHintEco": {"description": "Подзаголовок на экране эко-анализа."},
+
   "voiceNotesTitle": "Голосовые заметки",
   "@voiceNotesTitle": {"description": "Заголовок экрана голосовых заметок."},
   "voiceNoMicPermission": "Нет разрешения на использование микрофона",

@@ -27,12 +27,29 @@ class DocumentAiScreen extends StatefulWidget {
 class _DocumentAiScreenState extends State<DocumentAiScreen> {
   File? _imageFile;
   String? _result;
+  AiErrorKind? _errorKind;
   bool _isLoading = false;
 
   bool get _isEco => widget.mode == AiMode.eco;
 
+  Color get _accent => _isEco ? Colors.green.shade600 : const Color(0xFF2CA5E0);
+
   String _titleText(AppLocalizations l10n) =>
       _isEco ? l10n.aiTitleEco : l10n.aiTitleAnalyze;
+
+  String _hintText(AppLocalizations l10n) =>
+      _isEco ? l10n.aiHintEco : l10n.aiHint;
+
+  String _errorText(AppLocalizations l10n, AiErrorKind kind) {
+    switch (kind) {
+      case AiErrorKind.unavailable:
+        return l10n.aiErrorUnavailable;
+      case AiErrorKind.timeout:
+        return l10n.aiErrorTimeout;
+      case AiErrorKind.generic:
+        return l10n.aiErrorGeneric;
+    }
+  }
 
   @override
   void initState() {
@@ -144,27 +161,26 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
     setState(() {
       _imageFile = file;
       _result = null;
+      _errorKind = null;
     });
   }
 
   Future<void> _analyze() async {
     if (_imageFile == null) return;
-    final l10n = AppLocalizations.of(context);
     setState(() {
       _isLoading = true;
       _result = null;
+      _errorKind = null;
     });
     try {
       final result = _isEco
           ? await AIService().analyzeEcoPackaging(_imageFile!)
           : await AIService().analyzeDocument(_imageFile!);
       if (mounted) setState(() => _result = result);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${l10n.commonError}: $e'), backgroundColor: Colors.red),
-        );
-      }
+    } on AiException catch (e) {
+      if (mounted) setState(() => _errorKind = e.kind);
+    } catch (_) {
+      if (mounted) setState(() => _errorKind = AiErrorKind.generic);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -190,6 +206,41 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Шапка-подсказка: что делает этот экран.
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [_accent.withValues(alpha: 0.16), _accent.withValues(alpha: 0.04)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _accent.withValues(alpha: 0.25)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: _accent.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(_isEco ? Icons.eco : Icons.auto_awesome, color: _accent, size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    _hintText(l10n),
+                    style: TextStyle(fontSize: 13, color: textColor, height: 1.4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
           GestureDetector(
             onTap: () => _pickSource(context),
             child: Container(
@@ -199,32 +250,64 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: _imageFile != null
-                      ? const Color(0xFF2CA5E0).withValues(alpha: 0.5)
+                      ? _accent.withValues(alpha: 0.5)
                       : (isDark ? Colors.white12 : const Color(0xFFE8EDF5)),
+                  width: _imageFile != null ? 1.5 : 1,
                 ),
               ),
               child: _imageFile != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(15),
-                      child: Image.file(_imageFile!, fit: BoxFit.cover, width: double.infinity),
+                  ? Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(15),
+                          child: Image.file(_imageFile!,
+                              fit: BoxFit.cover, width: double.infinity, height: 220),
+                        ),
+                        Positioned(
+                          right: 8, top: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.refresh, color: Colors.white, size: 14),
+                                const SizedBox(width: 4),
+                                Text(l10n.wmChange,
+                                    style: const TextStyle(color: Colors.white, fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     )
                   : Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          _isEco ? Icons.eco : Icons.document_scanner,
-                          size: 48,
-                          color: const Color(0xFF2CA5E0).withValues(alpha: 0.6),
+                        Container(
+                          width: 64, height: 64,
+                          decoration: BoxDecoration(
+                            color: _accent.withValues(alpha: 0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            _isEco ? Icons.eco : Icons.document_scanner,
+                            size: 32,
+                            color: _accent,
+                          ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 14),
                         Text(
                           _isEco ? l10n.aiSelectEcoPhoto : l10n.aiSelectDocOrPhoto,
-                          style: TextStyle(fontSize: 15, color: subColor),
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: textColor),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           l10n.aiTapToSelect,
-                          style: TextStyle(fontSize: 12, color: subColor.withValues(alpha: 0.6)),
+                          style: TextStyle(fontSize: 12, color: subColor),
                         ),
                       ],
                     ),
@@ -241,8 +324,8 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
                   icon: const Icon(Icons.upload_file, size: 18),
                   label: Text(_imageFile != null ? l10n.wmChange : l10n.aiSelectFile),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF2CA5E0),
-                    side: const BorderSide(color: Color(0xFF2CA5E0)),
+                    foregroundColor: _accent,
+                    side: BorderSide(color: _accent),
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
@@ -260,10 +343,8 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
                       : Icon(_isEco ? Icons.eco : Icons.auto_awesome, size: 18),
                   label: Text(_isLoading ? l10n.aiAnalyzing : l10n.aiAnalyze),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _isEco ? Colors.green.shade600 : const Color(0xFF2CA5E0),
-                    disabledBackgroundColor:
-                        (_isEco ? Colors.green.shade600 : const Color(0xFF2CA5E0))
-                            .withValues(alpha: 0.4),
+                    backgroundColor: _accent,
+                    disabledBackgroundColor: _accent.withValues(alpha: 0.4),
                     foregroundColor: Colors.white,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 13),
@@ -274,41 +355,97 @@ class _DocumentAiScreenState extends State<DocumentAiScreen> {
             ],
           ),
 
-          if (_result != null) ...[
+          // Состояние загрузки.
+          if (_isLoading) ...[
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 28),
+              decoration: BoxDecoration(
+                color: cardBg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _accent.withValues(alpha: 0.25)),
+              ),
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: 30, height: 30,
+                    child: CircularProgressIndicator(strokeWidth: 2.5, color: _accent),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(l10n.aiAnalyzing, style: TextStyle(fontSize: 14, color: subColor)),
+                ],
+              ),
+            ),
+          ],
+
+          // Чистая карточка ошибки вместо сырого DioException + повтор.
+          if (_errorKind != null && !_isLoading) ...[
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: isDark ? 0.12 : 0.06),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.red.withValues(alpha: 0.35)),
+              ),
+              child: Column(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.red.shade400, size: 36),
+                  const SizedBox(height: 12),
+                  Text(
+                    _errorText(l10n, _errorKind!),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: textColor, height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _analyze,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: Text(l10n.actionRetry),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _accent,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          if (_result != null && !_isLoading) ...[
             const SizedBox(height: 20),
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 color: cardBg,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: (_isEco ? Colors.green : const Color(0xFF2CA5E0))
-                      .withValues(alpha: 0.3),
-                ),
+                border: Border.all(color: _accent.withValues(alpha: 0.3)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        _isEco ? Icons.eco : Icons.auto_awesome,
-                        size: 18,
-                        color: _isEco ? Colors.green.shade400 : const Color(0xFF2CA5E0),
-                      ),
+                      Icon(_isEco ? Icons.eco : Icons.auto_awesome, size: 18, color: _accent),
                       const SizedBox(width: 8),
                       Text(
                         l10n.aiResultTitle,
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: _isEco ? Colors.green.shade400 : const Color(0xFF2CA5E0),
+                          color: _accent,
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 14),
-                  Text(
+                  SelectableText(
                     _result!,
                     style: TextStyle(fontSize: 14, color: textColor, height: 1.55),
                   ),

@@ -456,6 +456,11 @@
   "aiAnalyzing": "Analyzing...",
   "aiAnalyze": "Analyze",
   "aiResultTitle": "Analysis result",
+  "aiErrorUnavailable": "AI service is temporarily unavailable. Please try again later.",
+  "aiErrorTimeout": "AI service is not responding. Please try again later.",
+  "aiErrorGeneric": "Couldn't analyze. Please try again.",
+  "aiHint": "AI extracts the gist, key points, dates and required actions",
+  "aiHintEco": "AI rates packaging: materials, recycling, disposal",
 
   "voiceNotesTitle": "Voice notes",
   "voiceNoMicPermission": "Microphone permission denied",
