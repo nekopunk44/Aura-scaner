@@ -1,11 +1,11 @@
 {
-    "name": "scanner_ap",
-    "short_name": "scanner_ap",
+    "name": "Aura Scanner",
+    "short_name": "Aura Scanner",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Document scanning and OCR companion for Aura Scanner.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
