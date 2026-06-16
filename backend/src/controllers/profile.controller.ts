@@ -1,15 +1,43 @@
 import { Response } from 'express';
+
 import { AuthRequest } from '../middleware/auth.middleware';
-import { User } from '../models/User';
-import { blacklistToken } from '../utils/tokenBlacklist';
 import { RefreshToken } from '../models/RefreshToken';
+import { User } from '../models/User';
 import { logger } from '../utils/logger';
 import { isPremiumActive } from '../utils/premium';
+import { blacklistToken } from '../utils/tokenBlacklist';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// GET /api/auth/profile
-export async function getProfile(req: AuthRequest, res: Response): Promise<void> {
+function normalizeSessionId(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function serializeSession(
+  session: {
+    sessionId: string;
+    startedAt: Date;
+    lastUsedAt: Date;
+    userAgent?: string;
+    ipAddress?: string;
+  },
+  currentSessionId?: string,
+) {
+  return {
+    id: session.sessionId,
+    startedAt: session.startedAt,
+    lastUsedAt: session.lastUsedAt,
+    userAgent: session.userAgent ?? null,
+    ipAddress: session.ipAddress ?? null,
+    isCurrent: session.sessionId === currentSessionId,
+  };
+}
+
+export async function getProfile(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
   try {
     const user = await User.findById(req.userId).select(
       '_id email name createdAt isPremium premiumActivatedAt premiumExpiresAt',
@@ -18,6 +46,7 @@ export async function getProfile(req: AuthRequest, res: Response): Promise<void>
       res.status(404).json({ message: 'Пользователь не найден' });
       return;
     }
+
     res.json({
       id: user._id,
       email: user.email,
@@ -33,8 +62,10 @@ export async function getProfile(req: AuthRequest, res: Response): Promise<void>
   }
 }
 
-// PATCH /api/auth/profile
-export async function updateProfile(req: AuthRequest, res: Response): Promise<void> {
+export async function updateProfile(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
   const { name, email } = req.body as { name?: string; email?: string };
 
   if (!name && !email) {
@@ -64,16 +95,19 @@ export async function updateProfile(req: AuthRequest, res: Response): Promise<vo
 
   try {
     if (updates.email) {
-      const existing = await User.findOne({ email: updates.email, _id: { $ne: req.userId } });
+      const existing = await User.findOne({
+        email: updates.email,
+        _id: { $ne: req.userId },
+      });
       if (existing) {
         res.status(409).json({ message: 'Этот email уже используется' });
         return;
       }
     }
 
-    const user = await User.findByIdAndUpdate(req.userId, updates, { new: true }).select(
-      '_id email name createdAt isPremium premiumActivatedAt premiumExpiresAt'
-    );
+    const user = await User.findByIdAndUpdate(req.userId, updates, {
+      new: true,
+    }).select('_id email name createdAt isPremium premiumActivatedAt premiumExpiresAt');
 
     if (!user) {
       res.status(404).json({ message: 'Пользователь не найден' });
@@ -95,13 +129,99 @@ export async function updateProfile(req: AuthRequest, res: Response): Promise<vo
   }
 }
 
-// POST /api/auth/logout
-export async function logout(req: AuthRequest, res: Response): Promise<void> {
-  const header = req.headers.authorization;
-  if (header?.startsWith('Bearer ')) {
-    await blacklistToken(header.slice(7));
+export async function listSessions(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
+  try {
+    const sessions = await RefreshToken.find({ userId: req.userId })
+      .sort({ lastUsedAt: -1 })
+      .select('sessionId startedAt lastUsedAt userAgent ipAddress')
+      .lean();
+
+    res.json({
+      sessions: sessions.map((session) =>
+        serializeSession(session, normalizeSessionId(req.sessionId)),
+      ),
+    });
+  } catch (err) {
+    logger.error('[listSessions]', { err });
+    res.status(500).json({ message: 'Ошибка при получении списка сессий' });
   }
-  // Удаляем все refresh tokens пользователя
-  await RefreshToken.deleteMany({ userId: req.userId });
-  res.json({ message: 'Выход выполнен' });
+}
+
+export async function revokeSession(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
+  const sessionId = normalizeSessionId(req.params.sessionId);
+  if (!sessionId) {
+    res.status(400).json({ message: 'Session id обязателен' });
+    return;
+  }
+
+  try {
+    const deleted = await RefreshToken.findOneAndDelete({
+      userId: req.userId,
+      sessionId,
+    });
+
+    if (!deleted) {
+      res.status(404).json({ message: 'Сессия не найдена' });
+      return;
+    }
+
+    if (req.accessToken && sessionId === req.sessionId) {
+      await blacklistToken(req.accessToken);
+    }
+
+    res.json({ message: 'Сессия завершена' });
+  } catch (err) {
+    logger.error('[revokeSession]', { err });
+    res.status(500).json({ message: 'Ошибка при завершении сессии' });
+  }
+}
+
+export async function logoutOtherSessions(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
+  const currentSessionId = normalizeSessionId(req.sessionId);
+  if (!currentSessionId) {
+    res.status(400).json({ message: 'Текущая session id не передана' });
+    return;
+  }
+
+  try {
+    const result = await RefreshToken.deleteMany({
+      userId: req.userId,
+      sessionId: { $ne: currentSessionId },
+    });
+    res.json({ message: 'Остальные сессии завершены', count: result.deletedCount ?? 0 });
+  } catch (err) {
+    logger.error('[logoutOtherSessions]', { err });
+    res.status(500).json({ message: 'Ошибка при завершении остальных сессий' });
+  }
+}
+
+export async function logout(req: AuthRequest, res: Response): Promise<void> {
+  if (req.accessToken) {
+    await blacklistToken(req.accessToken);
+  }
+
+  try {
+    if (req.sessionId) {
+      await RefreshToken.deleteMany({
+        userId: req.userId,
+        sessionId: req.sessionId,
+      });
+    } else {
+      await RefreshToken.deleteMany({ userId: req.userId });
+    }
+
+    res.json({ message: 'Выход выполнен' });
+  } catch (err) {
+    logger.error('[logout]', { err });
+    res.status(500).json({ message: 'Ошибка при выходе из аккаунта' });
+  }
 }

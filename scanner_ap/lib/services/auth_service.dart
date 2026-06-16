@@ -1,18 +1,50 @@
 import 'package:dio/dio.dart';
-import 'api_service.dart';
+
 import '../utils/error_messages.dart';
+import 'api_service.dart';
 
 class AuthUser {
   final String id;
   final String email;
   final String name;
 
-  const AuthUser({required this.id, required this.email, required this.name});
+  const AuthUser({
+    required this.id,
+    required this.email,
+    required this.name,
+  });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) => AuthUser(
         id: json['id'] as String,
         email: json['email'] as String,
         name: json['name'] as String,
+      );
+}
+
+class UserSession {
+  final String id;
+  final DateTime startedAt;
+  final DateTime lastUsedAt;
+  final String? userAgent;
+  final String? ipAddress;
+  final bool isCurrent;
+
+  const UserSession({
+    required this.id,
+    required this.startedAt,
+    required this.lastUsedAt,
+    required this.isCurrent,
+    this.userAgent,
+    this.ipAddress,
+  });
+
+  factory UserSession.fromJson(Map<String, dynamic> json) => UserSession(
+        id: json['id'] as String,
+        startedAt: DateTime.parse(json['startedAt'] as String),
+        lastUsedAt: DateTime.parse(json['lastUsedAt'] as String),
+        userAgent: json['userAgent'] as String?,
+        ipAddress: json['ipAddress'] as String?,
+        isCurrent: json['isCurrent'] as bool? ?? false,
       );
 }
 
@@ -30,7 +62,7 @@ class AuthService {
         'email': email,
         'password': password,
       });
-      await _saveTokens(response.data);
+      await _saveTokens(response.data as Map<String, dynamic>);
       return AuthUser.fromJson(response.data['user'] as Map<String, dynamic>);
     } on DioException catch (e) {
       throw _parseError(e);
@@ -46,7 +78,7 @@ class AuthService {
         'email': email,
         'password': password,
       });
-      await _saveTokens(response.data);
+      await _saveTokens(response.data as Map<String, dynamic>);
       return AuthUser.fromJson(response.data['user'] as Map<String, dynamic>);
     } on DioException catch (e) {
       throw _parseError(e);
@@ -68,7 +100,7 @@ class AuthService {
         if (name != null) 'name': name,
         if (extra != null) ...extra,
       });
-      await _saveTokens(response.data);
+      await _saveTokens(response.data as Map<String, dynamic>);
       return AuthUser.fromJson(response.data['user'] as Map<String, dynamic>);
     } on DioException catch (e) {
       throw _parseError(e);
@@ -77,10 +109,9 @@ class AuthService {
 
   Future<void> logout() async {
     try {
-      // Уведомляем сервер — токен попадает в blacklist
       await _api.dio.post('/auth/logout');
     } catch (_) {
-      // Игнорируем ошибку сети: всё равно чистим локальные токены
+      // Local tokens still must be cleared even if the network request fails.
     } finally {
       await _api.clearAllTokens();
     }
@@ -100,9 +131,35 @@ class AuthService {
     }
   }
 
-  /// Профиль текущего пользователя (GET /auth/profile).
-  /// null — если не залогинен или сервер недоступен: вызывающий экран
-  /// показывает фолбэк без персональных данных.
+  Future<List<UserSession>> getSessions() async {
+    try {
+      final response = await _api.dio.get('/auth/sessions');
+      final raw = response.data['sessions'] as List<dynamic>? ?? const [];
+      return raw
+          .map((item) => UserSession.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  Future<int> logoutOtherSessions() async {
+    try {
+      final response = await _api.dio.post('/auth/logout-others');
+      return response.data['count'] as int? ?? 0;
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  Future<void> revokeSession(String sessionId) async {
+    try {
+      await _api.dio.delete('/auth/sessions/$sessionId');
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
   Future<AuthUser?> getProfile() async {
     try {
       final response = await _api.dio.get('/auth/profile');
@@ -112,8 +169,6 @@ class AuthService {
     }
   }
 
-  /// Обновляет имя/email (PATCH /auth/profile). Передавайте только то, что
-  /// изменилось. Возвращает обновлённый профиль.
   Future<AuthUser> updateProfile({String? name, String? email}) async {
     try {
       final response = await _api.dio.patch('/auth/profile', data: {
@@ -126,10 +181,17 @@ class AuthService {
     }
   }
 
-  Future<void> saveTokens(String token, String? refreshToken) async {
+  Future<void> saveTokens(
+    String token,
+    String? refreshToken, {
+    String? sessionId,
+  }) async {
     await _api.saveToken(token);
     if (refreshToken != null && refreshToken.isNotEmpty) {
       await _api.saveRefreshToken(refreshToken);
+    }
+    if (sessionId != null && sessionId.isNotEmpty) {
+      await _api.saveSessionId(sessionId);
     }
   }
 
@@ -137,6 +199,7 @@ class AuthService {
     await saveTokens(
       data['token'] as String,
       data['refreshToken'] as String?,
+      sessionId: data['sessionId'] as String?,
     );
   }
 

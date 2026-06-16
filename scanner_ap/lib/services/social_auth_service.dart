@@ -15,13 +15,12 @@ class SocialAuthService {
   static const _googleWebClientId =
       '408293307028-59uhh1lio31abr5r3cof7undvqarj6e7.apps.googleusercontent.com';
 
-  static const _googleRedirectUri =
-      'https://aura-scaner-production.up.railway.app/api/auth/google/callback';
-
-  static Uri buildGoogleAuthUri([String redirectUri = _googleRedirectUri]) {
+  static Uri buildGoogleAuthUri([String? redirectUri]) {
+    final effectiveRedirectUri =
+        redirectUri ?? '${ServerConfig().baseUrl}/auth/google/callback';
     return Uri.https('accounts.google.com', '/o/oauth2/auth', {
       'client_id': _googleWebClientId,
-      'redirect_uri': redirectUri,
+      'redirect_uri': effectiveRedirectUri,
       'response_type': 'code',
       'scope': 'openid email profile',
       'access_type': 'offline',
@@ -58,7 +57,11 @@ class SocialAuthService {
       throw 'Сервер не вернул токен.';
     }
     final refreshToken = data['refreshToken'] as String?;
-    await _authService.saveTokens(token, refreshToken);
+    await _authService.saveTokens(
+      token,
+      refreshToken,
+      sessionId: data['sessionId'] as String?,
+    );
 
     final userJson = data['user'] as Map<String, dynamic>?;
     if (userJson == null) throw 'Сервер не вернул профиль пользователя.';

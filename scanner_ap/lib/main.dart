@@ -7,6 +7,9 @@ import 'services/premium_service.dart';
 import 'config/sentry_config.dart';
 import 'config/theme_config.dart';
 import 'config/locale_config.dart';
+import 'widgets/app_lock_guard.dart';
+
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   await bootstrapSentry(() async {
@@ -37,6 +40,7 @@ class ScannerApp extends StatelessWidget {
       listenable: Listenable.merge([ThemeNotifier(), LocaleNotifier()]),
       builder: (context, _) {
         return MaterialApp(
+          navigatorKey: appNavigatorKey,
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light,
           darkTheme: AppTheme.dark,
@@ -50,6 +54,10 @@ class ScannerApp extends StatelessWidget {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: const [Locale('ru'), Locale('en')],
           home: const SplashScreen(),
+          builder: (context, child) => AppLockGuard(
+            navigatorKey: appNavigatorKey,
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
     );

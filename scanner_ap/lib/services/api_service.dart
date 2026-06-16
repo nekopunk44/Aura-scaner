@@ -14,6 +14,7 @@ class _PendingRequest {
 class ApiService {
   static const String _tokenKey = 'auth_token';
   static const String _refreshTokenKey = 'refresh_token';
+  static const String _sessionIdKey = 'session_id';
 
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
@@ -31,8 +32,12 @@ class ApiService {
     ..interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         final token = await getToken();
+        final sessionId = await getSessionId();
         if (token != null) {
           options.headers['Authorization'] = 'Bearer $token';
+        }
+        if (sessionId != null && sessionId.isNotEmpty) {
+          options.headers['X-Session-Id'] = sessionId;
         }
         handler.next(options);
       },
@@ -66,6 +71,7 @@ class ApiService {
     _isRefreshing = true;
     try {
       final refreshToken = await getRefreshToken();
+      final sessionId = await getSessionId();
       if (refreshToken == null) {
         await clearAllTokens();
         handler.next(error);
@@ -74,18 +80,25 @@ class ApiService {
 
       final refreshResponse = await _dio.post(
         '/auth/refresh',
-        data: {'refreshToken': refreshToken},
+        data: {
+          'refreshToken': refreshToken,
+          if (sessionId != null && sessionId.isNotEmpty) 'sessionId': sessionId,
+        },
         options: Options(extra: {'_retry': true}),
       );
 
       final newToken = refreshResponse.data['token'];
       final newRefreshToken = refreshResponse.data['refreshToken'];
+      final newSessionId = refreshResponse.data['sessionId'];
       if (newToken is! String || newToken.isEmpty ||
           newRefreshToken is! String || newRefreshToken.isEmpty) {
         throw Exception('Invalid tokens received');
       }
       await saveToken(newToken);
       await saveRefreshToken(newRefreshToken);
+      if (newSessionId is String && newSessionId.isNotEmpty) {
+        await saveSessionId(newSessionId);
+      }
 
       // Повторяем исходный запрос с новым токеном
       final retryOptions = error.requestOptions;
@@ -135,6 +148,7 @@ class ApiService {
   // каждый раз ходить в platform channel.
   String? _cachedToken;
   String? _cachedRefreshToken;
+  String? _cachedSessionId;
   Future<void>? _migration;
 
   /// Одноразовый перенос токенов из SharedPreferences (где они лежали
@@ -164,6 +178,11 @@ class ApiService {
     await _secureStorage.write(key: _refreshTokenKey, value: token);
   }
 
+  Future<void> saveSessionId(String sessionId) async {
+    _cachedSessionId = sessionId;
+    await _secureStorage.write(key: _sessionIdKey, value: sessionId);
+  }
+
   Future<String?> getToken() async {
     if (_cachedToken != null) return _cachedToken;
     await _ensureMigrated();
@@ -176,6 +195,12 @@ class ApiService {
     return _cachedRefreshToken = await _secureStorage.read(key: _refreshTokenKey);
   }
 
+  Future<String?> getSessionId() async {
+    if (_cachedSessionId != null) return _cachedSessionId;
+    await _ensureMigrated();
+    return _cachedSessionId = await _secureStorage.read(key: _sessionIdKey);
+  }
+
   Future<void> clearToken() async {
     _cachedToken = null;
     await _secureStorage.delete(key: _tokenKey);
@@ -184,8 +209,10 @@ class ApiService {
   Future<void> clearAllTokens() async {
     _cachedToken = null;
     _cachedRefreshToken = null;
+    _cachedSessionId = null;
     await _secureStorage.delete(key: _tokenKey);
     await _secureStorage.delete(key: _refreshTokenKey);
+    await _secureStorage.delete(key: _sessionIdKey);
   }
 
   Future<bool> isLoggedIn() async {
@@ -226,6 +253,7 @@ class ApiService {
   void resetForTesting() {
     _cachedToken = null;
     _cachedRefreshToken = null;
+    _cachedSessionId = null;
     _migration = null;
   }
 }

@@ -5,6 +5,8 @@ import { User } from '../models/User';
 
 export interface AuthRequest extends Request {
   userId?: string;
+  sessionId?: string;
+  accessToken?: string;
 }
 
 export async function authMiddleware(
@@ -31,6 +33,11 @@ export async function authMiddleware(
       return;
     }
     req.userId = payload.id;
+    req.accessToken = token;
+    const sessionIdHeader = req.headers['x-session-id'];
+    if (typeof sessionIdHeader === 'string' && sessionIdHeader.trim().length > 0) {
+      req.sessionId = sessionIdHeader.trim();
+    }
     next();
   } catch {
     res.status(401).json({ message: 'Недействительный или истёкший токен' });

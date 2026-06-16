@@ -3,8 +3,6 @@ import https from 'https';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { IUser, User } from '../models/User';
-import { signToken, signRefreshToken } from '../utils/jwt';
-import { RefreshToken } from '../models/RefreshToken';
 import { OAuthCode } from '../models/OAuthCode';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
@@ -14,6 +12,11 @@ import {
   buildOAuthCodeDeepLink,
   buildOAuthErrorDeepLink,
 } from '../utils/oauth.links';
+import {
+  getRequestSessionContext,
+  issueSessionTokens,
+  SessionContext,
+} from '../utils/sessionTokens';
 import { TelegramAuthData, verifyTelegramAuthData } from '../utils/telegramAuth';
 
 const OAUTH_CODE_TTL_MS = 5 * 60 * 1000;
@@ -38,6 +41,7 @@ export async function createOAuthCode(params: {
   userId: string;
   token: string;
   refreshToken: string;
+  sessionId: string;
   email: string;
   name: string;
 }): Promise<string> {
@@ -47,6 +51,7 @@ export async function createOAuthCode(params: {
     userId: params.userId,
     token: params.token,
     refreshToken: params.refreshToken,
+    sessionId: params.sessionId,
     email: params.email,
     name: params.name,
     expiresAt: new Date(Date.now() + OAUTH_CODE_TTL_MS),
@@ -109,15 +114,15 @@ async function findOrCreateSocialUser(identity: SocialIdentity): Promise<IUser> 
   });
 }
 
-async function issueTokensForUser(user: IUser): Promise<{
+async function issueTokensForUser(
+  user: IUser,
+  sessionContext: SessionContext = {},
+): Promise<{
   token: string;
   refreshToken: string;
+  sessionId: string;
 }> {
-  const token = signToken(String(user._id));
-  const refreshToken = signRefreshToken(String(user._id));
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  await RefreshToken.create({ userId: user._id, token: refreshToken, expiresAt });
-  return { token, refreshToken };
+  return issueSessionTokens(user._id, sessionContext);
 }
 
 export async function loginOrCreateUserAndIssueCode(params: {
@@ -126,6 +131,7 @@ export async function loginOrCreateUserAndIssueCode(params: {
   provider?: SocialProvider;
   providerUserId?: string;
   emailVerified?: boolean;
+  sessionContext?: SessionContext;
 }): Promise<string> {
   const user =
     params.provider && params.providerUserId
@@ -147,11 +153,15 @@ export async function loginOrCreateUserAndIssueCode(params: {
           });
         })();
 
-  const { token, refreshToken } = await issueTokensForUser(user);
+  const { token, refreshToken, sessionId } = await issueTokensForUser(
+    user,
+    params.sessionContext,
+  );
   return createOAuthCode({
     userId: String(user._id),
     token,
     refreshToken,
+    sessionId,
     email: user.email,
     name: user.name ?? '',
   });
@@ -177,6 +187,7 @@ export async function exchangeOAuthCode(req: Request, res: Response): Promise<vo
   res.json({
     token: record.token,
     refreshToken: record.refreshToken,
+    sessionId: record.sessionId,
     user: {
       id: String(record.userId),
       email: record.email,
@@ -312,6 +323,7 @@ export async function googleCallback(req: Request, res: Response): Promise<void>
       provider: 'google',
       providerUserId: googlePayload.sub,
       emailVerified: true,
+      sessionContext: getRequestSessionContext(req),
     });
 
     logger.info(`[googleCallback] Success: email=${googlePayload.email}`);
@@ -586,10 +598,14 @@ export async function socialLogin(req: Request, res: Response): Promise<void> {
 
   try {
     const user = await findOrCreateSocialUser(identity);
-    const { token: accessToken, refreshToken } = await issueTokensForUser(user);
+    const { token: accessToken, refreshToken, sessionId } = await issueTokensForUser(
+      user,
+      getRequestSessionContext(req),
+    );
     res.json({
       token: accessToken,
       refreshToken,
+      sessionId,
       user: { id: user._id, email: user.email, name: user.name },
     });
   } catch (err) {

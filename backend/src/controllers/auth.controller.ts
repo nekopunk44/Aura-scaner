@@ -1,9 +1,15 @@
 import { Request, Response } from 'express';
-import { User } from '../models/User';
-import { signToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
+
 import { AuthRequest } from '../middleware/auth.middleware';
 import { RefreshToken } from '../models/RefreshToken';
+import { User } from '../models/User';
 import { logger } from '../utils/logger';
+import {
+  getRequestSessionContext,
+  issueSessionTokens,
+  rotateSessionTokens,
+} from '../utils/sessionTokens';
+import { verifyRefreshToken } from '../utils/jwt';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -43,15 +49,20 @@ export async function register(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const user = await User.create({ email: trimmedEmail, password, name: trimmedName });
-    const token = signToken(String(user._id));
-    const refreshToken = signRefreshToken(String(user._id));
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    await RefreshToken.create({ userId: user._id, token: refreshToken, expiresAt });
+    const user = await User.create({
+      email: trimmedEmail,
+      password,
+      name: trimmedName,
+    });
+    const { token, refreshToken, sessionId } = await issueSessionTokens(
+      user._id,
+      getRequestSessionContext(req),
+    );
 
     res.status(201).json({
       token,
       refreshToken,
+      sessionId,
       user: { id: user._id, email: user.email, name: user.name },
     });
   } catch (err) {
@@ -75,14 +86,15 @@ export async function login(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const token = signToken(String(user._id));
-    const refreshToken = signRefreshToken(String(user._id));
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    await RefreshToken.create({ userId: user._id, token: refreshToken, expiresAt });
+    const { token, refreshToken, sessionId } = await issueSessionTokens(
+      user._id,
+      getRequestSessionContext(req),
+    );
 
     res.json({
       token,
       refreshToken,
+      sessionId,
       user: { id: user._id, email: user.email, name: user.name },
     });
   } catch (err) {
@@ -91,25 +103,44 @@ export async function login(req: Request, res: Response): Promise<void> {
   }
 }
 
-// POST /api/auth/change-password
-export async function changePassword(req: AuthRequest, res: Response): Promise<void> {
-  const { currentPassword, newPassword } = req.body;
+export async function changePassword(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
+  const { currentPassword, newPassword } = req.body as {
+    currentPassword?: string;
+    newPassword?: string;
+  };
+
   if (!currentPassword || !newPassword) {
     res.status(400).json({ message: 'Текущий и новый пароль обязательны' });
     return;
   }
+
   if (newPassword.length < 6) {
     res.status(400).json({ message: 'Новый пароль должен содержать минимум 6 символов' });
     return;
   }
+
   try {
     const user = await User.findById(req.userId);
     if (!user || !(await user.comparePassword(currentPassword))) {
       res.status(401).json({ message: 'Неверный текущий пароль' });
       return;
     }
+
     user.password = newPassword;
     await user.save();
+
+    if (req.sessionId) {
+      await RefreshToken.deleteMany({
+        userId: req.userId,
+        sessionId: { $ne: req.sessionId },
+      });
+    } else {
+      await RefreshToken.deleteMany({ userId: req.userId });
+    }
+
     res.json({ message: 'Пароль изменён' });
   } catch (err) {
     logger.error('[changePassword]', { err });
@@ -117,40 +148,46 @@ export async function changePassword(req: AuthRequest, res: Response): Promise<v
   }
 }
 
-// POST /api/auth/refresh
-export async function refreshAccessToken(req: Request, res: Response): Promise<void> {
-  const { refreshToken } = req.body;
+export async function refreshAccessToken(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const { refreshToken, sessionId } = req.body as {
+    refreshToken?: string;
+    sessionId?: string;
+  };
+
   if (!refreshToken) {
     res.status(400).json({ message: 'Refresh token обязателен' });
     return;
   }
+
   try {
     const payload = verifyRefreshToken(refreshToken);
-    // Один JOIN-запрос вместо двух round-trip'ов: лучше для p99 на mongo.
     const stored = await RefreshToken.findOne({
       token: refreshToken,
       userId: payload.id,
-    }).populate<{ userId: { _id: string; email: string; name: string } }>(
-      'userId',
-      '_id email name',
-    );
+    });
 
-    if (!stored || !stored.userId) {
+    if (!stored) {
       res.status(401).json({ message: 'Refresh token не найден или истёк' });
       return;
     }
 
-    const user = stored.userId;
+    const user = await User.findById(payload.id).select('_id email name');
+    if (!user) {
+      res.status(401).json({ message: 'Пользователь не найден' });
+      return;
+    }
+    const rotated = await rotateSessionTokens(stored, {
+      sessionId,
+      ...getRequestSessionContext(req),
+    });
 
-    // Ротация: удаляем старый, выдаём новый
-    await stored.deleteOne();
-    const newRefreshToken = signRefreshToken(String(user._id));
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    await RefreshToken.create({ userId: user._id, token: newRefreshToken, expiresAt });
-    const accessToken = signToken(String(user._id));
     res.json({
-      token: accessToken,
-      refreshToken: newRefreshToken,
+      token: rotated.token,
+      refreshToken: rotated.refreshToken,
+      sessionId: rotated.sessionId,
       user: { id: user._id, email: user.email, name: user.name },
     });
   } catch (err) {

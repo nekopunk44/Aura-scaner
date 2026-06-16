@@ -1,7 +1,14 @@
 import { Router } from 'express';
 import { register, login, changePassword, refreshAccessToken } from '../controllers/auth.controller';
 import { socialLogin, googleCallback, exchangeOAuthCode } from '../controllers/social.auth.controller';
-import { getProfile, updateProfile, logout } from '../controllers/profile.controller';
+import {
+  getProfile,
+  listSessions,
+  logout,
+  logoutOtherSessions,
+  revokeSession,
+  updateProfile,
+} from '../controllers/profile.controller';
 import { telegramLoginPage, telegramCallback, telegramExchange } from '../controllers/telegram.controller';
 import { vkLoginPage } from '../controllers/vk.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
@@ -31,6 +38,9 @@ router.get('/vk/login', vkLoginPage);
 // Профиль и logout — требуют авторизации
 router.get('/profile', authMiddleware, getProfile);
 router.patch('/profile', authMiddleware, updateProfile);
+router.get('/sessions', authMiddleware, listSessions);
+router.delete('/sessions/:sessionId', authMiddleware, revokeSession);
+router.post('/logout-others', authMiddleware, logoutOtherSessions);
 router.post('/logout', authMiddleware, logout);
 router.post('/change-password', authMiddleware, changePassword);
 

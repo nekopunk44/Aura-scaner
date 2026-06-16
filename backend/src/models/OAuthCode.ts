@@ -14,6 +14,7 @@ export interface IOAuthCode extends Document {
   userId: mongoose.Types.ObjectId;
   token: string;
   refreshToken: string;
+  sessionId: string;
   email: string;
   name: string;
   expiresAt: Date;
@@ -24,6 +25,7 @@ const oauthCodeSchema = new Schema<IOAuthCode>({
   userId: { type: Schema.Types.ObjectId, required: true, ref: 'User' },
   token: { type: String, required: true },
   refreshToken: { type: String, required: true },
+  sessionId: { type: String, required: true },
   email: { type: String, required: true },
   name: { type: String, default: '' },
   expiresAt: { type: Date, required: true },

@@ -16,6 +16,8 @@ import '../auth/login_screen.dart';
 import 'premium_screen.dart';
 import 'main_screen/remote_documents_screen.dart';
 import 'privacy_policy_screen.dart';
+import 'session_management_screen.dart';
+import 'signature/home_screen.dart' as signature;
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -716,6 +718,23 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
               onTap: _changePassword,
               isDark: isDark,
             ),
+            _SettingsTile(
+              icon: Icons.devices_outlined,
+              iconColor: const Color(0xFF2CA5E0),
+              title: Localizations.localeOf(context).languageCode == 'ru'
+                  ? 'Активные сессии'
+                  : 'Active sessions',
+              subtitle: Localizations.localeOf(context).languageCode == 'ru'
+                  ? 'Управление вошедшими устройствами'
+                  : 'Manage signed-in devices',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const SessionManagementScreen(),
+                ),
+              ),
+              isDark: isDark,
+            ),
           ])),
           const SizedBox(height: 12),
 
@@ -761,6 +780,17 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
               title: l10n.settingsCloud,
               subtitle: l10n.settingsCloudSubtitle,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RemoteDocumentsScreen())),
+              isDark: isDark,
+            ),
+            _SettingsTile(
+              icon: Icons.draw_outlined,
+              iconColor: Colors.teal,
+              title: l10n.featSignature,
+              subtitle: l10n.featSignatureSub,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const signature.HomeScreen()),
+              ),
               isDark: isDark,
             ),
           ])),
@@ -1149,4 +1179,3 @@ class _DialogButton extends StatelessWidget {
     );
   }
 }
-

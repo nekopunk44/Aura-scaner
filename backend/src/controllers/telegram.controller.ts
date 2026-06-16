@@ -56,6 +56,7 @@ export async function telegramExchange(req: Request, res: Response): Promise<voi
       provider: 'telegram',
       providerUserId: data.id,
       emailVerified: false,
+      sessionContext: { userAgent: req.get('user-agent') ?? undefined },
     });
     logger.info(`[telegramExchange] Success: tg_id=${data.id}`);
     res.json({ code });
@@ -235,6 +236,7 @@ export async function telegramCallback(req: Request, res: Response): Promise<voi
       provider: 'telegram',
       providerUserId: id,
       emailVerified: false,
+      sessionContext: { userAgent: req.get('user-agent') ?? undefined },
     });
   } catch (err) {
     logger.error('[telegramCallback] Error issuing OAuth code:', { err });

@@ -146,6 +146,7 @@ export function vkCallback(req: Request, res: Response): void {
                 provider: 'vk',
                 providerUserId: userId,
                 emailVerified: false,
+                sessionContext: { userAgent: req.get('user-agent') ?? undefined },
               })
                 .then((oneTimeCode) => {
                   logger.info(`[vkCallback] Success: vk_user_id=${userId}`);
