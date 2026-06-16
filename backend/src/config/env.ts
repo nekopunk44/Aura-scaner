@@ -26,15 +26,16 @@ export const env = {
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
   openRouterApiKey: process.env.OPENROUTER_API_KEY || '',
-  // Модель OpenRouter. ДОЛЖНА поддерживать vision (запросы содержат картинки).
-  // Проверено через openrouter.ai/api/v1/models (15.06.2026) — бесплатные
-  // vision-чат модели: google/gemma-4-31b-it:free (флагман),
-  // google/gemma-4-26b-a4b-it:free, nvidia/nemotron-nano-12b-v2-vl:free.
-  // Набор free-моделей у OpenRouter меняется: если дефолт отдаст 404
-  // "unavailable for free" — задайте рабочую через env OPENROUTER_MODEL без
-  // правок кода (реальную причину видно в поле detail ответа 502).
+  // Список моделей OpenRouter через запятую — контроллер пробует их по
+  // очереди и берёт первую, что ответит (фолбэк-цепочка). ВСЕ должны
+  // поддерживать vision (запросы содержат картинки). Набор free-моделей у
+  // OpenRouter волатилен и часть залочена на уровне аккаунта — цепочка даёт
+  // максимальный шанс, что хоть одна доступна. Переопределяется через env
+  // OPENROUTER_MODEL (один слаг или список через запятую).
+  // Проверено openrouter.ai/api/v1/models (15.06.2026).
   openRouterModel:
-    process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it:free',
+    process.env.OPENROUTER_MODEL ||
+    'google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free,nvidia/nemotron-nano-12b-v2-vl:free',
   // Apple Sign In
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'com.example.scannerAp',
   // Apple App Store Server API (для проверки receipt)

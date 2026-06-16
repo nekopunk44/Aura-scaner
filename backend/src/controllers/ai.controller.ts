@@ -5,9 +5,68 @@ import { AuthRequest } from '../middleware/auth.middleware';
 import { logger } from '../utils/logger';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-// Модель задаётся через env (OPENROUTER_MODEL). Должна быть vision-моделью —
-// запросы содержат image_url. Дефолт — google/gemma-3-27b-it:free.
-const AI_MODEL = env.openRouterModel;
+// Список моделей-кандидатов (env OPENROUTER_MODEL, через запятую). Должны
+// быть vision-моделями — запросы содержат image_url.
+const AI_MODELS = env.openRouterModel
+  .split(',')
+  .map((m) => m.trim())
+  .filter(Boolean);
+
+interface OpenRouterResult {
+  ok: boolean;
+  status: number;
+  text?: string;   // успешный ответ модели
+  detail?: string; // сообщение об ошибке от OpenRouter
+}
+
+/// Один запрос к OpenRouter с конкретной моделью.
+function callOpenRouter(model: string, messages: unknown): Promise<OpenRouterResult> {
+  return new Promise((resolve) => {
+    const payload = JSON.stringify({ model, messages });
+    const url = new URL(OPENROUTER_URL);
+    const proxyReq = https.request(
+      {
+        method: 'POST',
+        hostname: url.hostname,
+        path: url.pathname,
+        port: 443,
+        headers: {
+          Authorization: `Bearer ${env.openRouterApiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://aura-scanner.app',
+          'X-Title': 'Aura Scanner',
+          'Content-Length': Buffer.byteLength(payload),
+        },
+      },
+      (proxyRes) => {
+        let data = '';
+        proxyRes.on('data', (chunk) => { data += chunk; });
+        proxyRes.on('end', () => {
+          const status = proxyRes.statusCode ?? 0;
+          if (status !== 200) {
+            let detail = '';
+            try { detail = JSON.parse(data)?.error?.message ?? ''; } catch { /* not json */ }
+            resolve({ ok: false, status, detail });
+            return;
+          }
+          try {
+            const text = JSON.parse(data)?.choices?.[0]?.message?.content;
+            if (typeof text !== 'string') throw new Error('unexpected shape');
+            resolve({ ok: true, status, text });
+          } catch {
+            resolve({ ok: false, status, detail: 'Некорректный ответ от AI сервиса' });
+          }
+        });
+      },
+    );
+    proxyReq.on('error', (err) => {
+      logger.error('[analyzeDocument] request error', { err, model });
+      resolve({ ok: false, status: 0, detail: 'Не удалось связаться с AI сервисом' });
+    });
+    proxyReq.write(payload);
+    proxyReq.end();
+  });
+}
 
 export async function analyzeDocument(req: AuthRequest, res: Response): Promise<void> {
   if (!env.openRouterApiKey) {
@@ -21,53 +80,20 @@ export async function analyzeDocument(req: AuthRequest, res: Response): Promise<
     return;
   }
 
-  const payload = JSON.stringify({ model: AI_MODEL, messages });
-
-  const options = {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${env.openRouterApiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://aura-scanner.app',
-      'X-Title': 'Aura Scanner',
-      'Content-Length': Buffer.byteLength(payload),
-    },
-  };
-
-  const url = new URL(OPENROUTER_URL);
-  const reqOptions = { ...options, hostname: url.hostname, path: url.pathname, port: 443 };
-
-  const proxyReq = https.request(reqOptions, (proxyRes) => {
-    let data = '';
-    proxyRes.on('data', (chunk) => { data += chunk; });
-    proxyRes.on('end', () => {
-      if (proxyRes.statusCode !== 200) {
-        logger.warn('[analyzeDocument] OpenRouter error', { status: proxyRes.statusCode, body: data });
-        // Пробрасываем сообщение OpenRouter (напр. «model unavailable for
-        // free…») — помогает понять причину без логов Railway.
-        let detail = '';
-        try { detail = JSON.parse(data)?.error?.message ?? ''; } catch { /* not json */ }
-        res.status(502).json({ message: 'Ошибка AI сервиса', detail });
-        return;
-      }
-      try {
-        const parsed = JSON.parse(data);
-        const text = parsed?.choices?.[0]?.message?.content;
-        if (typeof text !== 'string') throw new Error('unexpected shape');
-        res.json({ result: text });
-      } catch {
-        res.status(502).json({ message: 'Некорректный ответ от AI сервиса' });
-      }
-    });
-  });
-
-  proxyReq.on('error', (err) => {
-    if (!res.headersSent) {
-      logger.error('[analyzeDocument] request error', { err });
-      res.status(502).json({ message: 'Не удалось связаться с AI сервисом' });
+  // Фолбэк-цепочка: пробуем модели по очереди, берём первую успешную.
+  // Так бесшовно переживаем перевод free-моделей в платные / залоченные.
+  let lastDetail = '';
+  for (const model of AI_MODELS) {
+    const result = await callOpenRouter(model, messages);
+    if (result.ok && result.text) {
+      res.json({ result: result.text });
+      return;
     }
-  });
+    lastDetail = result.detail ?? '';
+    logger.warn('[analyzeDocument] model failed, trying next', {
+      model, status: result.status, detail: lastDetail,
+    });
+  }
 
-  proxyReq.write(payload);
-  proxyReq.end();
+  res.status(502).json({ message: 'Ошибка AI сервиса', detail: lastDetail });
 }
