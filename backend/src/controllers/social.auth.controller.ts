@@ -2,20 +2,38 @@ import { Request, Response } from 'express';
 import https from 'https';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { User } from '../models/User';
+import { IUser, User } from '../models/User';
 import { signToken, signRefreshToken } from '../utils/jwt';
 import { RefreshToken } from '../models/RefreshToken';
 import { OAuthCode } from '../models/OAuthCode';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { exchangeInstagramCode } from './telegram.controller';
+import {
+  buildInstagramRedirectUri,
+  buildOAuthCodeDeepLink,
+  buildOAuthErrorDeepLink,
+} from '../utils/oauth.links';
+import { TelegramAuthData, verifyTelegramAuthData } from '../utils/telegramAuth';
 
 const OAUTH_CODE_TTL_MS = 5 * 60 * 1000;
 
-/**
- * Создаёт одноразовый код для безопасного редиректа в мобильное приложение.
- * Токены НЕ попадают в URL — клиент обменяет код через POST /api/auth/oauth/exchange.
- */
+type SocialProvider = 'google' | 'apple' | 'vk' | 'telegram' | 'instagram';
+type SocialProviderField =
+  | 'googleSub'
+  | 'appleSub'
+  | 'vkUserId'
+  | 'telegramId'
+  | 'instagramUserId';
+
+interface SocialIdentity {
+  provider: SocialProvider;
+  providerUserId: string;
+  email: string;
+  emailVerified: boolean;
+  name: string;
+}
+
 export async function createOAuthCode(params: {
   userId: string;
   token: string;
@@ -36,46 +54,109 @@ export async function createOAuthCode(params: {
   return code;
 }
 
-/**
- * Находит или создаёт пользователя по email, выпускает JWT + refresh,
- * сохраняет refresh в БД и возвращает одноразовый OAuth-code.
- *
- * Используется в OAuth callback-ах (Google, VK, Telegram) — никаких токенов
- * в редирект-URL не попадает, клиент обменивает code через /oauth/exchange.
- */
-export async function loginOrCreateUserAndIssueCode(params: {
-  email: string;
-  name: string;
-}): Promise<string> {
-  let user = await User.findOne({ email: params.email });
-  if (!user) {
-    const randomPassword = crypto.randomBytes(32).toString('hex');
-    user = await User.create({
-      email: params.email,
-      name: params.name,
-      password: randomPassword,
-    });
+function getProviderField(provider: SocialProvider): SocialProviderField {
+  switch (provider) {
+    case 'google':
+      return 'googleSub';
+    case 'apple':
+      return 'appleSub';
+    case 'vk':
+      return 'vkUserId';
+    case 'telegram':
+      return 'telegramId';
+    case 'instagram':
+      return 'instagramUserId';
+  }
+}
+
+async function findOrCreateSocialUser(identity: SocialIdentity): Promise<IUser> {
+  const identityField = getProviderField(identity.provider);
+  const canLinkByDeterministicPlaceholder =
+    !identity.emailVerified && identity.email.endsWith('.placeholder');
+
+  let user = await User.findOne({ [identityField]: identity.providerUserId });
+  if (user) {
+    if (
+      identity.emailVerified &&
+      user.email.endsWith('.placeholder') &&
+      user.email !== identity.email
+    ) {
+      user.email = identity.email;
+      await user.save();
+    }
+    return user;
   }
 
-  const jwtToken = signToken(String(user._id));
+  if (identity.emailVerified || canLinkByDeterministicPlaceholder) {
+    user = await User.findOne({ email: identity.email });
+    if (user) {
+      const currentValue = user.get(identityField) as string | undefined;
+      if (currentValue && currentValue !== identity.providerUserId) {
+        throw new Error(`Provider ${identity.provider} already linked to another identity`);
+      }
+      user.set(identityField, identity.providerUserId);
+      await user.save();
+      return user;
+    }
+  }
+
+  const randomPassword = crypto.randomBytes(32).toString('hex');
+  return User.create({
+    email: identity.email,
+    name: identity.name,
+    password: randomPassword,
+    [identityField]: identity.providerUserId,
+  });
+}
+
+async function issueTokensForUser(user: IUser): Promise<{
+  token: string;
+  refreshToken: string;
+}> {
+  const token = signToken(String(user._id));
   const refreshToken = signRefreshToken(String(user._id));
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   await RefreshToken.create({ userId: user._id, token: refreshToken, expiresAt });
+  return { token, refreshToken };
+}
 
+export async function loginOrCreateUserAndIssueCode(params: {
+  email: string;
+  name: string;
+  provider?: SocialProvider;
+  providerUserId?: string;
+  emailVerified?: boolean;
+}): Promise<string> {
+  const user =
+    params.provider && params.providerUserId
+      ? await findOrCreateSocialUser({
+          provider: params.provider,
+          providerUserId: params.providerUserId,
+          email: params.email,
+          emailVerified: params.emailVerified ?? false,
+          name: params.name,
+        })
+      : await (async () => {
+          let existing = await User.findOne({ email: params.email });
+          if (existing) return existing;
+          const randomPassword = crypto.randomBytes(32).toString('hex');
+          return User.create({
+            email: params.email,
+            name: params.name,
+            password: randomPassword,
+          });
+        })();
+
+  const { token, refreshToken } = await issueTokensForUser(user);
   return createOAuthCode({
     userId: String(user._id),
-    token: jwtToken,
+    token,
     refreshToken,
     email: user.email,
     name: user.name ?? '',
   });
 }
 
-/**
- * POST /api/auth/oauth/exchange
- * Body: { code }
- * Возвращает {token, refreshToken, user} и удаляет одноразовый код.
- */
 export async function exchangeOAuthCode(req: Request, res: Response): Promise<void> {
   const { code } = req.body as { code?: string };
   if (!code || typeof code !== 'string') {
@@ -104,18 +185,17 @@ export async function exchangeOAuthCode(req: Request, res: Response): Promise<vo
   });
 }
 
-const CALLBACK_SCHEME = 'aurascanner';
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Обмен Google auth code на токены (server-side Web application flow)
-// ──────────────────────────────────────────────────────────────────────────────
 function exchangeGoogleCode(
   code: string,
   redirectUri: string,
 ): Promise<{ idToken: string }> {
   return new Promise((resolve, reject) => {
     if (!env.googleClientId || !env.googleClientSecret) {
-      reject(new Error('Google OAuth не настроен. Задайте GOOGLE_CLIENT_ID и GOOGLE_CLIENT_SECRET в .env'));
+      reject(
+        new Error(
+          'Google OAuth не настроен. Задайте GOOGLE_CLIENT_ID и GOOGLE_CLIENT_SECRET в .env',
+        ),
+      );
       return;
     }
 
@@ -127,52 +207,88 @@ function exchangeGoogleCode(
       grant_type: 'authorization_code',
     }).toString();
 
-    const options = {
-      hostname: 'oauth2.googleapis.com',
-      path: '/token',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Content-Length': Buffer.byteLength(body),
+    const request = https.request(
+      {
+        hostname: 'oauth2.googleapis.com',
+        path: '/token',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(body),
+        },
       },
-    };
-
-    const req = https.request(options, (res) => {
-      let raw = '';
-      res.on('data', (chunk) => (raw += chunk));
-      res.on('end', () => {
-        try {
-          const data = JSON.parse(raw) as {
-            id_token?: string;
-            error?: string;
-            error_description?: string;
-          };
-          if (!data.id_token) {
-            reject(new Error(data.error_description ?? data.error ?? 'Google не вернул id_token'));
-            return;
+      (googleRes) => {
+        let raw = '';
+        googleRes.on('data', (chunk) => (raw += chunk));
+        googleRes.on('end', () => {
+          try {
+            const data = JSON.parse(raw) as {
+              id_token?: string;
+              error?: string;
+              error_description?: string;
+            };
+            if (!data.id_token) {
+              reject(
+                new Error(data.error_description ?? data.error ?? 'Google не вернул id_token'),
+              );
+              return;
+            }
+            resolve({ idToken: data.id_token });
+          } catch {
+            reject(new Error('Ошибка разбора ответа Google'));
           }
-          resolve({ idToken: data.id_token });
-        } catch {
-          reject(new Error('Ошибка разбора ответа Google'));
-        }
-      });
-    });
+        });
+      },
+    );
 
-    req.on('error', reject);
-    req.write(body);
-    req.end();
+    request.on('error', reject);
+    request.write(body);
+    request.end();
   });
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// GET /auth/google/callback — принимает code от Google, выдаёт JWT через deep link
-// ──────────────────────────────────────────────────────────────────────────────
+function verifyGoogleToken(
+  idToken: string,
+): Promise<{ sub: string; email: string; name: string; emailVerified: boolean }> {
+  return new Promise((resolve, reject) => {
+    const url = `https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
+    https
+      .get(url, (googleRes) => {
+        let raw = '';
+        googleRes.on('data', (chunk) => (raw += chunk));
+        googleRes.on('end', () => {
+          try {
+            const payload = JSON.parse(raw) as Record<string, string>;
+            if (payload.error_description || !payload.email) {
+              reject(new Error(payload.error_description ?? 'Invalid Google token'));
+              return;
+            }
+            if (!payload.sub) {
+              reject(new Error('Google token не содержит sub'));
+              return;
+            }
+            resolve({
+              sub: payload.sub,
+              email: payload.email,
+              name: payload.name ?? payload.email.split('@')[0],
+              emailVerified:
+                payload.email_verified === 'true' || payload.email_verified === '1',
+            });
+          } catch {
+            reject(new Error('Failed to parse Google tokeninfo response'));
+          }
+        });
+      })
+      .on('error', reject);
+  });
+}
+
 export async function googleCallback(req: Request, res: Response): Promise<void> {
   const { code, error } = req.query as Record<string, string | undefined>;
 
   if (error) {
     logger.warn(`[googleCallback] OAuth error: ${error}`);
-    res.redirect(302, `${CALLBACK_SCHEME}://oauth2redirect?error=${encodeURIComponent(error)}`);
+    res.redirect(302, buildOAuthErrorDeepLink(error));
     return;
   }
 
@@ -186,57 +302,27 @@ export async function googleCallback(req: Request, res: Response): Promise<void>
   try {
     const { idToken } = await exchangeGoogleCode(code, redirectUri);
     const googlePayload = await verifyGoogleToken(idToken);
+    if (!googlePayload.emailVerified) {
+      throw new Error('Google account email is not verified');
+    }
 
     const oneTimeCode = await loginOrCreateUserAndIssueCode({
-      email: googlePayload.email,
+      email: googlePayload.email.toLowerCase().trim(),
       name: googlePayload.name,
+      provider: 'google',
+      providerUserId: googlePayload.sub,
+      emailVerified: true,
     });
 
     logger.info(`[googleCallback] Success: email=${googlePayload.email}`);
-    res.redirect(
-      302,
-      `${CALLBACK_SCHEME}://oauth2redirect?code=${encodeURIComponent(oneTimeCode)}`,
-    );
+    res.redirect(302, buildOAuthCodeDeepLink(oneTimeCode));
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Ошибка авторизации Google';
     logger.error('[googleCallback] Error:', { err });
-    res.redirect(302, `${CALLBACK_SCHEME}://oauth2redirect?error=${encodeURIComponent(message)}`);
+    res.redirect(302, buildOAuthErrorDeepLink(message));
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Вспомогательная функция: верификация Google id_token через tokeninfo endpoint
-// ──────────────────────────────────────────────────────────────────────────────
-function verifyGoogleToken(idToken: string): Promise<{ email: string; name: string }> {
-  return new Promise((resolve, reject) => {
-    const url = `https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
-    https
-      .get(url, (res) => {
-        let raw = '';
-        res.on('data', (chunk) => (raw += chunk));
-        res.on('end', () => {
-          try {
-            const payload = JSON.parse(raw) as Record<string, string>;
-            if (payload.error_description || !payload.email) {
-              reject(new Error(payload.error_description ?? 'Invalid Google token'));
-              return;
-            }
-            resolve({
-              email: payload.email,
-              name: payload.name ?? payload.email.split('@')[0],
-            });
-          } catch {
-            reject(new Error('Failed to parse Google tokeninfo response'));
-          }
-        });
-      })
-      .on('error', reject);
-  });
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Верификация Apple identity token (JWT) через публичные ключи Apple
-// ──────────────────────────────────────────────────────────────────────────────
 interface AppleJwk {
   kty: string;
   kid: string;
@@ -246,25 +332,25 @@ interface AppleJwk {
   e: string;
 }
 
-let _appleKeysCache: { keys: AppleJwk[]; fetchedAt: number } | null = null;
-const APPLE_KEYS_TTL_MS = 60 * 60 * 1000; // 1 час
+let appleKeysCache: { keys: AppleJwk[]; fetchedAt: number } | null = null;
+const APPLE_KEYS_TTL_MS = 60 * 60 * 1000;
 
 function fetchAppleKeys(): Promise<AppleJwk[]> {
   return new Promise((resolve, reject) => {
     https
-      .get('https://appleid.apple.com/auth/keys', (res) => {
+      .get('https://appleid.apple.com/auth/keys', (appleRes) => {
         let raw = '';
-        res.on('data', (chunk) => (raw += chunk));
-        res.on('end', () => {
+        appleRes.on('data', (chunk) => (raw += chunk));
+        appleRes.on('end', () => {
           try {
             const data = JSON.parse(raw) as { keys: AppleJwk[] };
-            if (!data.keys || !Array.isArray(data.keys)) {
-              reject(new Error('Apple вернул некорректный список ключей'));
+            if (!Array.isArray(data.keys)) {
+              reject(new Error('Apple returned invalid JWKS payload'));
               return;
             }
             resolve(data.keys);
           } catch {
-            reject(new Error('Ошибка разбора ответа Apple JWKS'));
+            reject(new Error('Failed to parse Apple JWKS response'));
           }
         });
       })
@@ -274,19 +360,18 @@ function fetchAppleKeys(): Promise<AppleJwk[]> {
 
 async function getAppleKey(kid: string): Promise<AppleJwk> {
   const now = Date.now();
-  if (!_appleKeysCache || now - _appleKeysCache.fetchedAt > APPLE_KEYS_TTL_MS) {
-    const keys = await fetchAppleKeys();
-    _appleKeysCache = { keys, fetchedAt: now };
+  if (!appleKeysCache || now - appleKeysCache.fetchedAt > APPLE_KEYS_TTL_MS) {
+    appleKeysCache = { keys: await fetchAppleKeys(), fetchedAt: now };
   }
-  let key = _appleKeysCache.keys.find((k) => k.kid === kid);
+
+  let key = appleKeysCache.keys.find((item) => item.kid === kid);
   if (!key) {
-    // Возможно, ключ ротировался — обновим кеш и попробуем ещё раз
-    const keys = await fetchAppleKeys();
-    _appleKeysCache = { keys, fetchedAt: now };
-    key = keys.find((k) => k.kid === kid);
+    appleKeysCache = { keys: await fetchAppleKeys(), fetchedAt: now };
+    key = appleKeysCache.keys.find((item) => item.kid === kid);
   }
+
   if (!key) {
-    throw new Error(`Apple public key с kid=${kid} не найден`);
+    throw new Error(`Apple public key with kid=${kid} not found`);
   }
   return key;
 }
@@ -297,7 +382,6 @@ function verifyAppleToken(
   return new Promise((resolve, reject) => {
     (async () => {
       try {
-        // Декодируем header чтобы получить kid
         const decodedHeader = jwt.decode(identityToken, { complete: true });
         if (
           !decodedHeader ||
@@ -309,8 +393,6 @@ function verifyAppleToken(
         }
 
         const jwk = await getAppleKey(decodedHeader.header.kid);
-
-        // Node.js умеет напрямую конвертировать JWK в PublicKey
         const publicKey = crypto.createPublicKey({
           key: jwk as unknown as crypto.JsonWebKey,
           format: 'jwk',
@@ -329,16 +411,10 @@ function verifyAppleToken(
         }
 
         const emailVerifiedRaw = payload['email_verified'];
-        const emailVerified =
-          emailVerifiedRaw === true || emailVerifiedRaw === 'true';
-
         resolve({
           sub: payload.sub,
-          email:
-            typeof payload['email'] === 'string'
-              ? (payload['email'] as string)
-              : undefined,
-          emailVerified,
+          email: typeof payload['email'] === 'string' ? payload['email'] : undefined,
+          emailVerified: emailVerifiedRaw === true || emailVerifiedRaw === 'true',
         });
       } catch (err) {
         reject(err instanceof Error ? err : new Error(String(err)));
@@ -347,17 +423,14 @@ function verifyAppleToken(
   });
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Верификация VK access_token через users.get API
-// ──────────────────────────────────────────────────────────────────────────────
 function verifyVkToken(accessToken: string): Promise<{ vkId: string; name: string }> {
   return new Promise((resolve, reject) => {
     const url = `https://api.vk.com/method/users.get?access_token=${encodeURIComponent(accessToken)}&v=5.131`;
     https
-      .get(url, (res) => {
+      .get(url, (vkRes) => {
         let raw = '';
-        res.on('data', (chunk) => (raw += chunk));
-        res.on('end', () => {
+        vkRes.on('data', (chunk) => (raw += chunk));
+        vkRes.on('end', () => {
           try {
             const payload = JSON.parse(raw) as {
               error?: { error_msg: string };
@@ -381,67 +454,11 @@ function verifyVkToken(accessToken: string): Promise<{ vkId: string; name: strin
   });
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Верификация Telegram Login Widget hash по алгоритму Telegram
-// ──────────────────────────────────────────────────────────────────────────────
-interface TelegramAuthData {
-  id: string | number;
-  hash: string;
-  auth_date: string | number;
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-}
-
-function verifyTelegramHash(data: TelegramAuthData): boolean {
-  // Если токен не настроен — пропускаем верификацию (режим разработки)
-  if (!env.telegramBotToken) {
-    return true;
-  }
-
-  const { hash, ...rest } = data;
-
-  // Формируем check_string: отсортированные "key=value" через \n
-  const checkString = Object.entries(rest)
-    .filter(([, v]) => v !== undefined && v !== null)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k}=${v}`)
-    .join('\n');
-
-  // secret_key = SHA256(bot_token)
-  const secretKey = crypto.createHash('sha256').update(env.telegramBotToken).digest();
-
-  // expected_hash = HMAC-SHA256(check_string, secret_key)
-  const expectedHash = crypto
-    .createHmac('sha256', secretKey)
-    .update(checkString)
-    .digest('hex');
-
-  return expectedHash === hash;
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// POST /auth/social
-//
-// Body для google:
-//   { provider: 'google', token: '<id_token>', name?: string }
-//
-// Body для vk:
-//   { provider: 'vk', token: '<access_token>', email?: string, name?: string }
-//
-// Body для telegram:
-//   { provider: 'telegram', token: '<any>', id, hash, auth_date, first_name?, last_name?, username? }
-//
-// Body для instagram:
-//   { provider: 'instagram', token: '<code>', email: string, name?: string }
-// ──────────────────────────────────────────────────────────────────────────────
 export async function socialLogin(req: Request, res: Response): Promise<void> {
   const {
     provider,
     token,
-    email: bodyEmail,
     name: bodyName,
-    // Telegram-specific fields
     id: tgId,
     hash: tgHash,
     auth_date: tgAuthDate,
@@ -451,7 +468,6 @@ export async function socialLogin(req: Request, res: Response): Promise<void> {
   } = req.body as {
     provider?: string;
     token?: string;
-    email?: string;
     name?: string;
     id?: string | number;
     hash?: string;
@@ -461,14 +477,19 @@ export async function socialLogin(req: Request, res: Response): Promise<void> {
     username?: string;
   };
 
-  // ── Валидация входных данных ─────────────────────────────────────────────
   if (!provider) {
     res.status(400).json({ message: 'Поле provider обязательно' });
     return;
   }
 
-  const allowedProviders = ['google', 'vk', 'telegram', 'instagram', 'apple'];
-  if (!allowedProviders.includes(provider)) {
+  const allowedProviders: SocialProvider[] = [
+    'google',
+    'vk',
+    'telegram',
+    'instagram',
+    'apple',
+  ];
+  if (!allowedProviders.includes(provider as SocialProvider)) {
     res.status(400).json({ message: `Неизвестный провайдер: ${provider}` });
     return;
   }
@@ -478,45 +499,50 @@ export async function socialLogin(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  let verifiedEmail: string;
-  let verifiedName: string;
+  let identity: SocialIdentity;
 
   try {
     if (provider === 'google') {
-      // ── Google: верифицируем id_token через googleapis ────────────────────
       const googlePayload = await verifyGoogleToken(token!);
-      verifiedEmail = googlePayload.email;
-      verifiedName = bodyName ?? googlePayload.name;
-
-    } else if (provider === 'apple') {
-      // ── Apple: верифицируем identity token через Apple public keys ───────
-      const applePayload = await verifyAppleToken(token!);
-      // Apple даёт email только при первом логине; при последующих — придёт sub.
-      // Используем email если есть, иначе stable placeholder по sub
-      if (applePayload.email && applePayload.emailVerified) {
-        verifiedEmail = applePayload.email.toLowerCase().trim();
-      } else if (bodyEmail) {
-        verifiedEmail = bodyEmail.toLowerCase().trim();
-      } else {
-        // Apple sub содержит точку, оставляем — это валидно для email local-part
-        verifiedEmail = `apple_${applePayload.sub}@apple.placeholder`;
+      if (!googlePayload.emailVerified) {
+        throw new Error('Google account email is not verified');
       }
-      verifiedName = bodyName ?? verifiedEmail.split('@')[0];
-
+      identity = {
+        provider: 'google',
+        providerUserId: googlePayload.sub,
+        email: googlePayload.email.toLowerCase().trim(),
+        emailVerified: true,
+        name: bodyName ?? googlePayload.name,
+      };
+    } else if (provider === 'apple') {
+      const applePayload = await verifyAppleToken(token!);
+      const verifiedEmail =
+        applePayload.email && applePayload.emailVerified
+          ? applePayload.email.toLowerCase().trim()
+          : `apple_${applePayload.sub}@apple.placeholder`;
+      identity = {
+        provider: 'apple',
+        providerUserId: applePayload.sub,
+        email: verifiedEmail,
+        emailVerified: Boolean(applePayload.email && applePayload.emailVerified),
+        name: bodyName ?? verifiedEmail.split('@')[0],
+      };
     } else if (provider === 'vk') {
-      // ── VK: серверная верификация через users.get API ─────────────────────
-      // Email у VK нельзя получить через API без явного разрешения пользователя,
-      // поэтому принимаем email из тела или генерируем placeholder по vkId
       const vkPayload = await verifyVkToken(token!);
-      verifiedEmail = bodyEmail
-        ? bodyEmail.toLowerCase().trim()
-        : `vk_${vkPayload.vkId}@vk.placeholder`;
-      verifiedName = bodyName ?? vkPayload.name;
-
+      identity = {
+        provider: 'vk',
+        providerUserId: vkPayload.vkId,
+        email: `vk_${vkPayload.vkId}@vk.placeholder`,
+        emailVerified: false,
+        name: bodyName ?? vkPayload.name,
+      };
     } else if (provider === 'telegram') {
-      // ── Telegram: HMAC-SHA256 верификация по алгоритму Telegram Login Widget
       if (!tgId || !tgHash || !tgAuthDate) {
         res.status(400).json({ message: 'Для Telegram необходимы поля id, hash, auth_date' });
+        return;
+      }
+      if (!env.telegramBotToken) {
+        res.status(503).json({ message: 'Telegram login не настроен' });
         return;
       }
 
@@ -529,27 +555,28 @@ export async function socialLogin(req: Request, res: Response): Promise<void> {
         ...(tgUsername && { username: tgUsername }),
       };
 
-      if (!verifyTelegramHash(tgData)) {
-        res.status(401).json({ message: 'Недействительная подпись Telegram' });
+      if (!verifyTelegramAuthData(tgData, env.telegramBotToken)) {
+        res.status(401).json({ message: 'Недействительная или устаревшая подпись Telegram' });
         return;
       }
 
-      // Telegram не даёт email — принимаем из тела или генерируем placeholder
-      verifiedEmail = bodyEmail
-        ? bodyEmail.toLowerCase().trim()
-        : `tg_${tgId}@telegram.placeholder`;
-
       const fullName = [tgFirstName, tgLastName].filter(Boolean).join(' ');
-      verifiedName = bodyName ?? (fullName || (tgUsername ?? String(tgId)));
-
+      identity = {
+        provider: 'telegram',
+        providerUserId: String(tgId),
+        email: `tg_${tgId}@telegram.placeholder`,
+        emailVerified: false,
+        name: bodyName ?? (fullName || (tgUsername ?? String(tgId))),
+      };
     } else {
-      // ── Instagram: обмениваем code на access_token через сервер ──────────
-      const redirectUri = 'com.example.scanner_ap:/oauth2redirect';
-      const igProfile = await exchangeInstagramCode(token!, redirectUri);
-      verifiedEmail = bodyEmail
-        ? bodyEmail.toLowerCase().trim()
-        : `ig_${igProfile.userId}@instagram.placeholder`;
-      verifiedName = bodyName ?? igProfile.username;
+      const igProfile = await exchangeInstagramCode(token!, buildInstagramRedirectUri());
+      identity = {
+        provider: 'instagram',
+        providerUserId: igProfile.userId,
+        email: `ig_${igProfile.userId}@instagram.placeholder`,
+        emailVerified: false,
+        name: bodyName ?? igProfile.username,
+      };
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Ошибка верификации токена';
@@ -557,28 +584,11 @@ export async function socialLogin(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // ── Найти или создать пользователя ──────────────────────────────────────
   try {
-    let user = await User.findOne({ email: verifiedEmail });
-
-    if (!user) {
-      // Генерируем случайный пароль — пользователь всё равно будет логиниться
-      // через OAuth, прямой пароль ему не нужен
-      const randomPassword = crypto.randomBytes(32).toString('hex');
-      user = await User.create({
-        email: verifiedEmail,
-        name: verifiedName,
-        password: randomPassword,
-      });
-    }
-
-    const jwtToken = signToken(String(user._id));
-    const refreshToken = signRefreshToken(String(user._id));
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    await RefreshToken.create({ userId: user._id, token: refreshToken, expiresAt });
-
+    const user = await findOrCreateSocialUser(identity);
+    const { token: accessToken, refreshToken } = await issueTokensForUser(user);
     res.json({
-      token: jwtToken,
+      token: accessToken,
       refreshToken,
       user: { id: user._id, email: user.email, name: user.name },
     });

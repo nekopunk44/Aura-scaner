@@ -4,11 +4,14 @@ import crypto from 'crypto';
 import { env } from '../config/env';
 import { loginOrCreateUserAndIssueCode } from './social.auth.controller';
 import { logger } from '../utils/logger';
+import { buildAndroidIntentUri, buildOAuthCodeDeepLink } from '../utils/oauth.links';
 
-const CALLBACK_SCHEME = 'aurascanner';
-
-function base64url(buf: Buffer): string {
-  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+function base64url(buffer: Buffer): string {
+  return buffer
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
 }
 
 function pkce(): { verifier: string; challenge: string } {
@@ -17,7 +20,6 @@ function pkce(): { verifier: string; challenge: string } {
   return { verifier, challenge };
 }
 
-// GET /auth/vk/login
 export function vkLoginPage(req: Request, res: Response): void {
   if (!env.vkAppId) {
     res.status(503).send('<h3>VK login не настроен. Задайте VK_APP_ID в .env</h3>');
@@ -27,8 +29,6 @@ export function vkLoginPage(req: Request, res: Response): void {
   const origin = `${req.protocol}://${req.headers.host}`;
   const callbackUrl = `${origin}/vk_id_redirect`;
   const { verifier, challenge } = pkce();
-
-  // Передаём verifier в state (base64url) — PKCE не требует секретности verifier
   const state = base64url(Buffer.from(verifier));
 
   const authUrl = new URL('https://id.vk.com/authorize');
@@ -43,23 +43,19 @@ export function vkLoginPage(req: Request, res: Response): void {
   res.redirect(302, authUrl.toString());
 }
 
-// GET /auth/vk/callback?code=...&state=...
 export function vkCallback(req: Request, res: Response): void {
   const { code, state, error, error_description } = req.query as Record<string, string>;
 
   if (error || !code || !state) {
-    const msg = error_description ?? error ?? 'Авторизация отменена';
-    res.status(400).send(`<h3>${msg}</h3>`);
+    const message = error_description ?? error ?? 'Авторизация отменена';
+    res.status(400).send(`<h3>${message}</h3>`);
     return;
   }
 
   const origin = `${req.protocol}://${req.headers.host}`;
   const callbackUrl = `${origin}/vk_id_redirect`;
-
-  // Восстанавливаем verifier из state
   const verifier = Buffer.from(state, 'base64').toString('utf-8');
 
-  // Обмениваем code на access_token через id.vk.com/oauth2/auth
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
@@ -68,78 +64,96 @@ export function vkCallback(req: Request, res: Response): void {
     client_id: env.vkAppId,
   }).toString();
 
-  const options = {
-    hostname: 'id.vk.com',
-    path: '/oauth2/auth',
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Content-Length': Buffer.byteLength(body),
+  const tokenReq = https.request(
+    {
+      hostname: 'id.vk.com',
+      path: '/oauth2/auth',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body),
+      },
     },
-  };
+    (tokenRes) => {
+      let raw = '';
+      tokenRes.on('data', (chunk) => (raw += chunk));
+      tokenRes.on('end', () => {
+        let tokenData: { access_token?: string; error?: string };
+        try {
+          tokenData = JSON.parse(raw);
+        } catch {
+          res.status(500).send('<h3>Ошибка разбора ответа VK</h3>');
+          return;
+        }
 
-  const tokenReq = https.request(options, (tokenRes) => {
-    let raw = '';
-    tokenRes.on('data', (chunk) => (raw += chunk));
-    tokenRes.on('end', () => {
-      let tokenData: { access_token?: string; email?: string; error?: string };
-      try {
-        tokenData = JSON.parse(raw);
-      } catch {
-        res.status(500).send('<h3>Ошибка разбора ответа VK</h3>');
-        return;
-      }
+        if (!tokenData.access_token) {
+          res
+            .status(400)
+            .send(`<h3>VK не вернул токен: ${tokenData.error ?? 'unknown'}</h3>`);
+          return;
+        }
 
-      if (!tokenData.access_token) {
-        res.status(400).send(`<h3>VK не вернул токен: ${tokenData.error ?? 'unknown'}</h3>`);
-        return;
-      }
+        const profileBody =
+          `access_token=${encodeURIComponent(tokenData.access_token)}` +
+          `&client_id=${encodeURIComponent(env.vkAppId)}`;
+        const profileReq = https.request(
+          {
+            hostname: 'id.vk.com',
+            path: '/oauth2/user_info',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Content-Length': Buffer.byteLength(profileBody),
+            },
+          },
+          (profileRes) => {
+            let profileRaw = '';
+            profileRes.on('data', (chunk) => (profileRaw += chunk));
+            profileRes.on('end', () => {
+              let profile: {
+                user?: {
+                  user_id?: string;
+                  first_name?: string;
+                  last_name?: string;
+                };
+                error?: string;
+              };
+              try {
+                profile = JSON.parse(profileRaw);
+              } catch {
+                res.status(500).send('<h3>Ошибка разбора профиля VK</h3>');
+                return;
+              }
 
-      // Получаем профиль пользователя
-      const profileUrl = 'https://id.vk.com/oauth2/user_info';
-      const profileBody = `access_token=${encodeURIComponent(tokenData.access_token)}&client_id=${encodeURIComponent(env.vkAppId)}`;
-      const profileOpts = {
-        hostname: 'id.vk.com',
-        path: '/oauth2/user_info',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Content-Length': Buffer.byteLength(profileBody),
-        },
-      };
+              const vkUser = profile.user;
+              if (!vkUser?.user_id) {
+                res
+                  .status(400)
+                  .send(
+                    `<h3>Не удалось получить профиль VK: ${profile.error ?? 'unknown'}</h3>`,
+                  );
+                return;
+              }
 
-      const profileReq = https.request(profileOpts, (profileRes) => {
-        let profileRaw = '';
-        profileRes.on('data', (c) => (profileRaw += c));
-        profileRes.on('end', () => {
-          let profile: { user?: { user_id?: string; first_name?: string; last_name?: string; email?: string }; error?: string };
-          try {
-            profile = JSON.parse(profileRaw);
-          } catch {
-            res.status(500).send('<h3>Ошибка разбора профиля VK</h3>');
-            return;
-          }
+              const userId = String(vkUser.user_id);
+              const name =
+                [vkUser.first_name, vkUser.last_name].filter(Boolean).join(' ') ||
+                `vk_${userId}`;
 
-          const vkUser = profile.user;
-          if (!vkUser?.user_id) {
-            res.status(400).send(`<h3>Не удалось получить профиль VK: ${profile.error ?? 'unknown'}</h3>`);
-            return;
-          }
+              loginOrCreateUserAndIssueCode({
+                email: `vk_${userId}@vk.placeholder`,
+                name,
+                provider: 'vk',
+                providerUserId: userId,
+                emailVerified: false,
+              })
+                .then((oneTimeCode) => {
+                  logger.info(`[vkCallback] Success: vk_user_id=${userId}`);
+                  const deepLink = buildOAuthCodeDeepLink(oneTimeCode);
+                  const intentUri = buildAndroidIntentUri(oneTimeCode);
 
-          const email = (tokenData.email ?? vkUser.email
-            ?? `vk_${vkUser.user_id}@vk.placeholder`).toLowerCase().trim();
-          const name = [vkUser.first_name, vkUser.last_name].filter(Boolean).join(' ') || `vk_${vkUser.user_id}`;
-
-          // Создаём пользователя и одноразовый OAuth-код на сервере — токены НЕ попадают в URL
-          loginOrCreateUserAndIssueCode({ email, name })
-            .then((oneTimeCode) => {
-              logger.info(`[vkCallback] Success: email=${email}`);
-              const params = `code=${encodeURIComponent(oneTimeCode)}`;
-              const deepLink = `${CALLBACK_SCHEME}://oauth2redirect?${params}`;
-              const intentUri = `intent://oauth2redirect?${params}#Intent;scheme=${CALLBACK_SCHEME};package=com.example.scanner_ap;end`;
-
-              res.setHeader('Content-Type', 'text/html; charset=utf-8');
-              res.send(`<!DOCTYPE html>
+                  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+                  res.send(`<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
@@ -177,21 +191,31 @@ export function vkCallback(req: Request, res: Response): void {
   </script>
 </body>
 </html>`);
-            })
-            .catch((e: Error) => {
-              logger.error('[vkCallback] Error issuing OAuth code:', { err: e });
-              res.status(500).send(`<h3>Ошибка авторизации: ${e.message}</h3>`);
+                })
+                .catch((requestError: Error) => {
+                  logger.error('[vkCallback] Error issuing OAuth code:', {
+                    err: requestError,
+                  });
+                  res
+                    .status(500)
+                    .send(`<h3>Ошибка авторизации: ${requestError.message}</h3>`);
+                });
             });
+          },
+        );
+
+        profileReq.on('error', (requestError) => {
+          res.status(500).send(`<h3>Ошибка запроса профиля: ${requestError.message}</h3>`);
         });
+        profileReq.write(profileBody);
+        profileReq.end();
       });
+    },
+  );
 
-      profileReq.on('error', (e) => res.status(500).send(`<h3>Ошибка запроса профиля: ${e.message}</h3>`));
-      profileReq.write(profileBody);
-      profileReq.end();
-    });
+  tokenReq.on('error', (requestError) => {
+    res.status(500).send(`<h3>Ошибка обмена кода: ${requestError.message}</h3>`);
   });
-
-  tokenReq.on('error', (e) => res.status(500).send(`<h3>Ошибка обмена кода: ${e.message}</h3>`));
   tokenReq.write(body);
   tokenReq.end();
 }

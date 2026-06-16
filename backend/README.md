@@ -1,72 +1,68 @@
 # Aura Scanner Backend
 
-Backend для `Aura Scanner` на `Express + TypeScript + MongoDB`.
+Express + TypeScript backend for Aura Scanner.
 
-## Что умеет
+## Responsibilities
 
-- health-check через `GET /health`
-- авторизация через `/api/auth`
-- работа с документами через `/api/documents`
-- загрузка файлов через `multer`
+- Email/password auth
+- Refresh token rotation
+- Social login callbacks and OAuth code exchange
+- User profile APIs
+- Document upload, listing, rename, download, and delete
+- Health checks and runtime validation
 
-## Требования
+## Requirements
 
 - Node.js 20+
 - MongoDB
 
-## Быстрый старт
-
-1. Установить зависимости:
+## Setup
 
 ```bash
 npm install
+cp .env.example .env
 ```
 
-2. Создать `.env` на основе `.env.example`.
+Fill in the required values in `.env` before running the server.
 
-3. Запустить backend в dev-режиме:
+## Run
 
 ```bash
 npm run dev
 ```
 
-4. Или собрать production-версию:
+## Build And Test
 
 ```bash
 npm run build
-npm start
+npm test
 ```
 
-## Smoke-проверка
-
-После сборки можно прогнать локальную smoke-проверку backend:
+## Smoke Test
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ..\scripts\backend_smoke_test.ps1
 ```
 
-Скрипт проверяет:
-
-- `GET /health`
-- регистрацию пользователя
-- список документов
-- upload
-- rename
-- download
-- delete
-
-## Переменные окружения
+## Important Environment Variables
 
 ```env
 PORT=3000
 MONGODB_URI=mongodb://localhost:27017/aura_scanner
-JWT_SECRET=change-me-in-production
-JWT_EXPIRES_IN=7d
-UPLOAD_DIR=uploads
-MAX_FILE_SIZE_MB=50
+JWT_SECRET=
+JWT_REFRESH_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+TELEGRAM_BOT_TOKEN=
+VK_APP_ID=
+INSTAGRAM_APP_ID=
+INSTAGRAM_APP_SECRET=
+APPLE_BUNDLE_ID=com.aurascanner.app
+GOOGLE_PLAY_PACKAGE_NAME=com.aurascanner.app
 ```
 
-## Примечания
+## Notes
 
-- Без доступной MongoDB сервер не стартует.
-- Flutter-клиент должен указывать на backend URL вида `http://<host>:3000/api`.
+- The server refuses to start if required auth secrets are missing
+- Social login is linked by verified provider identity, not by client-supplied email
+- Android deep link generation expects the production package id `com.aurascanner.app`

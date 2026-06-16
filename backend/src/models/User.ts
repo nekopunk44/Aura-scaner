@@ -5,6 +5,11 @@ export interface IUser extends Document {
   email: string;
   password: string;
   name: string;
+  googleSub?: string;
+  appleSub?: string;
+  vkUserId?: string;
+  telegramId?: string;
+  instagramUserId?: string;
   isPremium: boolean;
   premiumActivatedAt?: Date;
   premiumExpiresAt?: Date;
@@ -20,6 +25,11 @@ const userSchema = new Schema<IUser>(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     password: { type: String, required: true, minlength: 6 },
     name: { type: String, required: true, trim: true },
+    googleSub: { type: String, unique: true, sparse: true, trim: true },
+    appleSub: { type: String, unique: true, sparse: true, trim: true },
+    vkUserId: { type: String, unique: true, sparse: true, trim: true },
+    telegramId: { type: String, unique: true, sparse: true, trim: true },
+    instagramUserId: { type: String, unique: true, sparse: true, trim: true },
     isPremium: { type: Boolean, default: false },
     premiumActivatedAt: { type: Date },
     premiumExpiresAt: { type: Date },

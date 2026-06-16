@@ -4,48 +4,17 @@ import crypto from 'crypto';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { loginOrCreateUserAndIssueCode } from './social.auth.controller';
+import { buildAndroidIntentUri, buildOAuthCodeDeepLink } from '../utils/oauth.links';
+import { TelegramAuthData, verifyTelegramAuthData } from '../utils/telegramAuth';
 
-const CALLBACK_SCHEME = 'aurascanner';
-
-interface TelegramData {
+interface TelegramData extends TelegramAuthData {
   id: string;
   hash: string;
   auth_date: string;
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
 }
 
-/**
- * Проверяет подпись Telegram Login Widget и свежесть auth_date.
- * Возвращает true если данные валидны.
- */
-function verifyTelegramData(data: TelegramData): boolean {
-  if (!env.telegramBotToken) return true; // dev режим
-
-  const fields: Record<string, string> = {
-    id: data.id,
-    auth_date: data.auth_date,
-  };
-  if (data.first_name) fields['first_name'] = data.first_name;
-  if (data.last_name) fields['last_name'] = data.last_name;
-  if (data.username) fields['username'] = data.username;
-  if (data.photo_url) fields['photo_url'] = data.photo_url;
-
-  const checkString = Object.entries(fields)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k}=${v}`)
-    .join('\n');
-
-  const secretKey = crypto.createHash('sha256').update(env.telegramBotToken).digest();
-  const expectedHash = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
-
-  if (expectedHash !== data.hash) return false;
-
-  // auth_date не должна быть старше 1 часа
-  const age = Math.floor(Date.now() / 1000) - parseInt(data.auth_date, 10);
-  return age <= 3600;
+function isTelegramConfigured(): boolean {
+  return Boolean(env.telegramBotToken);
 }
 
 function buildTelegramName(data: TelegramData): string {
@@ -53,19 +22,16 @@ function buildTelegramName(data: TelegramData): string {
   return fullName || data.username || `tg_${data.id}`;
 }
 
-/**
- * POST /api/auth/telegram/exchange
- * Body: { id, hash, auth_date, first_name?, last_name?, username? }
- *
- * Используется когда oauth.telegram.org возвращает данные через URL fragment —
- * JS читает фрагмент и POST-ом отправляет сюда. Сервер верифицирует, создаёт
- * пользователя и возвращает одноразовый OAuth-code (без токенов в URL).
- */
 export async function telegramExchange(req: Request, res: Response): Promise<void> {
-  const { id, hash, auth_date, first_name, last_name, username } = req.body as Partial<TelegramData>;
+  const { id, hash, auth_date, first_name, last_name, username } =
+    req.body as Partial<TelegramData>;
 
   if (!id || !hash || !auth_date) {
     res.status(400).json({ message: 'Поля id, hash, auth_date обязательны' });
+    return;
+  }
+  if (!isTelegramConfigured()) {
+    res.status(503).json({ message: 'Telegram login не настроен' });
     return;
   }
 
@@ -78,16 +44,18 @@ export async function telegramExchange(req: Request, res: Response): Promise<voi
     ...(username && { username }),
   };
 
-  if (!verifyTelegramData(data)) {
+  if (!verifyTelegramAuthData(data, env.telegramBotToken)) {
     res.status(401).json({ message: 'Недействительная или устаревшая подпись Telegram' });
     return;
   }
 
   try {
-    const email = `tg_${data.id}@telegram.placeholder`;
     const code = await loginOrCreateUserAndIssueCode({
-      email,
+      email: `tg_${data.id}@telegram.placeholder`,
       name: buildTelegramName(data),
+      provider: 'telegram',
+      providerUserId: data.id,
+      emailVerified: false,
     });
     logger.info(`[telegramExchange] Success: tg_id=${data.id}`);
     res.json({ code });
@@ -97,14 +65,11 @@ export async function telegramExchange(req: Request, res: Response): Promise<voi
   }
 }
 
-// GET /auth/telegram/login
-// Перенаправляет напрямую на oauth.telegram.org, минуя промежуточную страницу с виджетом.
-// bot_id — числовой ID бота, первая часть TELEGRAM_BOT_TOKEN до двоеточия.
 export function telegramLoginPage(req: Request, res: Response): void {
-  if (!env.telegramBotToken) {
-    res.status(503).send(
-      '<h3>Telegram login не настроен. Задайте TELEGRAM_BOT_TOKEN в .env</h3>',
-    );
+  if (!isTelegramConfigured()) {
+    res
+      .status(503)
+      .send('<h3>Telegram login не настроен. Задайте TELEGRAM_BOT_TOKEN в .env</h3>');
     return;
   }
 
@@ -121,17 +86,17 @@ export function telegramLoginPage(req: Request, res: Response): void {
   res.redirect(302, authUrl.toString());
 }
 
-// GET /auth/telegram/callback
-// Поддерживает три формата ответа от Telegram:
-//   1. Login Widget:       ?id=...&hash=...&auth_date=...
-//   2. oauth.telegram.org: ?tgAuthResult=BASE64_JSON  (query)
-//   3. oauth.telegram.org: #tgAuthResult=BASE64_JSON  (fragment — сервер не видит,
-//      поэтому отдаём JS-страницу, которая читает fragment и делает редирект)
 export async function telegramCallback(req: Request, res: Response): Promise<void> {
+  if (!isTelegramConfigured()) {
+    res
+      .status(503)
+      .send('<h3>Telegram login не настроен. Задайте TELEGRAM_BOT_TOKEN в .env</h3>');
+    return;
+  }
+
   let { id, hash, auth_date, first_name, last_name, username, photo_url } =
     req.query as Record<string, string | undefined>;
 
-  // Формат 2: tgAuthResult как query-параметр
   const tgAuthResult = req.query['tgAuthResult'] as string | undefined;
   if (tgAuthResult) {
     try {
@@ -139,25 +104,24 @@ export async function telegramCallback(req: Request, res: Response): Promise<voi
       const decoded = JSON.parse(
         Buffer.from(b64, 'base64').toString('utf-8'),
       ) as Record<string, unknown>;
-      id         = decoded['id']?.toString();
-      hash       = decoded['hash'] as string | undefined;
-      auth_date  = decoded['auth_date']?.toString();
+      id = decoded['id']?.toString();
+      hash = decoded['hash'] as string | undefined;
+      auth_date = decoded['auth_date']?.toString();
       first_name = decoded['first_name'] as string | undefined;
-      last_name  = decoded['last_name']  as string | undefined;
-      username   = decoded['username']   as string | undefined;
-      photo_url  = decoded['photo_url']  as string | undefined;
+      last_name = decoded['last_name'] as string | undefined;
+      username = decoded['username'] as string | undefined;
+      photo_url = decoded['photo_url'] as string | undefined;
     } catch {
       logger.warn('[telegramCallback] Failed to decode tgAuthResult query param');
     }
   }
 
-  // Формат 3: данных нет в query → tgAuthResult, скорее всего, в fragment.
-  // Отдаём JS-страницу: она читает фрагмент, POST-ит данные на /telegram/exchange
-  // и редиректит в приложение с одноразовым OAuth-кодом (без токенов в URL).
   if (!id || !hash || !auth_date) {
     logger.warn('[telegramCallback] No params in query. url=%s', req.url);
     const nonce = crypto.randomBytes(16).toString('base64');
     const exchangeUrl = `${req.protocol}://${req.headers.host}/api/auth/telegram/exchange`;
+    const deepLinkTemplate = buildOAuthCodeDeepLink('__CODE__');
+    const intentTemplate = buildAndroidIntentUri('__CODE__');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Content-Security-Policy', `script-src 'nonce-${nonce}'`);
     res.send(`<!DOCTYPE html>
@@ -221,10 +185,9 @@ export async function telegramCallback(req: Request, res: Response): Promise<voi
   .then(function(r){return r.json().then(function(j){return {ok:r.ok,data:j};});})
   .then(function(res){
     if(!res.ok || !res.data.code){throw new Error(res.data.message||'Ошибка авторизации');}
-    var uri = 'aurascanner://oauth2redirect?code=' + encodeURIComponent(res.data.code);
+    var uri = ${JSON.stringify(deepLinkTemplate)}.replace('__CODE__', encodeURIComponent(res.data.code));
     var isAndroid = /Android/i.test(navigator.userAgent);
-    var intentUri = 'intent://oauth2redirect?code=' + encodeURIComponent(res.data.code)
-                  + '#Intent;scheme=aurascanner;package=com.example.scanner_ap;end';
+    var intentUri = ${JSON.stringify(intentTemplate)}.replace('__CODE__', encodeURIComponent(res.data.code));
     var target = isAndroid ? intentUri : uri;
 
     btn.href = target;
@@ -249,7 +212,6 @@ export async function telegramCallback(req: Request, res: Response): Promise<voi
     return;
   }
 
-  // Верификация hash + свежести auth_date
   const tgData: TelegramData = {
     id,
     hash,
@@ -259,18 +221,20 @@ export async function telegramCallback(req: Request, res: Response): Promise<voi
     ...(username && { username }),
     ...(photo_url && { photo_url }),
   };
-  if (!verifyTelegramData(tgData)) {
+  if (!verifyTelegramAuthData(tgData, env.telegramBotToken)) {
     logger.warn('[telegramCallback] Invalid or expired hash');
     res.status(401).send('<h3>Недействительная или устаревшая подпись Telegram</h3>');
     return;
   }
 
-  // Создаём пользователя + одноразовый OAuth-код. Токены НЕ попадают в URL.
   let oneTimeCode: string;
   try {
     oneTimeCode = await loginOrCreateUserAndIssueCode({
       email: `tg_${id}@telegram.placeholder`,
       name: buildTelegramName(tgData),
+      provider: 'telegram',
+      providerUserId: id,
+      emailVerified: false,
     });
   } catch (err) {
     logger.error('[telegramCallback] Error issuing OAuth code:', { err });
@@ -278,9 +242,8 @@ export async function telegramCallback(req: Request, res: Response): Promise<voi
     return;
   }
 
-  const codeParam = `code=${encodeURIComponent(oneTimeCode)}`;
-  const deepLink = `${CALLBACK_SCHEME}://oauth2redirect?${codeParam}`;
-  const intentUri = `intent://oauth2redirect?${codeParam}#Intent;scheme=aurascanner;package=com.example.scanner_ap;end`;
+  const deepLink = buildOAuthCodeDeepLink(oneTimeCode);
+  const intentUri = buildAndroidIntentUri(oneTimeCode);
 
   logger.info(`[telegramCallback] Redirecting to app: tg_id=${id}`);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -341,15 +304,17 @@ export async function telegramCallback(req: Request, res: Response): Promise<voi
 </html>`);
 }
 
-// Вспомогательная функция для обмена Instagram code → access_token
-// Используется в social.auth.controller.ts
 export function exchangeInstagramCode(
   code: string,
   redirectUri: string,
 ): Promise<{ userId: string; username: string }> {
   return new Promise((resolve, reject) => {
     if (!env.instagramAppId || !env.instagramAppSecret) {
-      reject(new Error('Instagram не настроен. Задайте INSTAGRAM_APP_ID и INSTAGRAM_APP_SECRET в .env'));
+      reject(
+        new Error(
+          'Instagram не настроен. Задайте INSTAGRAM_APP_ID и INSTAGRAM_APP_SECRET в .env',
+        ),
+      );
       return;
     }
 
@@ -361,65 +326,70 @@ export function exchangeInstagramCode(
       code,
     }).toString();
 
-    const options = {
-      hostname: 'api.instagram.com',
-      path: '/oauth/access_token',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Content-Length': Buffer.byteLength(body),
+    const tokenReq = https.request(
+      {
+        hostname: 'api.instagram.com',
+        path: '/oauth/access_token',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(body),
+        },
       },
-    };
+      (tokenRes) => {
+        let raw = '';
+        tokenRes.on('data', (chunk) => (raw += chunk));
+        tokenRes.on('end', () => {
+          try {
+            const data = JSON.parse(raw) as {
+              access_token?: string;
+              user_id?: number;
+              error_message?: string;
+            };
 
-    const tokenReq = https.request(options, (tokenRes) => {
-      let raw = '';
-      tokenRes.on('data', (chunk) => (raw += chunk));
-      tokenRes.on('end', () => {
-        try {
-          const data = JSON.parse(raw) as {
-            access_token?: string;
-            user_id?: number;
-            error_message?: string;
-          };
+            if (!data.access_token || !data.user_id) {
+              reject(new Error(data.error_message ?? 'Instagram не вернул токен'));
+              return;
+            }
 
-          if (!data.access_token || !data.user_id) {
-            reject(new Error(data.error_message ?? 'Instagram не вернул токен'));
-            return;
-          }
-
-          // Получаем username через Graph API
-          const profileUrl =
-            `https://graph.instagram.com/me?fields=id,username&access_token=${encodeURIComponent(data.access_token)}`;
-          https
-            .get(profileUrl, (profileRes) => {
-              let profileRaw = '';
-              profileRes.on('data', (c) => (profileRaw += c));
-              profileRes.on('end', () => {
-                try {
-                  const profile = JSON.parse(profileRaw) as {
-                    id?: string;
-                    username?: string;
-                    error?: { message: string };
-                  };
-                  if (profile.error || !profile.id) {
-                    reject(new Error(profile.error?.message ?? 'Ошибка получения профиля Instagram'));
-                    return;
+            const profileUrl =
+              `https://graph.instagram.com/me?fields=id,username&access_token=${encodeURIComponent(data.access_token)}`;
+            https
+              .get(profileUrl, (profileRes) => {
+                let profileRaw = '';
+                profileRes.on('data', (chunk) => (profileRaw += chunk));
+                profileRes.on('end', () => {
+                  try {
+                    const profile = JSON.parse(profileRaw) as {
+                      id?: string;
+                      username?: string;
+                      error?: { message: string };
+                    };
+                    if (profile.error || !profile.id) {
+                      reject(
+                        new Error(
+                          profile.error?.message ??
+                            'Ошибка получения профиля Instagram',
+                        ),
+                      );
+                      return;
+                    }
+                    resolve({
+                      userId: profile.id,
+                      username: profile.username ?? `ig_${profile.id}`,
+                    });
+                  } catch {
+                    reject(new Error('Ошибка разбора профиля Instagram'));
                   }
-                  resolve({
-                    userId: profile.id,
-                    username: profile.username ?? `ig_${profile.id}`,
-                  });
-                } catch {
-                  reject(new Error('Ошибка разбора профиля Instagram'));
-                }
-              });
-            })
-            .on('error', reject);
-        } catch {
-          reject(new Error('Ошибка разбора ответа Instagram'));
-        }
-      });
-    });
+                });
+              })
+              .on('error', reject);
+          } catch {
+            reject(new Error('Ошибка разбора ответа Instagram'));
+          }
+        });
+      },
+    );
 
     tokenReq.on('error', reject);
     tokenReq.write(body);

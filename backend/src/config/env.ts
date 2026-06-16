@@ -37,7 +37,7 @@ export const env = {
     process.env.OPENROUTER_MODEL ||
     'google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free,nvidia/nemotron-nano-12b-v2-vl:free',
   // Apple Sign In
-  appleBundleId: process.env.APPLE_BUNDLE_ID || 'com.example.scannerAp',
+  appleBundleId: process.env.APPLE_BUNDLE_ID || 'com.aurascanner.app',
   // Apple App Store Server API (для проверки receipt)
   appleSharedSecret: process.env.APPLE_SHARED_SECRET || '',
   appleUseSandbox: process.env.APPLE_USE_SANDBOX === 'true',

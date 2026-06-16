@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
     "build": "tsc",
-    "start": "node dist/app.js"
+    "start": "node dist/app.js",
+    "test": "npm run build && node --test tests/*.test.cjs"
   },
   "dependencies": {
     "@sentry/node": "^8.55.2",
