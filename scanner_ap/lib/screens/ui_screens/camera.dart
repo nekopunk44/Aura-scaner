@@ -25,6 +25,7 @@ import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'camera_features.dart';
@@ -81,6 +82,10 @@ class _CameraScreenState extends State<CameraScreen>
   // пересоздаётся (нет «выключилась/включилась»).
   final BarcodeScanner _barcodeScanner = BarcodeScanner();
   String? _qrCode;
+  // История отсканированных кодов (персистентная, новые сверху).
+  final List<String> _qrHistory = [];
+  static const _qrHistoryKey = 'qr_scan_history';
+  static const _qrHistoryMax = 30;
   bool _qrFlashOn = false;
   bool _isQrStreaming = false;   // активен ли image-stream сканирования
   bool _isBarcodeBusy = false;   // обрабатывается ли текущий кадр
@@ -165,6 +170,8 @@ class _CameraScreenState extends State<CameraScreen>
         Future.delayed(const Duration(milliseconds: 300), _startDocumentDetectionStream);
       }
     }
+
+    _loadQrHistory();
   }
 
   @override
@@ -810,6 +817,37 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  Future<void> _loadQrHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList(_qrHistoryKey) ?? [];
+    if (!mounted) return;
+    setState(() {
+      _qrHistory
+        ..clear()
+        ..addAll(list);
+    });
+  }
+
+  Future<void> _addToHistory(String code) async {
+    // Не дублируем тот же код, если он уже наверху.
+    if (_qrHistory.isNotEmpty && _qrHistory.first == code) return;
+    setState(() {
+      _qrHistory.remove(code); // если был раньше — поднимаем наверх
+      _qrHistory.insert(0, code);
+      if (_qrHistory.length > _qrHistoryMax) {
+        _qrHistory.removeRange(_qrHistoryMax, _qrHistory.length);
+      }
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_qrHistoryKey, _qrHistory);
+  }
+
+  Future<void> _clearQrHistory() async {
+    setState(() => _qrHistory.clear());
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_qrHistoryKey);
+  }
+
   Future<void> _processBarcodeImage(CameraImage image) async {
     if (_isBarcodeBusy || _qrCooldown || !mounted) return;
     _isBarcodeBusy = true;
@@ -829,6 +867,7 @@ class _CameraScreenState extends State<CameraScreen>
       // каждый кадр. Через 3 с снова разрешаем сканирование.
       _qrCooldown = true;
       setState(() => _qrCode = code);
+      unawaited(_addToHistory(code));
       unawaited(_launchInBrowser(code));
       Future.delayed(const Duration(seconds: 3), () {
         if (!mounted) return;
@@ -1097,38 +1136,74 @@ class _CameraScreenState extends State<CameraScreen>
           ),
         ),
 
-        // Нижняя плашка — то же сплошное затемнение, что и CameraControlsBar
-        // на остальных экранах (раньше был градиент — отсюда несовпадение).
-        // Показывает отсканированный код; когда его нет — просто тёмная
-        // полоса-фон под селектором режимов, как на других режимах.
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: Container(
-            padding: EdgeInsets.fromLTRB(
-              20, 16, 20, 16 + MediaQuery.of(context).padding.bottom,
-            ),
-            color: Colors.black.withValues(alpha: 0.5),
-            child: SizedBox(
-              height: 78,
-              child: Center(
-                child: Text(
-                  _qrCode ?? '',
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
+        // Нижняя плашка — история отсканированных кодов (горизонтальная
+        // лента, новые слева). Тап по чипу — снова открыть ссылку. Появляется
+        // только когда история непуста.
+        if (_qrHistory.isNotEmpty)
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: EdgeInsets.fromLTRB(
+                8, 8, 8, 8 + MediaQuery.of(context).padding.bottom,
+              ),
+              color: Colors.black.withValues(alpha: 0.5),
+              child: SizedBox(
+                height: 44,
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline,
+                          color: Colors.white70, size: 22),
+                      tooltip: l10n.actionDelete,
+                      onPressed: _clearQrHistory,
+                    ),
+                    Expanded(
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _qrHistory.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (_, i) => _buildQrHistoryChip(_qrHistory[i]),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-        ),
       ],
+    );
+  }
+
+  Widget _buildQrHistoryChip(String code) {
+    return GestureDetector(
+      onTap: () => _launchInBrowser(code),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.qr_code_2, color: Colors.white70, size: 16),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 170),
+              child: Text(
+                code,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
   
