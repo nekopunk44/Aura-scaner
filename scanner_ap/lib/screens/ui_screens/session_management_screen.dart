@@ -202,7 +202,7 @@ class _SessionManagementScreenState extends State<SessionManagementScreen> {
     }
 
     if (client.isEmpty) return platform;
-    return '$platform • $client';
+    return '$platform / $client';
   }
 
   String _formatDate(BuildContext context, DateTime value) {

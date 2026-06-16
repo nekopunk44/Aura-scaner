@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:signature/signature.dart';
+
 import '../../../l10n/app_localizations.dart';
 
 class SignatureScreen extends StatefulWidget {
@@ -18,16 +19,16 @@ class _SignatureScreenState extends State<SignatureScreen> {
   late SignatureController _controller = _makeController();
 
   SignatureController _makeController({List<Point>? points}) {
-    final c = SignatureController(
+    final controller = SignatureController(
       penStrokeWidth: _strokeWidth,
       penColor: Colors.black,
       exportBackgroundColor: Colors.white,
       points: points,
     );
-    c.addListener(() {
+    controller.addListener(() {
       if (mounted) setState(() {});
     });
-    return c;
+    return controller;
   }
 
   @override
@@ -36,12 +37,12 @@ class _SignatureScreenState extends State<SignatureScreen> {
     super.dispose();
   }
 
-  void _setStrokeWidth(double w) {
-    if (w == _strokeWidth) return;
+  void _setStrokeWidth(double width) {
+    if (width == _strokeWidth) return;
     final preserved = List<Point>.from(_controller.points);
     _controller.dispose();
     setState(() {
-      _strokeWidth = w;
+      _strokeWidth = width;
       _controller = _makeController(points: preserved);
     });
   }
@@ -55,12 +56,12 @@ class _SignatureScreenState extends State<SignatureScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
-    final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
-    final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+    final scaffoldBg = isDark ? const Color(0xFF0B1420) : const Color(0xFFF5F8FC);
+    final cardBg = isDark ? const Color(0xFF162233) : Colors.white;
+    final appBarBg = isDark ? const Color(0xFF101A29) : const Color(0xFFF5F8FC);
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
-    final chipBg = isDark ? const Color(0xFF2A3A4F) : const Color(0xFFEEF3FA);
+    final chipBg = isDark ? const Color(0xFF223247) : const Color(0xFFEAF1F8);
     const accent = Color(0xFF2CA5E0);
 
     final canUndo = _controller.points.isNotEmpty;
@@ -91,79 +92,174 @@ class _SignatureScreenState extends State<SignatureScreen> {
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
           child: Column(
             children: [
-              // Холст для подписи — всегда светлый, чтобы чёрная ручка
-              // была отчётливо видна и в тёмной теме.
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.08),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                decoration: BoxDecoration(
+                  color: cardBg,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
                       ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Stack(
-                      children: [
-                        if (isEmpty)
-                          Positioned.fill(
-                            child: IgnorePointer(
-                              child: Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.draw_outlined,
-                                      size: 56,
-                                      color: const Color(0xFFB8C5D6),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      l10n.sigHint,
-                                      style: TextStyle(
-                                        color: const Color(0xFF6B7A99),
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ],
+                      child: const Icon(
+                        Icons.draw_outlined,
+                        color: accent,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            l10n.sigAddYours,
+                            style: TextStyle(
+                              color: textColor,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            l10n.sigHint,
+                            style: TextStyle(
+                              color: subColor,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Expanded(
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      top: 14,
+                      left: 10,
+                      right: 10,
+                      bottom: 6,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF0F1925).withValues(alpha: 0.35)
+                              : const Color(0xFFD8E4F0).withValues(alpha: 0.65),
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFFEFC),
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(
+                              alpha: isDark ? 0.34 : 0.08,
+                            ),
+                            blurRadius: 28,
+                            offset: const Offset(0, 16),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(28),
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: CustomPaint(
+                                  painter: const _PaperGuidePainter(
+                                    lineColor: Color(0xFFE8EEF5),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        Signature(
-                          controller: _controller,
-                          backgroundColor: Colors.transparent,
+                            if (isEmpty)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: Center(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.96),
+                                        borderRadius: BorderRadius.circular(999),
+                                        border: Border.all(
+                                          color: const Color(0xFFDDE6EF),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        l10n.sigHint,
+                                        style: const TextStyle(
+                                          color: Color(0xFF6B7A99),
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            Signature(
+                              controller: _controller,
+                              backgroundColor: Colors.transparent,
+                            ),
+                            Positioned(
+                              left: 28,
+                              right: 28,
+                              bottom: 62,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    l10n.sigAddTitle,
+                                    style: const TextStyle(
+                                      color: Color(0xFF9AA8B8),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    height: 2,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFD7E1EB),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                        // Базовая линия — визуальная подсказка где поставить.
-                        Positioned(
-                          left: 32,
-                          right: 32,
-                          bottom: 48,
-                          child: Container(
-                            height: 1,
-                            color: const Color(0xFFE0E6EE),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
               Container(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
                 decoration: BoxDecoration(
                   color: cardBg,
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(18),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -180,18 +276,18 @@ class _SignatureScreenState extends State<SignatureScreen> {
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        for (final w in _widths) ...[
+                        for (final width in _widths) ...[
                           Expanded(
                             child: _StrokeChip(
-                              width: w,
-                              selected: _strokeWidth == w,
+                              width: width,
+                              selected: _strokeWidth == width,
                               accent: accent,
                               chipBg: chipBg,
                               textColor: textColor,
-                              onTap: () => _setStrokeWidth(w),
+                              onTap: () => _setStrokeWidth(width),
                             ),
                           ),
-                          if (w != _widths.last) const SizedBox(width: 8),
+                          if (width != _widths.last) const SizedBox(width: 8),
                         ],
                       ],
                     ),
@@ -208,10 +304,15 @@ class _SignatureScreenState extends State<SignatureScreen> {
                       label: Text(l10n.clearSelection),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: canUndo ? const Color(0xFFE74C3C) : subColor,
-                        side: BorderSide(color: canUndo ? const Color(0xFFE74C3C) : subColor.withValues(alpha: 0.3)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: BorderSide(
+                          color: canUndo
+                              ? const Color(0xFFE74C3C)
+                              : subColor.withValues(alpha: 0.3),
+                        ),
+                        backgroundColor: cardBg,
+                        padding: const EdgeInsets.symmetric(vertical: 15),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(16),
                         ),
                       ),
                     ),
@@ -219,30 +320,33 @@ class _SignatureScreenState extends State<SignatureScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     flex: 2,
-                    child: Builder(builder: (btnContext) {
-                      return ElevatedButton.icon(
-                        onPressed: canUndo
-                            ? () async {
-                                final bytes = await _export();
-                                if (bytes == null) return;
-                                if (!btnContext.mounted) return;
-                                Navigator.pop(btnContext, bytes);
-                              }
-                            : null,
-                        icon: const Icon(Icons.check, size: 18),
-                        label: Text(l10n.actionDone),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: accent,
-                          disabledBackgroundColor: accent.withValues(alpha: 0.35),
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                    child: Builder(
+                      builder: (btnContext) {
+                        return ElevatedButton.icon(
+                          onPressed: canUndo
+                              ? () async {
+                                  final bytes = await _export();
+                                  if (bytes == null) return;
+                                  if (!btnContext.mounted) return;
+                                  Navigator.pop(btnContext, bytes);
+                                }
+                              : null,
+                          icon: const Icon(Icons.check, size: 18),
+                          label: Text(l10n.actionDone),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: accent,
+                            disabledBackgroundColor:
+                                accent.withValues(alpha: 0.35),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                           ),
-                        ),
-                      );
-                    }),
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -251,6 +355,34 @@ class _SignatureScreenState extends State<SignatureScreen> {
         ),
       ),
     );
+  }
+}
+
+class _PaperGuidePainter extends CustomPainter {
+  const _PaperGuidePainter({required this.lineColor});
+
+  final Color lineColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = lineColor
+      ..strokeWidth = 1;
+
+    const topInset = 54.0;
+    const step = 42.0;
+    for (double y = topInset; y < size.height - 96; y += step) {
+      canvas.drawLine(
+        Offset(24, y),
+        Offset(size.width - 24, y),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _PaperGuidePainter oldDelegate) {
+    return oldDelegate.lineColor != lineColor;
   }
 }
 
@@ -280,12 +412,11 @@ class _StrokeChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
           color: selected ? accent : chipBg,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Превью толщины линии — пользователь сразу видит результат.
             SizedBox(
               height: 12,
               child: Center(

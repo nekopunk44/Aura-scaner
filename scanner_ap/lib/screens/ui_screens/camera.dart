@@ -1545,6 +1545,7 @@ class _CameraScreenState extends State<CameraScreen>
     // исключён — отдельный плагин рисовал своё превью).
     final bool showPersistentPreview = _isCameraInitialized
         && _cameraController != null;
+    final bool isTranslateSelected = _selectedFeature == 'Перевод';
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1573,12 +1574,19 @@ class _CameraScreenState extends State<CameraScreen>
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 6),
               decoration: BoxDecoration(
+                color: Colors.black.withValues(
+                  alpha: isTranslateSelected ? 0.22 : 0.12,
+                ),
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withValues(alpha: 0),
-                    Colors.black.withValues(alpha: 0.35),
+                    Colors.black.withValues(
+                      alpha: isTranslateSelected ? 0.1 : 0,
+                    ),
+                    Colors.black.withValues(
+                      alpha: isTranslateSelected ? 0.55 : 0.35,
+                    ),
                   ],
                 ),
               ),

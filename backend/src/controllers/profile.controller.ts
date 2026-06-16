@@ -14,23 +14,39 @@ function normalizeSessionId(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function fallbackSessionDate(session: { _id?: { getTimestamp?: () => Date } }) {
+  try {
+    return session._id?.getTimestamp?.() ?? new Date();
+  } catch {
+    return new Date();
+  }
+}
+
 function serializeSession(
   session: {
-    sessionId: string;
-    startedAt: Date;
-    lastUsedAt: Date;
-    userAgent?: string;
-    ipAddress?: string;
+    _id?: { getTimestamp?: () => Date };
+    sessionId?: string | null;
+    startedAt?: Date | string | null;
+    lastUsedAt?: Date | string | null;
+    userAgent?: string | null;
+    ipAddress?: string | null;
   },
   currentSessionId?: string,
 ) {
+  const fallbackDate = fallbackSessionDate(session);
+  const normalizedSessionId =
+    normalizeSessionId(session.sessionId ?? undefined) ??
+    String(session._id ?? fallbackDate.getTime());
+  const startedAt = session.startedAt ? new Date(session.startedAt) : fallbackDate;
+  const lastUsedAt = session.lastUsedAt ? new Date(session.lastUsedAt) : startedAt;
+
   return {
-    id: session.sessionId,
-    startedAt: session.startedAt,
-    lastUsedAt: session.lastUsedAt,
+    id: normalizedSessionId,
+    startedAt,
+    lastUsedAt,
     userAgent: session.userAgent ?? null,
     ipAddress: session.ipAddress ?? null,
-    isCurrent: session.sessionId === currentSessionId,
+    isCurrent: normalizedSessionId === currentSessionId,
   };
 }
 

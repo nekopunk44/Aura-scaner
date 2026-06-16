@@ -615,7 +615,7 @@ class _TranslateCameraState extends State<TranslateCamera> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withValues(alpha: 0),
+                    Colors.black.withValues(alpha: 0.2),
                     Colors.black.withValues(alpha: 0.6),
                   ],
                 ),

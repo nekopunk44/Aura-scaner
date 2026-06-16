@@ -38,14 +38,34 @@ class UserSession {
     this.ipAddress,
   });
 
-  factory UserSession.fromJson(Map<String, dynamic> json) => UserSession(
-        id: json['id'] as String,
-        startedAt: DateTime.parse(json['startedAt'] as String),
-        lastUsedAt: DateTime.parse(json['lastUsedAt'] as String),
-        userAgent: json['userAgent'] as String?,
-        ipAddress: json['ipAddress'] as String?,
-        isCurrent: json['isCurrent'] as bool? ?? false,
-      );
+  static String? _readString(Map<String, dynamic> json, String key) {
+    final value = json[key];
+    if (value is String && value.trim().isNotEmpty) {
+      return value.trim();
+    }
+    return null;
+  }
+
+  static DateTime? _readDate(Map<String, dynamic> json, String key) {
+    final value = json[key];
+    if (value is String && value.isNotEmpty) {
+      return DateTime.tryParse(value);
+    }
+    return null;
+  }
+
+  factory UserSession.fromJson(Map<String, dynamic> json) {
+    final startedAt = _readDate(json, 'startedAt') ?? DateTime.now();
+    return UserSession(
+      id: _readString(json, 'id') ??
+          'legacy-session-${startedAt.millisecondsSinceEpoch}',
+      startedAt: startedAt,
+      lastUsedAt: _readDate(json, 'lastUsedAt') ?? startedAt,
+      userAgent: _readString(json, 'userAgent'),
+      ipAddress: _readString(json, 'ipAddress'),
+      isCurrent: json['isCurrent'] as bool? ?? false,
+    );
+  }
 }
 
 class AuthService {
