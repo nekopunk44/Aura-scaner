@@ -793,8 +793,13 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _startBarcodeScanning() async {
     final controller = _cameraController;
     if (controller == null || !controller.value.isInitialized) return;
-    if (_isQrStreaming || controller.value.isStreamingImages) return;
+    if (_isQrStreaming) return;
     try {
+      // Если активен чужой стрим (живой перевод не успел остановиться при
+      // переключении) — гасим его перед стартом сканера.
+      if (controller.value.isStreamingImages) {
+        await controller.stopImageStream();
+      }
       _isQrStreaming = true;
       await controller.startImageStream(_processBarcodeImage);
     } catch (e) {
@@ -1283,7 +1288,13 @@ class _CameraScreenState extends State<CameraScreen>
                     }
                   }));
                 } else {
-                  _startBarcodeScanning();
+                  // Отложенно: даём предыдущему вью (напр. живой перевод)
+                  // в dispose остановить свой стрим раньше старта сканера.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted && _selectedFeature == 'Сканер qr-код') {
+                      _startBarcodeScanning();
+                    }
+                  });
                 }
               } else {
                 // Уходим из QR — останавливаем стрим, иначе takePicture()

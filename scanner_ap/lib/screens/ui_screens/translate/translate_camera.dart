@@ -6,8 +6,19 @@ import 'dart:io';
 import 'apis/recognition_api.dart';
 import 'apis/translation_api.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:google_mlkit_translation/google_mlkit_translation.dart';
+import 'package:google_mlkit_language_id/google_mlkit_language_id.dart';
 import 'package:image_picker/image_picker.dart';
 
+/// Экран перевода с ЖИВЫМ переводом прямо в камере: наводишь на текст в
+/// рамке — перевод появляется на экране в реальном времени (без кнопки).
+///
+/// Живой пайплайн: image-stream → ML Kit Text Recognition (latin) →
+/// определение языка → OnDeviceTranslator → текст. Для оффлайн-перевода
+/// при первом использовании языковой пары качаются модели (~30 МБ).
+///
+/// Галерея остаётся как разовый перевод (через Tesseract — поддерживает
+/// кириллицу), результат показывается модально.
 class TranslateCamera extends StatefulWidget {
   final CameraController? cameraController;
   final Future<XFile?> Function() takePicture;
@@ -42,30 +53,39 @@ class TranslateCamera extends StatefulWidget {
 }
 
 class _TranslateCameraState extends State<TranslateCamera> {
+  // --- Разовый перевод из галереи (модальное окно) ---
   String? _shownText;
   bool _isProcessing = false;
 
-  /// Целевой язык перевода. Источник определяется автоматически в
-  /// TranslationApi, а цель выбирает пользователь. По умолчанию — русский.
-  String _targetLang = 'ru';
+  // --- Живой перевод ---
+  String? _liveTranslation;
+  bool _streaming = false;
+  bool _busy = false;
+  bool _downloadingModels = false;
+  DateTime _lastRun = DateTime.fromMillisecondsSinceEpoch(0);
+  String _lastRecognized = '';
 
-  /// Состояние фонарика (для иконки). Сам фонарик — через CameraController.
+  final TextRecognizer _recognizer =
+      TextRecognizer(script: TextRecognitionScript.latin);
+  final LanguageIdentifier _langId =
+      LanguageIdentifier(confidenceThreshold: 0.4);
+  final OnDeviceTranslatorModelManager _modelManager =
+      OnDeviceTranslatorModelManager();
+  OnDeviceTranslator? _translator;
+  String? _translatorKey;
+
+  String _targetLang = 'ru';
   bool _flashOn = false;
 
-  Future<void> _toggleFlash() async {
-    final controller = widget.cameraController;
-    if (controller == null || !controller.value.isInitialized) return;
-    try {
-      final on = controller.value.flashMode == FlashMode.torch;
-      await controller.setFlashMode(on ? FlashMode.off : FlashMode.torch);
-      if (mounted) setState(() => _flashOn = !on);
-    } catch (e) {
-      debugPrint('Ошибка фонарика (перевод): $e');
-    }
-  }
+  static const _orientations = {
+    DeviceOrientation.portraitUp: 0,
+    DeviceOrientation.landscapeLeft: 90,
+    DeviceOrientation.portraitDown: 180,
+    DeviceOrientation.landscapeRight: 270,
+  };
 
-  /// Поддерживаемые целевые языки (коды совпадают с _mapLanguageCode в
-  /// TranslationApi). Названия — на родном языке, переводить их не нужно.
+  /// Поддерживаемые целевые языки (коды совпадают с ML Kit). Названия — на
+  /// родном языке, переводить их не нужно.
   static const Map<String, String> _languages = {
     'ru': 'Русский',
     'en': 'English',
@@ -81,6 +101,288 @@ class _TranslateCameraState extends State<TranslateCamera> {
     'ja': '日本語',
     'ko': '한국어',
   };
+
+  @override
+  void initState() {
+    super.initState();
+    // Старт после первого кадра — чтобы предыдущий стрим (напр. QR) успел
+    // остановиться при переключении режима.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startLiveStream());
+  }
+
+  @override
+  void didUpdateWidget(TranslateCamera oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Контроллер пересоздаётся при сворачивании/возврате из галереи —
+    // старый стрим мёртв, перезапускаем на новом.
+    if (oldWidget.cameraController != widget.cameraController) {
+      _streaming = false;
+      _busy = false;
+      _lastRecognized = '';
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startLiveStream());
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopLiveStream();
+    _recognizer.close();
+    _langId.close();
+    _translator?.close();
+    super.dispose();
+  }
+
+  // ------------------------------------------------------------------
+  // Живой стрим
+  // ------------------------------------------------------------------
+
+  Future<void> _startLiveStream() async {
+    final c = widget.cameraController;
+    if (c == null || !c.value.isInitialized || _streaming) return;
+    // Если контроллер ещё занят предыдущим стримом — подождём и попробуем.
+    if (c.value.isStreamingImages) {
+      await Future.delayed(const Duration(milliseconds: 350));
+      if (!mounted || _streaming || c.value.isStreamingImages) return;
+    }
+    try {
+      _streaming = true;
+      await c.startImageStream(_processFrame);
+    } catch (e) {
+      _streaming = false;
+      debugPrint('Перевод: ошибка старта стрима: $e');
+    }
+  }
+
+  Future<void> _stopLiveStream() async {
+    final c = widget.cameraController;
+    if (!_streaming) return;
+    _streaming = false;
+    try {
+      if (c != null && c.value.isStreamingImages) await c.stopImageStream();
+    } catch (e) {
+      debugPrint('Перевод: ошибка остановки стрима: $e');
+    }
+  }
+
+  Future<void> _processFrame(CameraImage image) async {
+    if (_busy || !mounted || _isProcessing) return;
+    final now = DateTime.now();
+    if (now.difference(_lastRun).inMilliseconds < 600) return;
+    _busy = true;
+    _lastRun = now;
+    try {
+      final input = _inputImageFromCameraImage(image);
+      if (input == null) return;
+
+      final recognized = await _recognizer.processImage(input);
+      final text = recognized.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+      if (text.length < 2) {
+        _lastRecognized = '';
+        if (_liveTranslation != null && mounted) {
+          setState(() => _liveTranslation = null);
+        }
+        return;
+      }
+      // Тот же текст — не переводим повторно (меньше мерцания).
+      if (text == _lastRecognized) return;
+      _lastRecognized = text;
+
+      String srcCode;
+      try {
+        srcCode = await _langId.identifyLanguage(text);
+      } catch (_) {
+        srcCode = 'und';
+      }
+      final source = _mapToTranslateLang(srcCode) ?? TranslateLanguage.english;
+      final target =
+          _mapToTranslateLang(_targetLang) ?? TranslateLanguage.russian;
+
+      if (source == target) {
+        if (mounted) setState(() => _liveTranslation = text);
+        return;
+      }
+
+      final translator = await _ensureTranslator(source, target);
+      if (translator == null) return;
+      final translated = await translator.translateText(text);
+      if (mounted) setState(() => _liveTranslation = translated);
+    } catch (e) {
+      debugPrint('Перевод: ошибка кадра: $e');
+    } finally {
+      _busy = false;
+    }
+  }
+
+  Future<OnDeviceTranslator?> _ensureTranslator(
+    TranslateLanguage source,
+    TranslateLanguage target,
+  ) async {
+    final key = '${source.bcpCode}_${target.bcpCode}';
+    if (_translator != null && _translatorKey == key) return _translator;
+
+    await _translator?.close();
+    _translator = null;
+    _translatorKey = null;
+
+    try {
+      for (final lang in [source, target]) {
+        if (!await _modelManager.isModelDownloaded(lang.bcpCode)) {
+          if (mounted) setState(() => _downloadingModels = true);
+          await _modelManager.downloadModel(lang.bcpCode);
+        }
+      }
+    } catch (e) {
+      debugPrint('Перевод: ошибка загрузки моделей: $e');
+      if (mounted) setState(() => _downloadingModels = false);
+      return null;
+    }
+    if (mounted) setState(() => _downloadingModels = false);
+
+    _translator = OnDeviceTranslator(
+      sourceLanguage: source,
+      targetLanguage: target,
+    );
+    _translatorKey = key;
+    return _translator;
+  }
+
+  TranslateLanguage? _mapToTranslateLang(String code) {
+    switch (code.toLowerCase().split('-')[0]) {
+      case 'ru':
+      case 'be':
+      case 'uk':
+        return TranslateLanguage.russian;
+      case 'en':
+        return TranslateLanguage.english;
+      case 'es':
+        return TranslateLanguage.spanish;
+      case 'fr':
+        return TranslateLanguage.french;
+      case 'de':
+        return TranslateLanguage.german;
+      case 'it':
+        return TranslateLanguage.italian;
+      case 'pt':
+        return TranslateLanguage.portuguese;
+      case 'pl':
+        return TranslateLanguage.polish;
+      case 'tr':
+        return TranslateLanguage.turkish;
+      case 'ar':
+        return TranslateLanguage.arabic;
+      case 'zh':
+        return TranslateLanguage.chinese;
+      case 'ja':
+        return TranslateLanguage.japanese;
+      case 'ko':
+        return TranslateLanguage.korean;
+      default:
+        return null;
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Конвертация кадра камеры в InputImage (yuv420→nv21 на Android)
+  // ------------------------------------------------------------------
+
+  InputImage? _inputImageFromCameraImage(CameraImage image) {
+    final c = widget.cameraController;
+    if (c == null) return null;
+    final desc = c.description;
+    final sensorOrientation = desc.sensorOrientation;
+
+    InputImageRotation? rotation;
+    if (Platform.isIOS) {
+      rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
+    } else {
+      var comp = _orientations[c.value.deviceOrientation];
+      if (comp == null) return null;
+      if (desc.lensDirection == CameraLensDirection.front) {
+        comp = (sensorOrientation + comp) % 360;
+      } else {
+        comp = (sensorOrientation - comp + 360) % 360;
+      }
+      rotation = InputImageRotationValue.fromRawValue(comp);
+    }
+    if (rotation == null) return null;
+
+    if (Platform.isIOS) {
+      final format = InputImageFormatValue.fromRawValue(image.format.raw);
+      if (format != InputImageFormat.bgra8888 || image.planes.length != 1) {
+        return null;
+      }
+      final plane = image.planes.first;
+      return InputImage.fromBytes(
+        bytes: plane.bytes,
+        metadata: InputImageMetadata(
+          size: Size(image.width.toDouble(), image.height.toDouble()),
+          rotation: rotation,
+          format: InputImageFormat.bgra8888,
+          bytesPerRow: plane.bytesPerRow,
+        ),
+      );
+    }
+
+    if (image.planes.length != 3) return null;
+    final nv21 = _yuv420ToNv21(image);
+    return InputImage.fromBytes(
+      bytes: nv21,
+      metadata: InputImageMetadata(
+        size: Size(image.width.toDouble(), image.height.toDouble()),
+        rotation: rotation,
+        format: InputImageFormat.nv21,
+        bytesPerRow: image.width,
+      ),
+    );
+  }
+
+  Uint8List _yuv420ToNv21(CameraImage image) {
+    final int width = image.width;
+    final int height = image.height;
+    final Uint8List out = Uint8List(width * height + (width * height ~/ 2));
+
+    final yPlane = image.planes[0];
+    final uPlane = image.planes[1];
+    final vPlane = image.planes[2];
+
+    final int yRowStride = yPlane.bytesPerRow;
+    final int yPixelStride = yPlane.bytesPerPixel ?? 1;
+    int pos = 0;
+    for (int row = 0; row < height; row++) {
+      final int yOffset = row * yRowStride;
+      for (int col = 0; col < width; col++) {
+        out[pos++] = yPlane.bytes[yOffset + col * yPixelStride];
+      }
+    }
+
+    final int uvRowStride = uPlane.bytesPerRow;
+    final int uvPixelStride = uPlane.bytesPerPixel ?? 2;
+    for (int row = 0; row < height ~/ 2; row++) {
+      final int uvOffset = row * uvRowStride;
+      for (int col = 0; col < width ~/ 2; col++) {
+        final int i = uvOffset + col * uvPixelStride;
+        out[pos++] = vPlane.bytes[i];
+        out[pos++] = uPlane.bytes[i];
+      }
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------------
+  // UI-управление
+  // ------------------------------------------------------------------
+
+  Future<void> _toggleFlash() async {
+    final controller = widget.cameraController;
+    if (controller == null || !controller.value.isInitialized) return;
+    try {
+      final on = controller.value.flashMode == FlashMode.torch;
+      await controller.setFlashMode(on ? FlashMode.off : FlashMode.torch);
+      if (mounted) setState(() => _flashOn = !on);
+    } catch (e) {
+      debugPrint('Ошибка фонарика (перевод): $e');
+    }
+  }
 
   void _showLanguagePicker() {
     showModalBottomSheet<void>(
@@ -125,7 +427,13 @@ class _TranslateCameraState extends State<TranslateCamera> {
                           ? const Icon(Icons.check, color: Color(0xFF2CA5E0))
                           : null,
                       onTap: () {
-                        setState(() => _targetLang = e.key);
+                        setState(() {
+                          _targetLang = e.key;
+                          // Смена цели — пересоздать переводчик и заново
+                          // перевести текущий текст.
+                          _lastRecognized = '';
+                          _liveTranslation = null;
+                        });
                         Navigator.pop(sheetContext);
                       },
                     );
@@ -139,67 +447,8 @@ class _TranslateCameraState extends State<TranslateCamera> {
     );
   }
 
-  Future<void> _translateImage() async {
-    if (widget.cameraController == null ||
-        !widget.cameraController!.value.isInitialized ||
-        _isProcessing) {
-      return;
-    }
-
-    try {
-      setState(() {
-        _isProcessing = true;
-        _shownText = 'Обработка...';
-      });
-
-      final XFile? imageFile = await widget.takePicture();
-
-      if (imageFile == null) {
-        setState(() {
-          _shownText = 'Ошибка при съемке';
-          _isProcessing = false;
-        });
-        return;
-      }
-
-      final recognizedText = await RecognitionApi.recognizeText(
-        InputImage.fromFile(File(imageFile.path)),
-      );
-
-      if (recognizedText == null || recognizedText.isEmpty) {
-        setState(() {
-          _shownText = 'Текст не обнаружен';
-          _isProcessing = false;
-        });
-        return;
-      }
-
-      debugPrint('Распознанный текст: $recognizedText');
-
-      final translatedText = await TranslationApi.translateText(
-        recognizedText,
-        targetLanguage: _targetLang,
-      );
-
-      setState(() {
-        _shownText = translatedText ?? 'Ошибка перевода';
-        _isProcessing = false;
-      });
-
-      if (widget.onScanCompleted != null && translatedText != null) {
-        widget.onScanCompleted!(translatedText);
-      }
-
-    } catch (e) {
-      debugPrint('Ошибка при переводе: $e');
-      if (!mounted) return;
-      setState(() {
-        _shownText = 'Ошибка: ${e.toString()}';
-        _isProcessing = false;
-      });
-    }
-  }
-
+  /// Разовый перевод выбранного из галереи изображения (через Tesseract —
+  /// поддерживает кириллицу). Результат — в модальном окне.
   Future<void> _pickImageAndTranslate() async {
     try {
       setState(() {
@@ -208,13 +457,12 @@ class _TranslateCameraState extends State<TranslateCamera> {
       });
 
       final ImagePicker picker = ImagePicker();
-      final XFile? galleryImage = await picker.pickImage(source: ImageSource.gallery);
+      final XFile? galleryImage =
+          await picker.pickImage(source: ImageSource.gallery);
 
       if (!mounted) return;
       if (galleryImage == null) {
-        setState(() {
-          _isProcessing = false;
-        });
+        setState(() => _isProcessing = false);
         return;
       }
 
@@ -245,7 +493,6 @@ class _TranslateCameraState extends State<TranslateCamera> {
       if (widget.onScanCompleted != null && translatedText != null) {
         widget.onScanCompleted!(translatedText);
       }
-
     } catch (e) {
       debugPrint('Ошибка при выборе из галереи: $e');
       if (!mounted) return;
@@ -256,12 +503,43 @@ class _TranslateCameraState extends State<TranslateCamera> {
     }
   }
 
+  // ------------------------------------------------------------------
+  // build
+  // ------------------------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
+          // Рамка наведения + живой перевод под ней.
+          Align(
+            alignment: const Alignment(0, -0.12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: size.width * 0.84,
+                  height: size.height * 0.34,
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: _liveTranslation != null
+                          ? const Color(0xFF2CA5E0)
+                          : Colors.white,
+                      width: 2,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildLivePanel(),
+              ],
+            ),
+          ),
+
           // Кнопка Назад
           Positioned(
             top: 50,
@@ -272,7 +550,7 @@ class _TranslateCameraState extends State<TranslateCamera> {
             ),
           ),
 
-          // Фонарик + настройки (справа вверху, как на экране Паспорт).
+          // Фонарик + настройки
           Positioned(
             top: 50,
             right: 12,
@@ -284,7 +562,7 @@ class _TranslateCameraState extends State<TranslateCamera> {
                     color: Colors.white,
                     size: 26,
                   ),
-                  onPressed: _isProcessing ? null : _toggleFlash,
+                  onPressed: _toggleFlash,
                 ),
                 IconButton(
                   icon: const Icon(Icons.settings, color: Colors.white, size: 26),
@@ -294,54 +572,43 @@ class _TranslateCameraState extends State<TranslateCamera> {
             ),
           ),
 
-          // Инструкция
+          // Заголовок + подсказка
           Positioned(
-            top: 100,
+            top: 96,
             left: 0,
             right: 0,
-            child: Container(
-              padding: const EdgeInsets.all(16),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Column(
-                children: [
-                  const Text(
+                children: const [
+                  Text(
                     'Режим перевода',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 24,
+                      fontSize: 22,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'Наведите камеру на текст и нажмите кнопку перевода',
+                  SizedBox(height: 6),
+                  Text(
+                    'Наведите камеру на текст — перевод появится автоматически',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                    ),
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
                   ),
-                  const SizedBox(height: 20),
-                  if (_isProcessing)
-                    const CircularProgressIndicator(color: Colors.white),
                 ],
               ),
             ),
           ),
 
-          // Нижний бар: затемнение-градиент (как на остальных экранах
-          // камеры через CameraControlsBar), внутри — галерея слева,
-          // кнопка перевода по центру, выбор языка справа.
+          // Нижний бар: галерея (слева) + выбор языка (справа).
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
             child: Container(
               padding: EdgeInsets.fromLTRB(
-                24,
-                24,
-                24,
-                24 + MediaQuery.of(context).padding.bottom,
+                24, 20, 24, 20 + MediaQuery.of(context).padding.bottom,
               ),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -354,81 +621,58 @@ class _TranslateCameraState extends State<TranslateCamera> {
                 ),
               ),
               child: SizedBox(
-                height: 64,
-                child: Stack(
-                  alignment: Alignment.center,
+                height: 56,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Галерея — слева
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: GestureDetector(
-                        onTap: _isProcessing ? null : _pickImageAndTranslate,
-                        child: Container(
-                          width: 56,
-                          height: 56,
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(28),
-                            border: Border.all(
-                              color: _isProcessing ? Colors.grey : Colors.white,
-                              width: 2,
-                            ),
-                          ),
-                          child: Icon(
-                            Icons.photo_library,
+                    GestureDetector(
+                      onTap: _isProcessing ? null : _pickImageAndTranslate,
+                      child: Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(26),
+                          border: Border.all(
                             color: _isProcessing ? Colors.grey : Colors.white,
-                            size: 28,
+                            width: 2,
                           ),
+                        ),
+                        child: Icon(
+                          Icons.photo_library,
+                          color: _isProcessing ? Colors.grey : Colors.white,
+                          size: 26,
                         ),
                       ),
                     ),
-
-                    // Кнопка перевода — по центру
-                    FloatingActionButton(
-                      heroTag: 'translateFab',
-                      onPressed: _isProcessing ? null : _translateImage,
-                      backgroundColor:
-                          _isProcessing ? Colors.grey : const Color(0xFF2CA5E0),
-                      child: _isProcessing
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Icon(Icons.translate, size: 30),
-                    ),
-
-                    // Выбор целевого языка — справа
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: GestureDetector(
-                        onTap: _isProcessing ? null : _showLanguagePicker,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.4),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.language,
-                                  color: Colors.white, size: 18),
-                              const SizedBox(width: 6),
-                              Text(
-                                _languages[_targetLang] ?? _targetLang,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                    GestureDetector(
+                      onTap: _showLanguagePicker,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.4)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.language,
+                                color: Colors.white, size: 18),
+                            const SizedBox(width: 6),
+                            Text(
+                              _languages[_targetLang] ?? _targetLang,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
                               ),
-                              const Icon(Icons.arrow_drop_down,
-                                  color: Colors.white, size: 18),
-                            ],
-                          ),
+                            ),
+                            const Icon(Icons.arrow_drop_down,
+                                color: Colors.white, size: 18),
+                          ],
                         ),
                       ),
                     ),
@@ -438,68 +682,130 @@ class _TranslateCameraState extends State<TranslateCamera> {
             ),
           ),
 
-          if (_shownText != null)
-            Positioned.fill(
-              child: Align(
-                alignment: Alignment.center,
-                child: Container(
-                  margin: const EdgeInsets.all(16),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.8),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white, width: 1),
-                  ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text(
-                          'Перевод:',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          _shownText!,
-                          style: const TextStyle(color: Colors.white, fontSize: 18),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            ElevatedButton(
-                              onPressed: () => setState(() => _shownText = null),
-                              child: const Text('Закрыть'),
-                            ),
-                            const SizedBox(width: 10),
-                            ElevatedButton(
-                              onPressed: () {
-                                if (_shownText != null) {
-                                  Clipboard.setData(ClipboardData(text: _shownText!));
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Текст скопирован'),
-                                      duration: Duration(seconds: 2),
-                                    ),
-                                  );
-                                }
-                              },
-                              child: const Text('Копировать'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+          // Модальное окно результата из галереи.
+          if (_shownText != null) _buildGalleryResult(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLivePanel() {
+    if (_downloadingModels) {
+      return Container(
+        constraints: const BoxConstraints(maxWidth: 320),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 16, height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                'Загрузка языковых моделей…',
+                style: TextStyle(color: Colors.white, fontSize: 13),
               ),
             ),
-        ],
+          ],
+        ),
+      );
+    }
+
+    if (_liveTranslation == null || _liveTranslation!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.84,
+        maxHeight: 140,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF2CA5E0).withValues(alpha: 0.6)),
+      ),
+      child: SingleChildScrollView(
+        child: Text(
+          _liveTranslation!,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            height: 1.3,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGalleryResult() {
+    return Positioned.fill(
+      child: Align(
+        alignment: Alignment.center,
+        child: Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white, width: 1),
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Перевод:',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  _shownText!,
+                  style: const TextStyle(color: Colors.white, fontSize: 18),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () => setState(() => _shownText = null),
+                      child: const Text('Закрыть'),
+                    ),
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (_shownText != null) {
+                          Clipboard.setData(ClipboardData(text: _shownText!));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Текст скопирован'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                      child: const Text('Копировать'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
