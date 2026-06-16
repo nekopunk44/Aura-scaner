@@ -276,9 +276,12 @@ class _CameraScreenState extends State<CameraScreen>
         backCamera,
         ResolutionPreset.veryHigh,
         enableAudio: false,
-        // Формат для ML Kit barcode: NV21 (Android) / BGRA8888 (iOS).
+        // yuv420 (Android) — с ним РАБОТАЕТ превью. Прямой nv21 на многих
+        // устройствах гасит preview-surface (формат идёт только в
+        // ImageReader) → чёрный экран. Для ML Kit конвертируем кадр
+        // yuv420→nv21 в Dart (см. _inputImageFromCameraImage).
         imageFormatGroup: Platform.isAndroid
-            ? ImageFormatGroup.nv21
+            ? ImageFormatGroup.yuv420
             : ImageFormatGroup.bgra8888,
       );
 
@@ -841,8 +844,10 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  /// Конвертирует кадр камеры в InputImage для ML Kit с учётом поворота
-  /// сенсора и ориентации устройства (стандартный helper из примера ML Kit).
+  /// Конвертирует кадр камеры в InputImage для ML Kit с учётом поворота.
+  /// На Android камера отдаёт yuv420 (3 плоскости) ради рабочего превью —
+  /// здесь складываем его в однопланарный NV21, который нужен ML Kit.
+  /// На iOS — bgra8888 как есть.
   InputImage? _inputImageFromCameraImage(CameraImage image) {
     final controller = _cameraController;
     final camera = _cameraDescription;
@@ -866,24 +871,69 @@ class _CameraScreenState extends State<CameraScreen>
     }
     if (rotation == null) return null;
 
-    final format = InputImageFormatValue.fromRawValue(image.format.raw);
-    if (format == null ||
-        (Platform.isAndroid && format != InputImageFormat.nv21) ||
-        (Platform.isIOS && format != InputImageFormat.bgra8888)) {
-      return null;
+    if (Platform.isIOS) {
+      final format = InputImageFormatValue.fromRawValue(image.format.raw);
+      if (format != InputImageFormat.bgra8888 || image.planes.length != 1) {
+        return null;
+      }
+      final plane = image.planes.first;
+      return InputImage.fromBytes(
+        bytes: plane.bytes,
+        metadata: InputImageMetadata(
+          size: Size(image.width.toDouble(), image.height.toDouble()),
+          rotation: rotation,
+          format: InputImageFormat.bgra8888,
+          bytesPerRow: plane.bytesPerRow,
+        ),
+      );
     }
-    if (image.planes.length != 1) return null;
-    final plane = image.planes.first;
 
+    // Android: yuv420 → nv21.
+    if (image.planes.length != 3) return null;
+    final nv21 = _yuv420ToNv21(image);
     return InputImage.fromBytes(
-      bytes: plane.bytes,
+      bytes: nv21,
       metadata: InputImageMetadata(
         size: Size(image.width.toDouble(), image.height.toDouble()),
         rotation: rotation,
-        format: format,
-        bytesPerRow: plane.bytesPerRow,
+        format: InputImageFormat.nv21,
+        bytesPerRow: image.width, // NV21: строка яркости = ширина
       ),
     );
+  }
+
+  /// Складывает планарный YUV_420_888 в NV21 (Y + чередование V/U) с учётом
+  /// rowStride/pixelStride плоскостей.
+  Uint8List _yuv420ToNv21(CameraImage image) {
+    final int width = image.width;
+    final int height = image.height;
+    final Uint8List out = Uint8List(width * height + (width * height ~/ 2));
+
+    final yPlane = image.planes[0];
+    final uPlane = image.planes[1];
+    final vPlane = image.planes[2];
+
+    final int yRowStride = yPlane.bytesPerRow;
+    final int yPixelStride = yPlane.bytesPerPixel ?? 1;
+    int pos = 0;
+    for (int row = 0; row < height; row++) {
+      final int yOffset = row * yRowStride;
+      for (int col = 0; col < width; col++) {
+        out[pos++] = yPlane.bytes[yOffset + col * yPixelStride];
+      }
+    }
+
+    final int uvRowStride = uPlane.bytesPerRow;
+    final int uvPixelStride = uPlane.bytesPerPixel ?? 2;
+    for (int row = 0; row < height ~/ 2; row++) {
+      final int uvOffset = row * uvRowStride;
+      for (int col = 0; col < width ~/ 2; col++) {
+        final int i = uvOffset + col * uvPixelStride;
+        out[pos++] = vPlane.bytes[i]; // V
+        out[pos++] = uPlane.bytes[i]; // U
+      }
+    }
+    return out;
   }
 
   void _afterToolReturn(_) {
