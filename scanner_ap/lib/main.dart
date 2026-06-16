@@ -15,7 +15,10 @@ void main() async {
     // делают это сами, но прямые вызовы PdfDocument.openFile (превью,
     // PDF→JPEG, сжатие/слияние) — нет, и без этого падали с
     // StateError: Pdfrx.getCacheDirectory not set.
-    pdfrxFlutterInitialize();
+    // dismissPdfiumWasmWarnings: убирает debug-предупреждение pdfrx о
+    // бандлинге PDFium WASM (~4 МБ). На мобиле WASM не используется в
+    // рантайме; для нас это лишь шум в консоли.
+    pdfrxFlutterInitialize(dismissPdfiumWasmWarnings: true);
     DeepLinkService().init();
     await ThemeNotifier().load();
     await LocaleNotifier().load();
