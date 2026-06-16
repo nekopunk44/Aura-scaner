@@ -11,42 +11,63 @@ class SignatureScreen extends StatefulWidget {
 }
 
 class _SignatureScreenState extends State<SignatureScreen> {
-  SignatureController signatureController = SignatureController(
+  final SignatureController signatureController = SignatureController(
     penStrokeWidth: 3,
     penColor: Colors.black,
   );
 
   @override
+  void dispose() {
+    signatureController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Scaffold(
-        appBar: AppBar(title: const Text('Добавить подпись')),
-        body: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+    final navigator = Navigator.of(context);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Draw Signature')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Signature(
-                height: MediaQuery.of(context).size.width,
-                width: MediaQuery.of(context).size.width,
-                controller: signatureController,
+            Expanded(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.black12),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Signature(
+                    controller: signatureController,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
               ),
             ),
+            const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                padButtonOption(Colors.redAccent, 'Очистить', () {
-                  signatureController.clear();
-                }),
-                padButtonOption(Colors.greenAccent, 'Готово', () async {
-                  if (signatureController.isNotEmpty) {
+                _actionButton(
+                  color: Colors.redAccent,
+                  label: 'Clear',
+                  onTap: signatureController.clear,
+                ),
+                _actionButton(
+                  color: Colors.teal,
+                  label: 'Save',
+                  onTap: () async {
+                    if (signatureController.isEmpty) return;
                     final signature = await exportSignature();
-                    if (signature.isNotEmpty) {
-                      if (!context.mounted) return;
-                      Navigator.pop(context, signature);
-                    }
-                  }
-                }),
+                    if (!mounted || signature.isEmpty) return;
+                    navigator.pop(signature);
+                  },
+                ),
               ],
             ),
           ],
@@ -65,24 +86,21 @@ class _SignatureScreenState extends State<SignatureScreen> {
 
     final signature = await exportController.toPngBytes();
     exportController.dispose();
-    return signature!;
+    return signature ?? Uint8List(0);
   }
 
-  ElevatedButton padButtonOption(
-    Color btnClr,
-    String btnTxt,
-    Function() btnOnTapAction,
-  ) {
+  ElevatedButton _actionButton({
+    required Color color,
+    required String label,
+    required VoidCallback onTap,
+  }) {
     return ElevatedButton(
       style: ButtonStyle(
-        backgroundColor: WidgetStateProperty.all(btnClr),
+        backgroundColor: WidgetStateProperty.all(color),
         padding: WidgetStateProperty.all(const EdgeInsets.all(20)),
-        textStyle: WidgetStateProperty.all(
-          const TextStyle(fontSize: 14, color: Colors.white),
-        ),
       ),
-      onPressed: btnOnTapAction,
-      child: Text(btnTxt),
+      onPressed: onTap,
+      child: Text(label),
     );
   }
 }

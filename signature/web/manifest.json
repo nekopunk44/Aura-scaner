@@ -1,11 +1,11 @@
 {
-    "name": "signature",
-    "short_name": "signature",
+    "name": "Aura Signature",
+    "short_name": "Aura Signature",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Signature capture companion for Aura Scanner.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
