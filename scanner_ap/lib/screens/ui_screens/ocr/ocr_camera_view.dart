@@ -88,26 +88,6 @@ class _OcrCameraViewState extends State<OcrCameraView> {
     );
   }
 
-  Widget _buildFrameOverlay() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final double frameWidth = constraints.maxWidth * 0.85;
-        final double frameHeight = constraints.maxHeight * 0.45;
-        return Align(
-          alignment: const Alignment(0, -0.30),
-          child: Container(
-            width: frameWidth,
-            height: frameHeight,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.white, width: 2.0),
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildBottomBar() {
     return CameraControlsBar(
       onCapture: _busy ? null : () => _guard(widget.onCapture),
@@ -130,25 +110,40 @@ class _OcrCameraViewState extends State<OcrCameraView> {
     }
 
     final l10n = AppLocalizations.of(context);
+    final size = MediaQuery.of(context).size;
 
     return Stack(
       children: [
-        Positioned.fill(child: _buildFrameOverlay()),
-
-        // Подсказка над рамкой.
+        // Рамка-видоискатель и подсказка под ней — единым блоком чуть выше
+        // центра, чтобы подпись гарантированно была ПОД рамкой с отступом
+        // и не перекрывала её границу.
         Align(
-          alignment: const Alignment(0, 0.30),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(
-              l10n.ocrSelectPhoto,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.85),
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+          alignment: const Alignment(0, -0.18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: size.width * 0.82,
+                height: size.height * 0.40,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white, width: 2.0),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
-            ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  l10n.ocrSelectPhoto,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
 
