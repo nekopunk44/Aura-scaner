@@ -2,8 +2,9 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'signature_pad.dart';
+import '../../../services/document_registry.dart';
+import '../../../services/signature_storage_service.dart';
 import '../../../l10n/app_localizations.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -14,8 +15,26 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final _signatureStorage = SignatureStorageService();
+
   Uint8List? signatureImage;
   String? savedPath;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSignature();
+  }
+
+  Future<void> _loadSignature() async {
+    final storedSignature = await _signatureStorage.loadSignature();
+    if (!mounted) return;
+    setState(() {
+      signatureImage = storedSignature;
+      _isLoading = false;
+    });
+  }
 
   Future<void> _saveSignatureToFile(Uint8List bytes) async {
     final dir = await getApplicationDocumentsDirectory();
@@ -23,14 +42,42 @@ class _HomeScreenState extends State<HomeScreen> {
     final file = File('${dir.path}/$fileName');
     await file.writeAsBytes(bytes);
 
-    final prefs = await SharedPreferences.getInstance();
-    final paths = prefs.getStringList('saved_document_paths') ?? [];
-    if (!paths.contains(file.path)) {
-      paths.add(file.path);
-      await prefs.setStringList('saved_document_paths', paths);
-    }
+    await DocumentRegistry().load();
+    await DocumentRegistry().add(
+      DocEntry(
+        localPath: file.path,
+        remoteId: null,
+        name: fileName.replaceFirst('.png', ''),
+      ),
+    );
 
     setState(() => savedPath = file.path);
+  }
+
+  Future<void> _openSignaturePad() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SignatureScreen()),
+    );
+    if (!mounted || result == null) return;
+
+    final bytes = result as Uint8List;
+    await _signatureStorage.saveSignature(bytes);
+    if (!mounted) return;
+
+    setState(() {
+      signatureImage = bytes;
+      savedPath = null;
+    });
+  }
+
+  Future<void> _clearSavedSignature() async {
+    await _signatureStorage.clearSignature();
+    if (!mounted) return;
+    setState(() {
+      signatureImage = null;
+      savedPath = null;
+    });
   }
 
   @override
@@ -70,7 +117,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
         ],
       ),
-      body: Padding(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -136,15 +185,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       borderRadius: BorderRadius.circular(14)),
                 ),
                 onPressed: () async {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SignatureScreen()),
-                  );
-                  if (!mounted || result == null) return;
-                  setState(() {
-                    signatureImage = result as Uint8List;
-                    savedPath = null;
-                  });
+                  await _openSignaturePad();
                 },
               ),
             ),
@@ -176,6 +217,23 @@ class _HomeScreenState extends State<HomeScreen> {
                             backgroundColor: Colors.green,
                           ));
                         },
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: Text(AppLocalizations.of(context).clearSelection),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red.shade400,
+                    side: BorderSide(color: Colors.red.shade300),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: _clearSavedSignature,
                 ),
               ),
             ],

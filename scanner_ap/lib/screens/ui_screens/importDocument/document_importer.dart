@@ -9,14 +9,13 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../services/document_registry.dart';
 import '../main_screen/docx_viewer_screen.dart';
 import '../main_screen/pdf_viewer_screen.dart';
 import '../main_screen/text_file_viewer_screen.dart';
 import '../photo_view_screen.dart';
-
-const _documentKey = 'saved_document_paths';
+import '../signature/image_signature_editor_screen.dart';
 
 class DocumentImporter extends StatefulWidget {
   final String? initialPath;
@@ -74,12 +73,14 @@ class _DocumentImporterState extends State<DocumentImporter> {
       await File(_selectedPath!).copy(destPath);
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    final paths = prefs.getStringList(_documentKey) ?? [];
-    if (!paths.contains(destPath)) {
-      paths.add(destPath);
-      await prefs.setStringList(_documentKey, paths);
-    }
+    await DocumentRegistry().load();
+    await DocumentRegistry().add(
+      DocEntry(
+        localPath: destPath,
+        remoteId: null,
+        name: p.basenameWithoutExtension(destPath),
+      ),
+    );
 
     return destPath;
   }
@@ -571,12 +572,14 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
     }
 
     if (_isPdf) {
-      await Navigator.push(
+      final result = await Navigator.push<String?>(
         context,
         MaterialPageRoute(
           builder: (_) => PdfViewerScreen(filePath: _currentPath, fileName: _fileName),
         ),
       );
+      if (!mounted || result == null || result.isEmpty) return;
+      setState(() => _currentPath = result);
       return;
     }
 
@@ -655,13 +658,12 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
     try {
       await File(_currentPath).rename(newPath);
 
-      final prefs = await SharedPreferences.getInstance();
-      final paths = prefs.getStringList(_documentKey) ?? [];
-      final index = paths.indexOf(_currentPath);
-      if (index != -1) {
-        paths[index] = newPath;
-        await prefs.setStringList(_documentKey, paths);
-      }
+      await DocumentRegistry().load();
+      await DocumentRegistry().updateLocalPath(
+        _currentPath,
+        newPath,
+        newBaseName,
+      );
 
       if (!mounted) return;
       setState(() => _currentPath = newPath);
@@ -710,10 +712,8 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
         await file.delete();
       }
 
-      final prefs = await SharedPreferences.getInstance();
-      final paths = prefs.getStringList(_documentKey) ?? [];
-      paths.remove(_currentPath);
-      await prefs.setStringList(_documentKey, paths);
+      await DocumentRegistry().load();
+      await DocumentRegistry().remove(_currentPath);
 
       if (!mounted) return;
       Navigator.pop(context, '');
@@ -805,6 +805,48 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
     }
   }
 
+  Future<void> _signImage() async {
+    if (!_isImage) return;
+
+    final previousPath = _currentPath;
+    final result = await Navigator.push<String?>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ImageSignatureEditorScreen(
+          filePath: _currentPath,
+          fileName: _fileName,
+        ),
+      ),
+    );
+
+    if (!mounted || result == null || result.isEmpty) return;
+
+    setState(() => _isBusy = true);
+    try {
+      await DocumentRegistry().load();
+      await DocumentRegistry().updateLocalPath(
+        previousPath,
+        result,
+        p.basenameWithoutExtension(result),
+      );
+
+      if (!mounted) return;
+      setState(() => _currentPath = result);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Подпись добавлена в документ')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка подписи: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isBusy = false);
+      }
+    }
+  }
+
   Widget _buildPreview() {
     if (_isImage) {
       return ClipRRect(
@@ -888,6 +930,15 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _isBusy ? null : _signImage,
+            icon: const Icon(Icons.draw_outlined),
+            label: const Text('Добавить подпись'),
+          ),
         ),
       ],
     );

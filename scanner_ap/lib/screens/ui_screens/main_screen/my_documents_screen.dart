@@ -835,9 +835,12 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     if (lower.endsWith('.jpg') || lower.endsWith('.png') || lower.endsWith('.jpeg')) {
       await OpenFilex.open(fullPath);
     } else if (lower.endsWith('.pdf')) {
-      navigator.push(MaterialPageRoute(
+      final result = await navigator.push<String?>(MaterialPageRoute(
         builder: (_) => PdfViewerScreen(filePath: fullPath, fileName: fileName),
       ));
+      if (result != null && result.isNotEmpty && mounted) {
+        await _loadDocuments();
+      }
     } else if (lower.endsWith('.docx') || lower.endsWith('.doc')) {
       navigator.push(MaterialPageRoute(
         builder: (_) =>
@@ -1164,4 +1167,3 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     );
   }
 }
-
