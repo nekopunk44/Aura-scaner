@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'camera.dart';
 import 'ui_helpers.dart';
-import 'package:camera/camera.dart';
 import 'package:path/path.dart' as p;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -452,9 +451,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
             Icons.translate,
             subtitle: l10n.featTranslateSub,
             iconColor: const Color(0xFFE67E22),
-            onTap: () async {
-              await availableCameras();
-              if (!mounted) return;
+            onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => CameraScreen(initialFeature: 'Перевод')),
@@ -469,9 +466,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
             Icons.qr_code_2,
             subtitle: l10n.featQrSub,
             iconColor: Colors.teal,
-            onTap: () async {
-              await availableCameras();
-              if (!mounted) return;
+            onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -1207,4 +1202,3 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     }
   }
 }
-

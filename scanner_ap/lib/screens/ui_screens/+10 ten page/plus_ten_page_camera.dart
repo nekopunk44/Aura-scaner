@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
 import '../../../l10n/app_localizations.dart';
 
@@ -258,6 +259,7 @@ class UnlimitedDocumentView extends StatelessWidget {
                 isDocumentMode: true,
                 pageMode: pageStatus,
                 featureName: "Неограниченный документ",
+                overlayKind: CaptureStatusOverlayKind.batchDocument,
                 l10n: l10n,
               ) as Widget,
             ),

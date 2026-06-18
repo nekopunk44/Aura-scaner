@@ -141,18 +141,18 @@ packages:
     dependency: "direct main"
     description:
       name: camera
-      sha256: "87a27e0553e3432119c1c2f6e4b9a1bbf7d2c660552b910bfa59185a9facd632"
+      sha256: "4142a19a38e388d3bab444227636610ba88982e36dff4552d5191a86f65dc437"
       url: "https://pub.dev"
     source: hosted
-    version: "0.11.2+1"
+    version: "0.11.4"
   camera_android_camerax:
     dependency: transitive
     description:
       name: camera_android_camerax
-      sha256: dfa51247e911c5171d5d96327250b00cd4424c7e9874c1becb37447d530a6546
+      sha256: "8516fe308bc341a5067fb1a48edff0ddfa57c0d3cdcc9dbe7ceca3ba119e2577"
       url: "https://pub.dev"
     source: hosted
-    version: "0.6.23+4"
+    version: "0.6.30"
   camera_avfoundation:
     dependency: transitive
     description:
@@ -265,6 +265,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.12"
+  dartcv4:
+    dependency: transitive
+    description:
+      name: dartcv4
+      sha256: "0e2e3473cbbbcca47a7da4153ee11a93faec19598809d4564a8fb35910b7fbce"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.8"
   dbus:
     dependency: transitive
     description:
@@ -581,6 +589,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.13.1"
+  google_mlkit_subject_segmentation:
+    dependency: "direct main"
+    description:
+      name: google_mlkit_subject_segmentation
+      sha256: "36ed01758f226cea209320740ef72a0b334cede2747a7da5904102b4a143fe7b"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.3"
   google_mlkit_text_recognition:
     dependency: "direct main"
     description:
@@ -933,6 +949,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.7.0"
+  opencv_core:
+    dependency: "direct main"
+    description:
+      name: opencv_core
+      sha256: b31c1977f297992d327f2bde8db77b0549a48be29ab92c0b18e705de9443c133
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.4.5"
   package_info_plus:
     dependency: "direct main"
     description:

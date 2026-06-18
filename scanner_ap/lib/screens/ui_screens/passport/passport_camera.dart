@@ -207,6 +207,7 @@ class PassportCameraView extends StatelessWidget {
             isDocumentMode: true,
             pageMode: pageMode,
             featureName: "Паспорт",
+            overlayKind: CaptureStatusOverlayKind.passport,
           ),
         ),
 

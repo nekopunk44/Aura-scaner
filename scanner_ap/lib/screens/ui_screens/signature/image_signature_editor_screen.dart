@@ -10,7 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../services/signature_storage_service.dart';
-import 'signature_pad.dart';
+import 'signature_picker_sheet.dart';
 
 class ImageSignatureEditorScreen extends StatefulWidget {
   final String filePath;
@@ -66,23 +66,25 @@ class _ImageSignatureEditorScreenState extends State<ImageSignatureEditorScreen>
         : 'You can drag and resize the signature';
   }
 
+  String _addedHint(BuildContext context) {
+    return Localizations.localeOf(context).languageCode == 'ru'
+        ? 'Подпись добавлена'
+        : 'Signature added';
+  }
+
+  String _selectedLabel(BuildContext context) {
+    return Localizations.localeOf(context).languageCode == 'ru'
+        ? 'Подпись'
+        : 'Signature';
+  }
+
   Future<bool> _ensureSignatureReady() async {
-    if (_signatureBytes != null) return true;
-
-    final stored = await _signatureStorage.loadSignature();
-    if (stored != null && stored.isNotEmpty) {
-      _signatureBytes = stored;
-      return true;
-    }
-
     if (!mounted) return false;
-    final result = await Navigator.push<Uint8List>(
+    final result = await SignaturePickerSheet.pickSignature(
       context,
-      MaterialPageRoute(builder: (_) => const SignatureScreen()),
+      storage: _signatureStorage,
     );
     if (!mounted || result == null) return false;
-
-    await _signatureStorage.saveSignature(result);
     _signatureBytes = result;
     return true;
   }
@@ -209,7 +211,7 @@ class _ImageSignatureEditorScreenState extends State<ImageSignatureEditorScreen>
         _selectedSignatureId = placed.id;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_editHint(context))),
+        SnackBar(content: Text('${_addedHint(context)}. ${_editHint(context)}')),
       );
     } finally {
       if (mounted) setState(() => _isPreparingSignature = false);
@@ -331,23 +333,75 @@ class _ImageSignatureEditorScreenState extends State<ImageSignatureEditorScreen>
                                   child: Stack(
                                     clipBehavior: Clip.none,
                                     children: [
-                                      AnimatedContainer(
-                                        duration: const Duration(milliseconds: 120),
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(10),
-                                          border: Border.all(
+                                      TweenAnimationBuilder<double>(
+                                        key: ValueKey('image-signature-${signature.id}'),
+                                        tween: Tween(begin: 0.92, end: 1),
+                                        duration: const Duration(milliseconds: 220),
+                                        curve: Curves.easeOutBack,
+                                        builder: (context, scale, child) {
+                                          return Transform.scale(scale: scale, child: child);
+                                        },
+                                        child: AnimatedContainer(
+                                          duration: const Duration(milliseconds: 120),
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: BoxDecoration(
                                             color: _selectedSignatureId == signature.id
-                                                ? const Color(0xFF2CA5E0)
+                                                ? const Color(0xFF2CA5E0).withValues(alpha: 0.08)
                                                 : Colors.transparent,
-                                            width: 2,
+                                            borderRadius: BorderRadius.circular(10),
+                                            border: Border.all(
+                                              color: _selectedSignatureId == signature.id
+                                                  ? const Color(0xFF2CA5E0)
+                                                  : Colors.transparent,
+                                              width: 2,
+                                            ),
+                                            boxShadow: _selectedSignatureId == signature.id
+                                                ? [
+                                                    BoxShadow(
+                                                      color: const Color(0xFF2CA5E0)
+                                                          .withValues(alpha: 0.18),
+                                                      blurRadius: 16,
+                                                      spreadRadius: 2,
+                                                    ),
+                                                  ]
+                                                : const [],
+                                          ),
+                                          child: Image.memory(
+                                            signature.bytes,
+                                            fit: BoxFit.contain,
                                           ),
                                         ),
-                                        child: Image.memory(
-                                          signature.bytes,
-                                          fit: BoxFit.contain,
-                                        ),
                                       ),
+                                      if (_selectedSignatureId == signature.id)
+                                        Positioned(
+                                          left: 6,
+                                          top: -16,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF2CA5E0),
+                                              borderRadius: BorderRadius.circular(999),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: const Color(0xFF2CA5E0)
+                                                      .withValues(alpha: 0.25),
+                                                  blurRadius: 12,
+                                                ),
+                                              ],
+                                            ),
+                                            child: Text(
+                                              _selectedLabel(context),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
                                       if (_selectedSignatureId == signature.id)
                                         Positioned(
                                           right: -10,

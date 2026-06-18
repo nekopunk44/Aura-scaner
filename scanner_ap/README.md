@@ -1,71 +1,51 @@
 # Aura Scanner
 
-Основной Flutter-клиент проекта `Aura Scanner`.
+Main Flutter client for the `Aura Scanner` project.
 
-Приложение предназначено для:
+## What it does
 
-- сканирования документов, паспорта и ID-карты;
-- импорта локальных файлов;
-- просмотра и базового редактирования документов;
-- OCR и перевода текста через камеру;
-- PDF-операций;
-- локального хранения и облачной синхронизации документов.
+- Scans documents, passports, and ID cards
+- Imports local files
+- Lets users review and manage saved documents
+- Runs OCR and translation flows
+- Supports PDF-related operations
+- Syncs with the backend API
 
-## Текущее состояние
-
-По текущему коду в приложении уже есть:
-
-- логин и регистрация;
-- экран локальных документов;
-- экран облачных документов;
-- импорт `pdf`, `doc`, `docx`, `txt`, `jpg`, `jpeg`, `png`;
-- `DocumentEditorScreen` для просмотра, переименования, удаления и шаринга файлов;
-- базовое редактирование изображений: crop и rotate;
-- OCR, перевод, QR-сканирование, подпись;
-- сервисы для интеграции с backend.
-
-## Требования
+## Requirements
 
 - Flutter `3.41.9+`
 - Dart `3.9+`
 - Android SDK
 - JDK 17
-- Android-устройство или эмулятор
+- Android device or emulator
 
-## Запуск
+## Run
 
 ```bash
 flutter pub get
 flutter run
 ```
 
-## Анализ кода
+## Analysis
 
-В текущем окружении `dart analyze` может падать из-за запрета записи в системные папки `AppData`. Для стабильного анализа добавлен вспомогательный скрипт:
+If `dart analyze` is blocked by local environment restrictions on Windows, use:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ..\scripts\flutter_analyze.ps1
 ```
 
-## Сборка Android
+## Android release build
 
 ```bash
 flutter build apk --release
 ```
 
-## Важные ограничения
+## Backend connection
 
-- package name пока шаблонный: `com.example.scanner_ap`
-- release-подпись Android не настроена под production
-- web-режим требует установленный Google Chrome
-- Windows desktop требует `Visual Studio` с `Desktop development with C++`
-
-## Связка с backend
-
-Flutter-клиент использует API вида:
+The Flutter client uses an API endpoint in this format:
 
 ```text
 http://<host>:3000/api
 ```
 
-Адрес backend можно менять из интерфейса экрана облачных документов.
+The backend address can be changed from the app settings flow for cloud features.

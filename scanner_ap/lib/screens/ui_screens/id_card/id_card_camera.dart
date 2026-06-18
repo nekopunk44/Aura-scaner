@@ -139,7 +139,7 @@ class IdCardCameraView extends StatelessWidget {
         final double frameHeight = frameWidth / aspectRatio; // Высота = Ширина / 1.6
 
         return Align(
-          alignment: const Alignment(0, -0.40),
+          alignment: const Alignment(0, -0.16),
           child: Container(
             width: frameWidth,
             height: frameHeight,
@@ -196,6 +196,7 @@ class IdCardCameraView extends StatelessWidget {
             isDocumentMode: true,
             pageMode: currentSide,
             featureName: "Удостоверение личности",
+            overlayKind: CaptureStatusOverlayKind.idCard,
           ),
         ),
 

@@ -63,10 +63,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- ML Kit: скачать OCR-модели при установке -->
+        <!-- ML Kit: скачать модели при установке (OCR, перевод, сегментация
+             карты для авто-обрезки ID). Без subject_segment модель качается
+             лишь при первом использовании → первый снимок падал с
+             «Waiting for ... to be downloaded». -->
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="ocr,translate" />
+            android:value="ocr,translate,subject_segment" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

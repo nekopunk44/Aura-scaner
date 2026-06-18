@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:camera/camera.dart';
 import '../all_actions_screen.dart';
 import 'my_documents_screen.dart';
 import '../camera.dart';
@@ -68,13 +67,6 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
   void _navigateToCameraScreen() async {
     setState(() => _isScanning = true);
     await Future.delayed(const Duration(milliseconds: 100));
-
-    try {
-      await availableCameras();
-    } catch (e) {
-      debugPrint('Camera init error: $e');
-    }
-
     if (!mounted) {
       setState(() => _isScanning = false);
       return;

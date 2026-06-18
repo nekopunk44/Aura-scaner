@@ -1,9 +1,12 @@
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:signature/signature.dart';
 
 import '../../../l10n/app_localizations.dart';
+
+enum _SignatureControlPanel { width, color }
 
 class SignatureScreen extends StatefulWidget {
   const SignatureScreen({super.key});
@@ -14,14 +17,24 @@ class SignatureScreen extends StatefulWidget {
 
 class _SignatureScreenState extends State<SignatureScreen> {
   static const List<double> _widths = [2, 3, 5, 8];
+  static const List<Color> _colors = [
+    Color(0xFF101820),
+    Color(0xFF2CA5E0),
+    Color(0xFF34A853),
+    Color(0xFFE67E22),
+    Color(0xFFE74C3C),
+  ];
+
   double _strokeWidth = 3;
+  Color _penColor = const Color(0xFF101820);
+  _SignatureControlPanel _activePanel = _SignatureControlPanel.width;
 
   late SignatureController _controller = _makeController();
 
   SignatureController _makeController({List<Point>? points}) {
     final controller = SignatureController(
       penStrokeWidth: _strokeWidth,
-      penColor: Colors.black,
+      penColor: _penColor,
       exportBackgroundColor: Colors.white,
       points: points,
     );
@@ -47,9 +60,144 @@ class _SignatureScreenState extends State<SignatureScreen> {
     });
   }
 
+  void _setPenColor(Color color) {
+    if (color == _penColor) return;
+    final preserved = List<Point>.from(_controller.points);
+    _controller.dispose();
+    setState(() {
+      _penColor = color;
+      _controller = _makeController(points: preserved);
+    });
+  }
+
   Future<Uint8List?> _export() async {
     if (_controller.isEmpty) return null;
     return _controller.toPngBytes();
+  }
+
+  bool _isRussian(BuildContext context) {
+    return Localizations.localeOf(context).languageCode == 'ru';
+  }
+
+  String _colorTitle(BuildContext context) {
+    return _isRussian(context) ? 'Цвет пера' : 'Pen color';
+  }
+
+  Widget _buildControlPanel(
+    BuildContext context, {
+    required AppLocalizations l10n,
+    required Color cardBg,
+    required Color textColor,
+    required Color subColor,
+    required Color chipBg,
+    required Color accent,
+    required bool isDark,
+  }) {
+    final overlayColor = isDark
+        ? const Color(0xFF172436).withValues(alpha: 0.78)
+        : Colors.white.withValues(alpha: 0.84);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : const Color(0xFFDCE5F0).withValues(alpha: 0.9);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+          decoration: BoxDecoration(
+            color: overlayColor,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: borderColor),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.05),
+                blurRadius: 18,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _FilterTabChip(
+                      title: l10n.sigPenWidth,
+                      selected: _activePanel == _SignatureControlPanel.width,
+                      accent: accent,
+                      chipBg: chipBg,
+                      textColor: textColor,
+                      onTap: () {
+                        setState(() => _activePanel = _SignatureControlPanel.width);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _FilterTabChip(
+                      title: _colorTitle(context),
+                      selected: _activePanel == _SignatureControlPanel.color,
+                      accent: accent,
+                      chipBg: chipBg,
+                      textColor: textColor,
+                      onTap: () {
+                        setState(() => _activePanel = _SignatureControlPanel.color);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: _activePanel == _SignatureControlPanel.width
+                    ? Row(
+                        key: const ValueKey('width-panel'),
+                        children: [
+                          for (final width in _widths) ...[
+                            Expanded(
+                              child: _StrokeChip(
+                                width: width,
+                                selected: _strokeWidth == width,
+                                accent: accent,
+                                chipBg: chipBg,
+                                textColor: textColor,
+                                strokeColor: _penColor,
+                                onTap: () => _setStrokeWidth(width),
+                              ),
+                            ),
+                            if (width != _widths.last) const SizedBox(width: 8),
+                          ],
+                        ],
+                      )
+                : Align(
+                    key: const ValueKey('color-panel'),
+                    alignment: Alignment.center,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (final color in _colors) ...[
+                          _ColorChip(
+                            color: color,
+                            selected: _penColor == color,
+                            accent: accent,
+                            onTap: () => _setPenColor(color),
+                          ),
+                          if (color != _colors.last) const SizedBox(width: 12),
+                        ],
+                      ],
+                    ),
+                  ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -95,56 +243,6 @@ class _SignatureScreenState extends State<SignatureScreen> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
           child: Column(
             children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                decoration: BoxDecoration(
-                  color: cardBg,
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.14),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.draw_outlined,
-                        color: accent,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            l10n.sigAddYours,
-                            style: TextStyle(
-                              color: textColor,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            l10n.sigHint,
-                            style: TextStyle(
-                              color: subColor,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
               Expanded(
                 child: Stack(
                   children: [
@@ -224,7 +322,7 @@ class _SignatureScreenState extends State<SignatureScreen> {
                             Positioned(
                               left: 28,
                               right: 28,
-                              bottom: 62,
+                              bottom: 178,
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -251,45 +349,20 @@ class _SignatureScreenState extends State<SignatureScreen> {
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-                decoration: BoxDecoration(
-                  color: cardBg,
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      l10n.sigPenWidth,
-                      style: TextStyle(
-                        color: subColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: 12,
+                      child: _buildControlPanel(
+                        context,
+                        l10n: l10n,
+                        cardBg: cardBg,
+                        textColor: textColor,
+                        subColor: subColor,
+                        chipBg: chipBg,
+                        accent: accent,
+                        isDark: isDark,
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        for (final width in _widths) ...[
-                          Expanded(
-                            child: _StrokeChip(
-                              width: width,
-                              selected: _strokeWidth == width,
-                              accent: accent,
-                              chipBg: chipBg,
-                              textColor: textColor,
-                              onTap: () => _setStrokeWidth(width),
-                            ),
-                          ),
-                          if (width != _widths.last) const SizedBox(width: 8),
-                        ],
-                      ],
                     ),
                   ],
                 ),
@@ -392,10 +465,93 @@ class _StrokeChip extends StatelessWidget {
   final Color accent;
   final Color chipBg;
   final Color textColor;
+  final Color strokeColor;
   final VoidCallback onTap;
 
   const _StrokeChip({
     required this.width,
+    required this.selected,
+    required this.accent,
+    required this.chipBg,
+    required this.textColor,
+    required this.strokeColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final sampleBg = selected
+        ? accent.withValues(alpha: 0.12)
+        : textColor.withValues(alpha: 0.08);
+    final sampleBorder = selected
+        ? accent.withValues(alpha: 0.22)
+        : textColor.withValues(alpha: 0.08);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+        decoration: BoxDecoration(
+          color: selected ? accent.withValues(alpha: 0.14) : chipBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected
+                ? accent
+                : Colors.transparent,
+            width: selected ? 1.6 : 1,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${width.toStringAsFixed(0)} px',
+              style: TextStyle(
+                color: selected ? accent : textColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              height: 22,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: sampleBg,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: sampleBorder,
+                ),
+              ),
+              child: Center(
+                child: Container(
+                  height: width,
+                  width: 28,
+                  decoration: BoxDecoration(
+                    color: strokeColor,
+                    borderRadius: BorderRadius.circular(width / 2),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterTabChip extends StatelessWidget {
+  final String title;
+  final bool selected;
+  final Color accent;
+  final Color chipBg;
+  final Color textColor;
+  final VoidCallback onTap;
+
+  const _FilterTabChip({
+    required this.title,
     required this.selected,
     required this.accent,
     required this.chipBg,
@@ -409,37 +565,85 @@ class _StrokeChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: selected ? accent : chipBg,
-          borderRadius: BorderRadius.circular(14),
+          color: selected ? accent.withValues(alpha: 0.12) : chipBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? accent : Colors.transparent,
+            width: selected ? 1.5 : 1,
+          ),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            SizedBox(
-              height: 12,
-              child: Center(
-                child: Container(
-                  height: width,
-                  width: 32,
-                  decoration: BoxDecoration(
-                    color: selected ? Colors.white : textColor,
-                    borderRadius: BorderRadius.circular(width / 2),
-                  ),
+            Icon(
+              selected ? Icons.tune_rounded : Icons.chevron_right_rounded,
+              size: 16,
+              color: selected ? accent : textColor.withValues(alpha: 0.7),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? accent : textColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              '${width.toStringAsFixed(0)}px',
-              style: TextStyle(
-                color: selected ? Colors.white : textColor,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ColorChip extends StatelessWidget {
+  final Color color;
+  final bool selected;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _ColorChip({
+    required this.color,
+    required this.selected,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: 34,
+        height: 34,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: selected ? accent.withValues(alpha: 0.16) : Colors.transparent,
+          border: Border.all(
+            color: selected ? accent : Colors.white.withValues(alpha: 0.10),
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+          child: selected
+              ? const Icon(
+                  Icons.check_rounded,
+                  color: Colors.white,
+                  size: 16,
+                )
+              : null,
         ),
       ),
     );

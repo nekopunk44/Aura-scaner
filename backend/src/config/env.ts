@@ -36,6 +36,7 @@ export const env = {
   openRouterModel:
     process.env.OPENROUTER_MODEL ||
     'google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free,nvidia/nemotron-nano-12b-v2-vl:free',
+  openRouterOcrModel: process.env.OPENROUTER_OCR_MODEL || 'openrouter/free',
   // Apple Sign In
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'com.aurascanner.app',
   // Apple App Store Server API (для проверки receipt)

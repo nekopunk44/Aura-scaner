@@ -260,15 +260,16 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF0F1923),
       appBar: AppBar(
         title: Text(l10n.editIdCardTitle),
-        backgroundColor: Colors.black,
+        backgroundColor: const Color(0xFF141E2B),
         foregroundColor: Colors.white,
         centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: l10n.reset,
             onPressed: () {
               setState(() {
                 if (_isEditingFront) {
@@ -306,7 +307,7 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
           ),
 
           Expanded(
-            child: SingleChildScrollView(
+            child: Center(
               child: _buildEditableImagePreview(),
             ),
           ),
@@ -406,10 +407,12 @@ class _SideButton extends StatelessWidget {
     return ElevatedButton(
       onPressed: onPressed,
       style: ElevatedButton.styleFrom(
-        backgroundColor: isSelected ? Colors.yellow.shade700 : Colors.grey.shade800,
-        foregroundColor: isSelected ? Colors.black : Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        backgroundColor:
+            isSelected ? const Color(0xFF2CA5E0) : const Color(0xFF1E2A3A),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
       child: Text(label),
     );
@@ -440,7 +443,7 @@ class _ToolIcon extends StatelessWidget {
             padding: const EdgeInsets.all(8.0),
             child: Icon(
               icon,
-              color: isActive ? Colors.lightBlue : Colors.white,
+              color: isActive ? const Color(0xFF2CA5E0) : Colors.white,
               size: 28,
             ),
           ),
@@ -471,9 +474,13 @@ class _AdjustmentSlider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, color: Colors.white, size: 24),
-        const SizedBox(width: 8),
-        Text(label, style: const TextStyle(color: Colors.white)),
+        Icon(icon, color: Colors.white70, size: 22),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 78,
+          child: Text(label,
+              style: const TextStyle(color: Colors.white, fontSize: 13)),
+        ),
         Expanded(
           child: Slider(
             value: value,
@@ -481,13 +488,18 @@ class _AdjustmentSlider extends StatelessWidget {
             max: 1.0,
             divisions: 20,
             onChanged: onChanged,
-            activeColor: Colors.blue,
-            inactiveColor: Colors.grey.shade700,
+            activeColor: const Color(0xFF2CA5E0),
+            inactiveColor: Colors.white24,
           ),
         ),
-        Text(
-          label, 
-          style: const TextStyle(color: Colors.white, fontSize: 14),
+        SizedBox(
+          width: 38,
+          child: Text(
+            // Значение в процентах вместо дублирующей подписи.
+            '${value >= 0 ? '+' : ''}${(value * 100).round()}',
+            textAlign: TextAlign.right,
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
+          ),
         ),
       ],
     );
