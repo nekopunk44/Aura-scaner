@@ -183,6 +183,7 @@ interface ReplicatePrediction {
   error?: unknown;
   detail?: string;
   urls?: { get?: string };
+  latest_version?: { id?: string }; // приходит в ответе GET /models/{model}
 }
 
 /** Универсальный JSON-вызов к Replicate (https, без сторонних зависимостей). */
@@ -269,14 +270,42 @@ export async function restorePhoto(
     return;
   }
 
-  // 1. Создаём предсказание. Prefer: wait — Replicate держит соединение и
+  // 1. Узнаём актуальную версию модели. Endpoint /models/{m}/predictions
+  //    работает только для official-моделей Replicate; community-модели
+  //    (GFPGAN, CodeFormer) на нём дают 404. Поэтому берём version-хэш через
+  //    GET и создаём предсказание уже на /v1/predictions.
+  const modelInfo = await replicateRequest(
+    'GET',
+    `${REPLICATE_API}/models/${env.replicateRestoreModel}`,
+  );
+  if (modelInfo.status !== 200) {
+    const detail = modelInfo.json?.detail ?? modelInfo.raw.slice(0, 300);
+    logger.warn('[restorePhoto] model lookup failed', {
+      status: modelInfo.status,
+      model: env.replicateRestoreModel,
+      detail,
+    });
+    res.status(502).json({ message: 'Restore service error', detail });
+    return;
+  }
+  const versionId = modelInfo.json?.latest_version?.id;
+  if (typeof versionId !== 'string' || versionId.length === 0) {
+    logger.warn('[restorePhoto] model has no version', {
+      model: env.replicateRestoreModel,
+    });
+    res.status(502).json({ message: 'Restore model has no version' });
+    return;
+  }
+
+  // 2. Создаём предсказание. Prefer: wait — Replicate держит соединение и
   //    возвращает готовый результат, если уложился в окно (~60с).
-  const createUrl =
-    `${REPLICATE_API}/models/${env.replicateRestoreModel}/predictions`;
   const created = await replicateRequest(
     'POST',
-    createUrl,
-    { input: { img: image.dataUrl, version: 'v1.4', scale: 2 } },
+    `${REPLICATE_API}/predictions`,
+    {
+      version: versionId,
+      input: { img: image.dataUrl, version: 'v1.4', scale: 2 },
+    },
     { Prefer: 'wait' },
   );
 
@@ -292,7 +321,7 @@ export async function restorePhoto(
 
   let prediction: ReplicatePrediction = created.json ?? {};
 
-  // 2. Если из-за холодного старта результат ещё не готов — опрашиваем статус.
+  // 3. Если из-за холодного старта результат ещё не готов — опрашиваем статус.
   const getUrl = prediction.urls?.get;
   const deadline = Date.now() + RESTORE_TIMEOUT_MS;
   const terminal = ['succeeded', 'failed', 'canceled'];
