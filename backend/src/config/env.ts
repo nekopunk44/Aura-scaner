@@ -37,6 +37,13 @@ export const env = {
     process.env.OPENROUTER_MODEL ||
     'google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free,nvidia/nemotron-nano-12b-v2-vl:free',
   openRouterOcrModel: process.env.OPENROUTER_OCR_MODEL || 'openrouter/free',
+  // Replicate — восстановление старых фото (GFPGAN: лица + апскейл). Модель
+  // задаётся как owner/name; вызывается через /v1/models/{model}/predictions
+  // (берётся дефолтная версия). Альтернативы: sczhou/codeformer,
+  // microsoft/bringing-old-photos-back-to-life. Без токена эндпоинт вернёт 503.
+  replicateApiToken: process.env.REPLICATE_API_TOKEN || '',
+  replicateRestoreModel:
+    process.env.REPLICATE_RESTORE_MODEL || 'tencentarc/gfpgan',
   // Apple Sign In
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'com.aurascanner.app',
   // Apple App Store Server API (для проверки receipt)

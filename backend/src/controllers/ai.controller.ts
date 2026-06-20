@@ -172,6 +172,164 @@ export async function analyzeDocument(
   res.status(502).json({ message: 'AI service error', detail: lastDetail });
 }
 
+const REPLICATE_API = 'https://api.replicate.com/v1';
+const RESTORE_POLL_INTERVAL_MS = 2000;
+const RESTORE_TIMEOUT_MS = 90_000;
+
+interface ReplicatePrediction {
+  id?: string;
+  status?: string; // starting | processing | succeeded | failed | canceled
+  output?: unknown;
+  error?: unknown;
+  detail?: string;
+  urls?: { get?: string };
+}
+
+/** Универсальный JSON-вызов к Replicate (https, без сторонних зависимостей). */
+function replicateRequest(
+  method: string,
+  urlStr: string,
+  body?: unknown,
+  extraHeaders: Record<string, string> = {},
+): Promise<{ status: number; json: ReplicatePrediction | null; raw: string }> {
+  return new Promise((resolve) => {
+    const url = new URL(urlStr);
+    const payload = body ? JSON.stringify(body) : undefined;
+    const proxyReq = https.request(
+      {
+        method,
+        hostname: url.hostname,
+        path: url.pathname + url.search,
+        port: 443,
+        headers: {
+          Authorization: `Bearer ${env.replicateApiToken}`,
+          'Content-Type': 'application/json',
+          ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
+          ...extraHeaders,
+        },
+      },
+      (proxyRes) => {
+        let data = '';
+        proxyRes.on('data', (chunk) => {
+          data += chunk;
+        });
+        proxyRes.on('end', () => {
+          let json: ReplicatePrediction | null = null;
+          try {
+            json = JSON.parse(data);
+          } catch {
+            json = null;
+          }
+          resolve({ status: proxyRes.statusCode ?? 0, json, raw: data });
+        });
+      },
+    );
+    proxyReq.on('error', (err) => {
+      logger.error('[replicateRequest] request error', { err });
+      resolve({ status: 0, json: null, raw: '' });
+    });
+    if (payload) proxyReq.write(payload);
+    proxyReq.end();
+  });
+}
+
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Восстановление старого фото через Replicate (по умолчанию GFPGAN —
+ * улучшение лиц + апскейл). Картинка приходит из приложения как base64,
+ * уходит в Replicate как data-URL; возвращаем URL восстановленного файла.
+ */
+export async function restorePhoto(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
+  if (!env.replicateApiToken) {
+    res.status(503).json({ message: 'Restore service is not configured' });
+    return;
+  }
+
+  const { imageBase64, mimeType } = req.body ?? {};
+  if (typeof imageBase64 !== 'string' || imageBase64.trim().length === 0) {
+    res.status(400).json({ message: 'imageBase64 is required' });
+    return;
+  }
+
+  const image = normalizeImagePayload(
+    imageBase64,
+    typeof mimeType === 'string' ? mimeType : undefined,
+  );
+  if (!image) {
+    res.status(400).json({ message: 'Unsupported image type' });
+    return;
+  }
+  if (image.base64Length > MAX_OCR_IMAGE_BASE64_LENGTH) {
+    res.status(413).json({ message: 'Image is too large' });
+    return;
+  }
+
+  // 1. Создаём предсказание. Prefer: wait — Replicate держит соединение и
+  //    возвращает готовый результат, если уложился в окно (~60с).
+  const createUrl =
+    `${REPLICATE_API}/models/${env.replicateRestoreModel}/predictions`;
+  const created = await replicateRequest(
+    'POST',
+    createUrl,
+    { input: { img: image.dataUrl, version: 'v1.4', scale: 2 } },
+    { Prefer: 'wait' },
+  );
+
+  if (created.status !== 200 && created.status !== 201) {
+    const detail = created.json?.detail ?? created.raw.slice(0, 300);
+    logger.warn('[restorePhoto] create failed', {
+      status: created.status,
+      detail,
+    });
+    res.status(502).json({ message: 'Restore service error', detail });
+    return;
+  }
+
+  let prediction: ReplicatePrediction = created.json ?? {};
+
+  // 2. Если из-за холодного старта результат ещё не готов — опрашиваем статус.
+  const getUrl = prediction.urls?.get;
+  const deadline = Date.now() + RESTORE_TIMEOUT_MS;
+  const terminal = ['succeeded', 'failed', 'canceled'];
+  while (
+    getUrl &&
+    !terminal.includes(prediction.status ?? '') &&
+    Date.now() < deadline
+  ) {
+    await delay(RESTORE_POLL_INTERVAL_MS);
+    const poll = await replicateRequest('GET', getUrl);
+    if (poll.json) prediction = poll.json;
+  }
+
+  if (prediction.status !== 'succeeded') {
+    logger.warn('[restorePhoto] not succeeded', {
+      status: prediction.status,
+      error: prediction.error,
+    });
+    res.status(502).json({
+      message: 'Restore failed',
+      detail: String(prediction.error ?? prediction.status ?? 'timeout'),
+    });
+    return;
+  }
+
+  // У GFPGAN output — строка-URL; у части моделей это массив URL.
+  const output = Array.isArray(prediction.output)
+    ? prediction.output[0]
+    : prediction.output;
+  if (typeof output !== 'string' || output.length === 0) {
+    res.status(502).json({ message: 'Unexpected restore output' });
+    return;
+  }
+
+  res.json({ url: output });
+}
+
 export async function recognizeOcrText(
   req: AuthRequest,
   res: Response,
