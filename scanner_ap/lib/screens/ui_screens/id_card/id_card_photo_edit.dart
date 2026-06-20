@@ -2,10 +2,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'package:image_cropper/image_cropper.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'save_options_id_card.dart';
 import '../../../l10n/app_localizations.dart';
@@ -73,6 +73,15 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
 
   bool _isEditingFront = true;
 
+  // Какая настройка-ползунок раскрыта сверху панели: 'brightness' / 'contrast'
+  // / null. Кнопки Яркость и Контраст переключают её, а сам ползунок
+  // появляется над рядом инструментов.
+  String? _activeAdjust;
+
+  // Режим встроенной обрезки: рамка прямо поверх превью (без внешнего экрана).
+  bool _isCropping = false;
+  Size? _cropImageSize; // натуральные пиксели изображения для обрезки
+
   @override
   void initState() {
     super.initState();
@@ -112,30 +121,89 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
     });
   }
 
-  Future<void> _cropImage() async {
-    final l10n = AppLocalizations.of(context);
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: _currentState.currentPath,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: l10n.editCropIdTitle,
-          toolbarColor: Colors.black,
-          toolbarWidgetColor: Colors.white,
-          initAspectRatio: CropAspectRatioPreset.ratio16x9,
-          lockAspectRatio: false,
-        ),
-        IOSUiSettings(title: l10n.editCropIdTitle),
-      ],
-    );
+  /// Запекает текущий поворот в файл, чтобы кроппер показывал то же, что и
+  /// превью (иначе обрезался бы неповёрнутый кадр, а поворот терялся).
+  Future<String> _bakeRotation(String path, int rotation) async {
+    if (rotation == 0) return path;
+    try {
+      final bytes = await File(path).readAsBytes();
+      var image = img.decodeImage(bytes);
+      if (image == null) return path;
+      image = img.copyRotate(image, angle: rotation);
+      final tempDir = await getTemporaryDirectory();
+      final out =
+          '${tempDir.path}/idrot_${DateTime.now().microsecondsSinceEpoch}.jpg';
+      await File(out).writeAsBytes(img.encodeJpg(image, quality: 95));
+      return out;
+    } catch (_) {
+      return path;
+    }
+  }
 
-    if (cropped == null || !mounted) return;
+  /// Узнаёт натуральные размеры изображения (без вынесения на отдельный экран).
+  Future<Size?> _imageSizeOf(String path) async {
+    try {
+      final bytes = await File(path).readAsBytes();
+      final image = img.decodeImage(bytes);
+      if (image == null) return null;
+      return Size(image.width.toDouble(), image.height.toDouble());
+    } catch (_) {
+      return null;
+    }
+  }
 
+  /// Включает встроенную обрезку: запекает текущий поворот в файл и показывает
+  /// рамку прямо поверх превью (без перехода на внешний экран UCrop).
+  Future<void> _startCrop() async {
+    final baked =
+        await _bakeRotation(_currentState.currentPath, _currentState.rotation);
+    final size = await _imageSizeOf(baked);
+    if (!mounted || size == null) return;
     setState(() {
-      _currentState = _currentState.copyWith(
-        currentPath: cropped.path,
-        rotation: 0,
-      );
+      _currentState = _currentState.copyWith(currentPath: baked, rotation: 0);
+      _cropImageSize = size;
+      _activeAdjust = null;
+      _isCropping = true;
     });
+  }
+
+  void _cancelCrop() {
+    setState(() {
+      _isCropping = false;
+      _cropImageSize = null;
+    });
+  }
+
+  /// Применяет рамку обрезки (нормализованный прямоугольник 0..1) к файлу.
+  Future<void> _applyCrop(Rect norm) async {
+    final path = _currentState.currentPath;
+    try {
+      final bytes = await File(path).readAsBytes();
+      final image = img.decodeImage(bytes);
+      if (image == null) {
+        if (mounted) _cancelCrop();
+        return;
+      }
+      final int w = image.width, h = image.height;
+      final int x = (norm.left * w).round().clamp(0, w - 1);
+      final int y = (norm.top * h).round().clamp(0, h - 1);
+      final int cw = (norm.width * w).round().clamp(1, w - x);
+      final int ch = (norm.height * h).round().clamp(1, h - y);
+      final cropped =
+          img.copyCrop(image, x: x, y: y, width: cw, height: ch);
+      final tempDir = await getTemporaryDirectory();
+      final out =
+          '${tempDir.path}/idcrop_${DateTime.now().microsecondsSinceEpoch}.jpg';
+      await File(out).writeAsBytes(img.encodeJpg(cropped, quality: 95));
+      if (!mounted) return;
+      setState(() {
+        _currentState = _currentState.copyWith(currentPath: out);
+        _isCropping = false;
+        _cropImageSize = null;
+      });
+    } catch (_) {
+      if (mounted) _cancelCrop();
+    }
   }
 
   void _autoEnhance() {
@@ -159,6 +227,13 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
     });
   }
 
+  /// Раскрывает/сворачивает ползунок выбранной настройки над инструментами.
+  void _selectAdjust(String which) {
+    setState(() {
+      _activeAdjust = _activeAdjust == which ? null : which;
+    });
+  }
+
   // --- ФУНКЦИЯ СОХРАНЕНИЯ И ПЕРЕХОДА ---
   Future<String> _prepareEditedImage(EditState state, String name) async {
     final bytes = await File(state.currentPath).readAsBytes();
@@ -171,12 +246,17 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
     if (state.isGrayscale) {
       image = img.grayscale(image);
     }
+    // Та же формула, что в превью (_getColorFilter) — «что вижу, то и
+    // сохранится». contrast вокруг 127.5, brightness — аддитивный сдвиг.
     if (state.brightness != 0.0 || state.contrast != 0.0) {
-      image = img.adjustColor(
-        image,
-        brightness: (state.brightness * 100).round(),
-        contrast: (state.contrast * 100).round(),
-      );
+      final double c = 1.0 + state.contrast;
+      final double off = -127.5 * state.contrast + 255.0 * state.brightness;
+      for (final p in image) {
+        p
+          ..r = (p.r * c + off).clamp(0, 255)
+          ..g = (p.g * c + off).clamp(0, 255)
+          ..b = (p.b * c + off).clamp(0, 255);
+      }
     }
 
     final tempDir = await getTemporaryDirectory();
@@ -209,21 +289,27 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
   }
 
   ColorFilter _getColorFilter() {
+    // Та же формула, что и при сохранении (_applyBrightnessContrast):
+    // контраст вокруг середины 127.5, яркость — аддитивный сдвиг. Яркость/
+    // контраст применяются и поверх Ч-Б (раньше Ч-Б их «съедал» в превью).
+    final double c = 1.0 + _currentState.contrast;
+    final double off = -127.5 * _currentState.contrast +
+        255.0 * _currentState.brightness;
+
     if (_currentState.isGrayscale) {
-      return const ColorFilter.matrix([
-        0.2126, 0.7152, 0.0722, 0, 0,
-        0.2126, 0.7152, 0.0722, 0, 0,
-        0.2126, 0.7152, 0.0722, 0, 0,
+      final double lr = 0.2126 * c, lg = 0.7152 * c, lb = 0.0722 * c;
+      return ColorFilter.matrix([
+        lr, lg, lb, 0, off,
+        lr, lg, lb, 0, off,
+        lr, lg, lb, 0, off,
         0, 0, 0, 1, 0,
       ]);
     }
 
-    final contrast = 1.0 + _currentState.contrast;
-    final brightness = _currentState.brightness * 255;
     return ColorFilter.matrix([
-      contrast, 0, 0, 0, brightness,
-      0, contrast, 0, 0, brightness,
-      0, 0, contrast, 0, brightness,
+      c, 0, 0, 0, off,
+      0, c, 0, 0, off,
+      0, 0, c, 0, off,
       0, 0, 0, 1, 0,
     ]);
   }
@@ -247,7 +333,8 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
               colorFilter: _getColorFilter(),
               child: Image.file(
                 File(_currentState.currentPath),
-                fit: BoxFit.cover,
+                // contain — повёрнутый на 90° кадр виден целиком, не режется.
+                fit: BoxFit.contain,
               ),
             ),
           ),
@@ -284,7 +371,7 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: _isCropping ? _buildCropMode(l10n) : Column(
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -311,20 +398,46 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
               child: _buildEditableImagePreview(),
             ),
           ),
-          _buildToolRow(l10n),
 
-          _buildSliderPanel(l10n),
-
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: ElevatedButton(
-              onPressed: _saveAndNavigate,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green.shade600,
-                minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              child: Text(l10n.editIdCardSaveBothSides, style: const TextStyle(color: Colors.white, fontSize: 18)),
+          // Панель управления: инструменты + слайдеры + сохранение в одном
+          // сгруппированном блоке (раньше иконки висели голыми на фоне).
+          Container(
+            width: double.infinity,
+            decoration: const BoxDecoration(
+              color: Color(0xFF141E2B),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+            ),
+            padding: EdgeInsets.fromLTRB(
+              16, 18, 16, 16 + MediaQuery.of(context).padding.bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Ползунок выбранной настройки — появляется над инструментами
+                // только когда выбрана Яркость или Контраст.
+                _buildActiveControl(l10n),
+                _buildToolRow(l10n),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _saveAndNavigate,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF22C55E),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: Text(
+                      l10n.editIdCardSaveBothSides,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -334,57 +447,113 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
 
   // Вспомогательные виджеты
 
+  // Все 6 инструментов в один ряд. Каждый занимает равную долю (Expanded),
+  // подпись ужимается под ширину ячейки (FittedBox), чтобы ничего не
+  // переносилось и не обрезалось.
   Widget _buildToolRow(AppLocalizations l10n) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _ToolIcon(
+    return Row(
+      children: [
+        Expanded(
+          child: _ToolIcon(
             icon: Icons.rotate_right,
             label: l10n.toolRotate,
             onTap: _rotateImage,
           ),
-          _ToolIcon(
+        ),
+        Expanded(
+          child: _ToolIcon(
+            icon: Icons.wb_sunny,
+            label: l10n.colorBrightness,
+            isActive: _activeAdjust == 'brightness',
+            onTap: () => _selectAdjust('brightness'),
+          ),
+        ),
+        Expanded(
+          child: _ToolIcon(
+            icon: Icons.contrast,
+            label: l10n.colorContrast,
+            isActive: _activeAdjust == 'contrast',
+            onTap: () => _selectAdjust('contrast'),
+          ),
+        ),
+        Expanded(
+          child: _ToolIcon(
             icon: Icons.filter_b_and_w,
             label: l10n.editToolBW,
             isActive: _currentState.isGrayscale,
             onTap: _applyFilter,
           ),
-          _ToolIcon(
+        ),
+        Expanded(
+          child: _ToolIcon(
             icon: Icons.crop,
             label: l10n.editToolCrop,
-            onTap: _cropImage,
+            onTap: _startCrop,
           ),
-          _ToolIcon(
+        ),
+        Expanded(
+          child: _ToolIcon(
             icon: Icons.auto_fix_high,
             label: l10n.editToolEnhance,
             onTap: _autoEnhance,
           ),
-        ],
+        ),
+      ],
+    );
+  }
+
+  /// Ползунок выбранной настройки над рядом инструментов. Пока ничего не
+  /// выбрано — место не занимает (ряд инструментов прижат к картинке).
+  Widget _buildActiveControl(AppLocalizations l10n) {
+    Widget child;
+    if (_activeAdjust == 'brightness') {
+      child = _AdjustmentSlider(
+        key: const ValueKey('brightness'),
+        icon: Icons.wb_sunny,
+        label: l10n.colorBrightness,
+        value: _currentState.brightness,
+        onChanged: _updateBrightness,
+      );
+    } else if (_activeAdjust == 'contrast') {
+      child = _AdjustmentSlider(
+        key: const ValueKey('contrast'),
+        icon: Icons.contrast,
+        label: l10n.colorContrast,
+        value: _currentState.contrast,
+        onChanged: _updateContrast,
+      );
+    } else {
+      child = const SizedBox.shrink();
+    }
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      alignment: Alignment.topCenter,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: _activeAdjust == null ? 0 : 10),
+        child: child,
       ),
     );
   }
 
-  Widget _buildSliderPanel(AppLocalizations l10n) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      child: Column(
-        children: [
-          _AdjustmentSlider(
-            icon: Icons.wb_sunny,
-            label: l10n.colorBrightness,
-            value: _currentState.brightness,
-            onChanged: _updateBrightness,
+  /// Режим обрезки: рамка прямо поверх превью + кнопки Отмена/Применить.
+  /// Заменяет обычное тело редактора, оставаясь на том же экране.
+  Widget _buildCropMode(AppLocalizations l10n) {
+    return Column(
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: _InlineCropper(
+              imagePath: _currentState.currentPath,
+              imageSize: _cropImageSize!,
+              onCancel: _cancelCrop,
+              onConfirm: _applyCrop,
+            ),
           ),
-          _AdjustmentSlider(
-            icon: Icons.contrast,
-            label: l10n.colorContrast,
-            value: _currentState.contrast,
-            onChanged: _updateContrast,
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -434,25 +603,57 @@ class _ToolIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(40),
-          child: Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Icon(
-              icon,
-              color: isActive ? const Color(0xFF2CA5E0) : Colors.white,
-              size: 28,
+    const accent = Color(0xFF2CA5E0);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: isActive
+                    ? accent.withValues(alpha: 0.18)
+                    : Colors.white.withValues(alpha: 0.07),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isActive
+                      ? accent
+                      : Colors.white.withValues(alpha: 0.12),
+                  width: 1.5,
+                ),
+              ),
+              child: Icon(
+                icon,
+                color: isActive ? accent : Colors.white,
+                size: 22,
+              ),
             ),
-          ),
+            const SizedBox(height: 6),
+            // FittedBox ужимает длинные подписи под ширину ячейки —
+            // ни переноса, ни обрезки.
+            SizedBox(
+              width: double.infinity,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: isActive ? accent : Colors.white70,
+                    fontSize: 11.5,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
-        Text(
-          label,
-          style: TextStyle(color: isActive ? Colors.lightBlue : Colors.white, fontSize: 12),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -464,6 +665,7 @@ class _AdjustmentSlider extends StatelessWidget {
   final ValueChanged<double> onChanged;
 
   const _AdjustmentSlider({
+    super.key,
     required this.icon,
     required this.label,
     required this.value,
@@ -504,4 +706,260 @@ class _AdjustmentSlider extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Встроенная обрезка: интерактивная рамка прямо поверх изображения (без
+/// перехода на внешний экран). Возвращает результат как нормализованный
+/// прямоугольник 0..1 относительно изображения через [onConfirm].
+class _InlineCropper extends StatefulWidget {
+  final String imagePath;
+  final Size imageSize; // натуральные пиксели
+  final VoidCallback onCancel;
+  final ValueChanged<Rect> onConfirm;
+
+  const _InlineCropper({
+    required this.imagePath,
+    required this.imageSize,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_InlineCropper> createState() => _InlineCropperState();
+}
+
+class _InlineCropperState extends State<_InlineCropper> {
+  // Рамка в нормализованных координатах изображения (0..1). Не зависит от
+  // размеров области — пересчёт при layout тривиален.
+  Rect _norm = const Rect.fromLTRB(0, 0, 1, 1);
+
+  // Зона захвата угла (для пальца) и минимальный размер рамки в долях.
+  static const double _handle = 32;
+  static const double _minNorm = 0.1;
+
+  /// Прямоугольник, в который BoxFit.contain вписывает изображение в [box].
+  Rect _displayRect(Size box) {
+    final double iw = widget.imageSize.width;
+    final double ih = widget.imageSize.height;
+    final double scale = math.min(box.width / iw, box.height / ih);
+    final double w = iw * scale;
+    final double h = ih * scale;
+    return Rect.fromLTWH((box.width - w) / 2, (box.height - h) / 2, w, h);
+  }
+
+  void _dragCorner(int corner, Offset delta, Rect disp) {
+    setState(() {
+      final double dx = delta.dx / disp.width;
+      final double dy = delta.dy / disp.height;
+      double l = _norm.left, t = _norm.top, r = _norm.right, b = _norm.bottom;
+      switch (corner) {
+        case 0: // верх-лево
+          l += dx;
+          t += dy;
+          break;
+        case 1: // верх-право
+          r += dx;
+          t += dy;
+          break;
+        case 2: // низ-право
+          r += dx;
+          b += dy;
+          break;
+        case 3: // низ-лево
+          l += dx;
+          b += dy;
+          break;
+      }
+      l = l.clamp(0.0, r - _minNorm);
+      t = t.clamp(0.0, b - _minNorm);
+      r = r.clamp(l + _minNorm, 1.0);
+      b = b.clamp(t + _minNorm, 1.0);
+      _norm = Rect.fromLTRB(l, t, r, b);
+    });
+  }
+
+  void _dragBody(Offset delta, Rect disp) {
+    setState(() {
+      double dx = delta.dx / disp.width;
+      double dy = delta.dy / disp.height;
+      dx = dx.clamp(-_norm.left, 1 - _norm.right);
+      dy = dy.clamp(-_norm.top, 1 - _norm.bottom);
+      _norm = _norm.shift(Offset(dx, dy));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Column(
+      children: [
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, c) {
+              final box = Size(c.maxWidth, c.maxHeight);
+              final disp = _displayRect(box);
+              final crop = Rect.fromLTRB(
+                disp.left + _norm.left * disp.width,
+                disp.top + _norm.top * disp.height,
+                disp.left + _norm.right * disp.width,
+                disp.top + _norm.bottom * disp.height,
+              );
+              return Stack(
+                children: [
+                  // Изображение в его реальном соотношении сторон.
+                  Positioned.fromRect(
+                    rect: disp,
+                    child: Image.file(
+                      File(widget.imagePath),
+                      fit: BoxFit.fill,
+                    ),
+                  ),
+                  // Затемнение вне рамки + сама рамка/сетка/уголки.
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(painter: _CropOverlayPainter(crop)),
+                    ),
+                  ),
+                  // Перетаскивание всей рамки за середину.
+                  Positioned.fromRect(
+                    rect: crop,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onPanUpdate: (d) => _dragBody(d.delta, disp),
+                    ),
+                  ),
+                  // 4 угла поверх (приоритет над перетаскиванием рамки).
+                  ..._cornerHandles(crop, disp),
+                ],
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 52,
+                child: OutlinedButton(
+                  onPressed: widget.onCancel,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: Text(l10n.actionCancel,
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: SizedBox(
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () => widget.onConfirm(_norm),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF22C55E),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: Text(l10n.wmApply,
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _cornerHandles(Rect crop, Rect disp) {
+    final corners = [
+      crop.topLeft,
+      crop.topRight,
+      crop.bottomRight,
+      crop.bottomLeft,
+    ];
+    return List.generate(4, (i) {
+      final p = corners[i];
+      return Positioned(
+        left: p.dx - _handle / 2,
+        top: p.dy - _handle / 2,
+        width: _handle,
+        height: _handle,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onPanUpdate: (d) => _dragCorner(i, d.delta, disp),
+        ),
+      );
+    });
+  }
+}
+
+/// Рисует затемнение вне рамки, белую рамку, сетку «правило третей» и
+/// акцентные уголки.
+class _CropOverlayPainter extends CustomPainter {
+  final Rect crop;
+  const _CropOverlayPainter(this.crop);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Затемнение всего, кроме «дырки» рамки.
+    final dim = Paint()..color = Colors.black.withValues(alpha: 0.55);
+    final outside = Path.combine(
+      PathOperation.difference,
+      Path()..addRect(Offset.zero & size),
+      Path()..addRect(crop),
+    );
+    canvas.drawPath(outside, dim);
+
+    // Рамка.
+    final border = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawRect(crop, border);
+
+    // Сетка (правило третей).
+    final grid = Paint()
+      ..color = Colors.white.withValues(alpha: 0.35)
+      ..strokeWidth = 0.8;
+    for (int i = 1; i < 3; i++) {
+      final double gx = crop.left + crop.width * i / 3;
+      final double gy = crop.top + crop.height * i / 3;
+      canvas.drawLine(Offset(gx, crop.top), Offset(gx, crop.bottom), grid);
+      canvas.drawLine(Offset(crop.left, gy), Offset(crop.right, gy), grid);
+    }
+
+    // Акцентные уголки.
+    final corner = Paint()
+      ..color = const Color(0xFF2CA5E0)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    const double len = 18;
+    canvas.drawLine(crop.topLeft, crop.topLeft + const Offset(len, 0), corner);
+    canvas.drawLine(crop.topLeft, crop.topLeft + const Offset(0, len), corner);
+    canvas.drawLine(
+        crop.topRight, crop.topRight + const Offset(-len, 0), corner);
+    canvas.drawLine(crop.topRight, crop.topRight + const Offset(0, len), corner);
+    canvas.drawLine(
+        crop.bottomRight, crop.bottomRight + const Offset(-len, 0), corner);
+    canvas.drawLine(
+        crop.bottomRight, crop.bottomRight + const Offset(0, -len), corner);
+    canvas.drawLine(
+        crop.bottomLeft, crop.bottomLeft + const Offset(len, 0), corner);
+    canvas.drawLine(
+        crop.bottomLeft, crop.bottomLeft + const Offset(0, -len), corner);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CropOverlayPainter old) => old.crop != crop;
 }

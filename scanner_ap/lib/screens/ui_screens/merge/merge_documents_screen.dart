@@ -9,6 +9,7 @@ import 'package:pdf/pdf.dart' hide PdfDocument;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdfrx/pdfrx.dart';
 import 'package:image/image.dart' as img;
+import '../../../services/document_registry.dart';
 import '../../../l10n/app_localizations.dart';
 
 const _documentKey = 'saved_document_paths';
@@ -152,6 +153,11 @@ class _MergeDocumentsScreenState extends State<MergeDocumentsScreen> {
         paths.add(outputPath);
         await prefs.setStringList(_documentKey, paths);
       }
+      await DocumentRegistry().add(DocEntry(
+        localPath: outputPath,
+        remoteId: null,
+        name: p.basenameWithoutExtension(outputPath),
+      ));
 
       widget.onMergeComplete?.call();
 

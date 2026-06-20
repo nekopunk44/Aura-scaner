@@ -42,17 +42,23 @@ import '+10 ten page/plus_ten_page_camera.dart';
 import 'importDocument/document_importer.dart';
 import 'ocr/ocr_screen.dart';
 import 'ocr/ocr_camera_view.dart';
+import 'remove_spots_camera_view.dart';
+import 'restore_photo_camera_view.dart';
+import 'restore_photo_screen.dart';
 import 'signature/home_screen.dart' as sig;
-import 'color_adjustment_screen.dart';
 import 'remove_spots_screen.dart';
 import 'highlight_screen.dart';
 import 'add_password_screen.dart';
 import 'remove_watermark_screen.dart';
 import 'document_ai_screen.dart';
+import 'premium_paywall.dart';
 import 'settings_screen.dart';
+import '../../services/premium_service.dart';
 import '../../utils/app_notification.dart';
+import '../../utils/document_scanner.dart';
 import '../../utils/id_card_scanner.dart';
-
+import '../../utils/live_quad_detector.dart';
+import '../../utils/passport_scanner.dart';
 
 class CameraScreen extends StatefulWidget {
   final Function(String)? onScanCompleted;
@@ -86,15 +92,23 @@ class _DocumentFrameSpec {
 
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
-  static const MethodChannel _nativeBridgeChannel =
-      MethodChannel('com.aurascanner.app/native_bridge');
+  static const MethodChannel _nativeBridgeChannel = MethodChannel(
+    'com.aurascanner.app/native_bridge',
+  );
+  static const Set<String> _premiumFeatureNames = {
+    '+10 страниц',
+    'Восстановить фото',
+    'Убрать пятна',
+    'Подсветка текста',
+    'Удалить водяной знак',
+    'Ключевые моменты',
+    'Эко упаковка',
+  };
 
- 
   CameraController? _cameraController;
   bool _isCameraInitialized = false;
   bool _isInitializingCamera = false;
   int _cameraSessionId = 0;
-
 
   // QR/штрихкоды распознаются через ML Kit на ОБЩЕЙ камере (_cameraController),
   // а не отдельным плагином — поэтому при входе в режим QR камера больше не
@@ -106,12 +120,19 @@ class _CameraScreenState extends State<CameraScreen>
   static const _qrHistoryKey = 'qr_scan_history';
   static const _qrHistoryMax = 30;
   bool _qrFlashOn = false;
-  bool _isQrStreaming = false;   // активен ли image-stream сканирования
-  bool _isBarcodeBusy = false;   // обрабатывается ли текущий кадр
-  bool _qrCooldown = false;      // пауза после успешного скана (3 с)
+  bool _isQrStreaming = false; // активен ли image-stream сканирования
+  bool _isBarcodeBusy = false; // обрабатывается ли текущий кадр
+  bool _qrCooldown = false; // пауза после успешного скана (3 с)
   bool _isDocumentDetectionStreaming = false;
   bool _isDocumentFrameBusy = false;
   int _documentFrameCounter = 0;
+  // Живой контур фото для режима «Восстановить»: 4 угла в нормализованных
+  // координатах сенсора (0..1), упорядочены tl,tr,br,bl. null — контур не
+  // найден. Обновляется из стрима без setState (через ValueNotifier), чтобы
+  // перерисовывалась только рамка, а не весь экран камеры.
+  final ValueNotifier<List<Offset>?> _photoQuad = ValueNotifier<List<Offset>?>(
+    null,
+  );
   Timer? _autoCaptureTimer;
   String? _autoCaptureFeature;
   String? _autoCaptureSide;
@@ -125,7 +146,6 @@ class _CameraScreenState extends State<CameraScreen>
     DeviceOrientation.portraitDown: 180,
     DeviceOrientation.landscapeRight: 270,
   };
-  
 
   final List<Map<String, dynamic>> _features = [...cameraFeatures];
   late String _selectedFeature;
@@ -136,22 +156,23 @@ class _CameraScreenState extends State<CameraScreen>
 
   bool _isDocumentDetected = false;
   bool _isScanning = false;
-  // После снимка одной стороны ID требуем, чтобы карту убрали из кадра,
-  // прежде чем авто-снимать следующую сторону — иначе обратная сторона
-  // снимается мгновенно (пользователь не успевает перевернуть карту).
+  // После первого кадра в многошаговом документном потоке ждём, пока
+  // документ уберут из кадра, прежде чем авто-снимать следующую сторону
+  // или страницу. Это защищает от мгновенного повторного снимка.
   bool _awaitDocumentExit = false;
 
   XFile? _firstCapturedImage;
   XFile? _secondCapturedImage;
   XFile? _idCardFrontImage;
   XFile? _idCardBackImage;
+  List<XFile> _passportBatch = [];
   String _currentSide = 'Лицевая';
   List<XFile> _multiPageBatch = [];
   int get _currentBatchPageCount => _multiPageBatch.length;
+  int get _documentTargetPageCount => 10;
 
   late ScrollController _featureScrollController;
   bool _isInitialScrollDone = false;
-
 
   String? _importedDocumentPath;
 
@@ -176,10 +197,15 @@ class _CameraScreenState extends State<CameraScreen>
     }
 
     if (widget.initialFeature != null) {
-      final featureExists = _features.any((f) => f['name'] == widget.initialFeature);
-      _selectedFeature = featureExists
+      final featureExists = _features.any(
+        (f) => f['name'] == widget.initialFeature,
+      );
+      final requestedFeature = featureExists
           ? widget.initialFeature!
           : _features.first['name']!;
+      _selectedFeature = _canUseFeature(requestedFeature)
+          ? requestedFeature
+          : 'Документ';
     } else {
       _selectedFeature = _features.first['name']!;
     }
@@ -197,7 +223,10 @@ class _CameraScreenState extends State<CameraScreen>
       if (_selectedFeature != 'Перевод' &&
           _selectedFeature != 'OCR' &&
           _selectedFeature != 'Сканер qr-код') {
-        Future.delayed(const Duration(milliseconds: 300), _startDocumentDetectionStream);
+        Future.delayed(
+          const Duration(milliseconds: 300),
+          _startDocumentDetectionStream,
+        );
       }
     }
 
@@ -217,6 +246,7 @@ class _CameraScreenState extends State<CameraScreen>
     captureModeController.detectionTimer = null;
     _cancelAutoCapture();
     _detectionAnimationController.dispose();
+    _photoQuad.dispose();
     super.dispose();
   }
 
@@ -266,14 +296,17 @@ class _CameraScreenState extends State<CameraScreen>
       // перевели приложение в фон. На resumed всегда восстанавливаем —
       // и, если активен режим QR, заново запускаем сканирование.
       if (_cameraController == null && !_isInitializingCamera) {
-        unawaited(_initializeCamera().then((_) {
-          if (!mounted) return;
-          if (_selectedFeature == 'Сканер qr-код') {
-            unawaited(_startBarcodeScanning());
-          } else if (_selectedFeature != 'Перевод' && _selectedFeature != 'OCR') {
-            _startDocumentDetectionStream();
-          }
-        }));
+        unawaited(
+          _initializeCamera().then((_) {
+            if (!mounted) return;
+            if (_selectedFeature == 'Сканер qr-код') {
+              unawaited(_startBarcodeScanning());
+            } else if (_selectedFeature != 'Перевод' &&
+                _selectedFeature != 'OCR') {
+              _startDocumentDetectionStream();
+            }
+          }),
+        );
       }
     }
   }
@@ -319,7 +352,7 @@ class _CameraScreenState extends State<CameraScreen>
       final cameras = await availableCameras();
       if (cameras.isEmpty) return;
       final backCamera = cameras.firstWhere(
-            (camera) => camera.lensDirection == CameraLensDirection.back,
+        (camera) => camera.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
       _cameraDescription = backCamera;
@@ -356,7 +389,6 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-
   void _setCaptureModeManual() {
     _cancelAutoCapture();
     setState(() {
@@ -387,7 +419,7 @@ class _CameraScreenState extends State<CameraScreen>
       (f) => f['name'] == _selectedFeature,
       orElse: () => _features.first,
     );
-    final bool isDocumentMode = feature['isDocument'] == true;
+    final bool isDocumentMode = _isGuidedCameraFeature(feature);
 
     if (captureModeController.captureMode == 'Вручную') {
       _cancelAutoCapture();
@@ -437,6 +469,7 @@ class _CameraScreenState extends State<CameraScreen>
     _isDocumentDetectionStreaming = false;
     _isDocumentFrameBusy = false;
     _documentFrameCounter = 0;
+    _photoQuad.value = null; // рамка живого контура гаснет при остановке стрима
     try {
       if (controller != null && controller.value.isStreamingImages) {
         await controller.stopImageStream();
@@ -462,6 +495,10 @@ class _CameraScreenState extends State<CameraScreen>
       // блокировал автоснимок. Детекцию по нему больше не гейтим — снимаем
       // любую сторону, которую показал пользователь.
       final detected = _detectDocumentContour(image, featureName: featureName);
+      // Живой контур фото — только для «Восстановить». Обновляем КАЖДЫЙ
+      // обработанный кадр (до early-return ниже), чтобы рамка непрерывно
+      // следовала за фотографией, а не только в момент смены состояния.
+      _updatePhotoQuad(image, featureName);
       if (!mounted || !_isDocumentDetectionStreaming) return;
       if (detected == _isDocumentDetected) return;
 
@@ -477,13 +514,62 @@ class _CameraScreenState extends State<CameraScreen>
         // Карта пропала из кадра — можно снимать следующую сторону.
         _awaitDocumentExit = false;
         _cancelAutoCapture();
-        _detectionAnimationController.reverse(from: _detectionAnimationController.value);
+        _detectionAnimationController.reverse(
+          from: _detectionAnimationController.value,
+        );
       }
       setState(() => _isDocumentDetected = detected);
     } catch (e) {
       debugPrint('Ошибка анализа контура документа: $e');
     } finally {
       _isDocumentFrameBusy = false;
+    }
+  }
+
+  /// Соотношение сторон превью (портретное w/h). previewSize пакет camera
+  /// отдаёт в landscape, поэтому в портрете стороны меняются местами — как и
+  /// в [_buildAspectCorrectPreview]. Нужно painter'у для cover-маппинга.
+  double? get _previewAspect {
+    final size = _cameraController?.value.previewSize;
+    if (size == null) return null;
+    return size.height / size.width;
+  }
+
+  /// Обновляет живой контур фото (только для «Восстановить»). Семплит кадр в
+  /// портретный luma чуть большего разрешения и ищет четырёхугольник; результат
+  /// сглаживается EMA по упорядоченным углам, чтобы рамка не дёргалась.
+  void _updatePhotoQuad(CameraImage image, String featureName) {
+    if (!_isRestorePhotoFeature(featureName)) return;
+
+    const int targetWidth = 180;
+    final int targetHeight = ((targetWidth * image.width) / image.height)
+        .round()
+        .clamp(160, 320);
+    final gray = _samplePortraitLuma(
+      image,
+      targetWidth: targetWidth,
+      targetHeight: targetHeight,
+    );
+    final quad = detectPhotoQuad(gray, targetWidth, targetHeight);
+
+    if (quad == null) {
+      _photoQuad.value = null;
+      return;
+    }
+
+    final prev = _photoQuad.value;
+    if (prev != null && prev.length == 4) {
+      const double a = 0.4; // вес нового кадра в сглаживании
+      _photoQuad.value = List<Offset>.generate(
+        4,
+        (i) => Offset(
+          prev[i].dx + (quad[i].dx - prev[i].dx) * a,
+          prev[i].dy + (quad[i].dy - prev[i].dy) * a,
+        ),
+        growable: false,
+      );
+    } else {
+      _photoQuad.value = quad;
     }
   }
 
@@ -498,17 +584,19 @@ class _CameraScreenState extends State<CameraScreen>
       (f) => f['name'] == _selectedFeature,
       orElse: () => _features.first,
     );
-    if (feature['isDocument'] != true) return;
+    if (!_isGuidedCameraFeature(feature)) return;
 
     _autoCaptureFeature = _selectedFeature;
     _autoCaptureSide = _currentSide;
     _autoCapturePageMode = _pageMode;
     _autoCaptureTimer = Timer(const Duration(milliseconds: 950), () {
-      unawaited(_runAutoCapture(
-        feature: _autoCaptureFeature,
-        side: _autoCaptureSide,
-        pageMode: _autoCapturePageMode,
-      ));
+      unawaited(
+        _runAutoCapture(
+          feature: _autoCaptureFeature,
+          side: _autoCaptureSide,
+          pageMode: _autoCapturePageMode,
+        ),
+      );
     });
   }
 
@@ -587,16 +675,28 @@ class _CameraScreenState extends State<CameraScreen>
     _DocumentFrameSpec spec,
   ) {
     final left = (spec.left * targetWidth).round().clamp(4, targetWidth - 5);
-    final right = (spec.right * targetWidth).round().clamp(left + 8, targetWidth - 4);
+    final right = (spec.right * targetWidth).round().clamp(
+      left + 8,
+      targetWidth - 4,
+    );
     final top = (spec.top * targetHeight).round().clamp(4, targetHeight - 5);
-    final bottom =
-        (spec.bottom * targetHeight).round().clamp(top + 8, targetHeight - 4);
+    final bottom = (spec.bottom * targetHeight).round().clamp(
+      top + 8,
+      targetHeight - 4,
+    );
     final width = right - left;
     final height = bottom - top;
     if (width < 28 || height < 18) return false;
 
-    final cropMean =
-        _regionMean(gray, targetWidth, left, top, width, height, targetHeight);
+    final cropMean = _regionMean(
+      gray,
+      targetWidth,
+      left,
+      top,
+      width,
+      height,
+      targetHeight,
+    );
     final darkThreshold = (cropMean - 42).clamp(58, 138).round();
 
     int mrzLikeRows = 0;
@@ -631,8 +731,9 @@ class _CameraScreenState extends State<CameraScreen>
       }
     }
 
-    final lowerDarkDensity =
-        lowerRowCount == 0 ? 0.0 : lowerDarkDensitySum / lowerRowCount;
+    final lowerDarkDensity = lowerRowCount == 0
+        ? 0.0
+        : lowerDarkDensitySum / lowerRowCount;
 
     return mrzLikeRows >= 5 ||
         (mrzLikeRows >= 3 && barcodeLikeRows >= 4) ||
@@ -664,6 +765,7 @@ class _CameraScreenState extends State<CameraScreen>
         targetWidth,
         targetHeight,
         spec,
+        featureName: featureName,
       ),
     );
   }
@@ -672,19 +774,52 @@ class _CameraScreenState extends State<CameraScreen>
     List<int> gray,
     int targetWidth,
     int targetHeight,
-    _DocumentFrameSpec spec,
-  ) {
+    _DocumentFrameSpec spec, {
+    required String featureName,
+  }) {
     final left = (spec.left * targetWidth).round().clamp(4, targetWidth - 5);
-    final right = (spec.right * targetWidth).round().clamp(left + 8, targetWidth - 4);
+    final right = (spec.right * targetWidth).round().clamp(
+      left + 8,
+      targetWidth - 4,
+    );
     final top = (spec.top * targetHeight).round().clamp(4, targetHeight - 5);
-    final bottom =
-        (spec.bottom * targetHeight).round().clamp(top + 8, targetHeight - 4);
+    final bottom = (spec.bottom * targetHeight).round().clamp(
+      top + 8,
+      targetHeight - 4,
+    );
 
-    final leftScore = _verticalLineScore(gray, targetWidth, targetHeight, left, top, bottom);
-    final rightScore = _verticalLineScore(gray, targetWidth, targetHeight, right, top, bottom);
-    final topScore = _horizontalLineScore(gray, targetWidth, targetHeight, top, left, right);
-    final bottomScore =
-        _horizontalLineScore(gray, targetWidth, targetHeight, bottom, left, right);
+    final leftScore = _verticalLineScore(
+      gray,
+      targetWidth,
+      targetHeight,
+      left,
+      top,
+      bottom,
+    );
+    final rightScore = _verticalLineScore(
+      gray,
+      targetWidth,
+      targetHeight,
+      right,
+      top,
+      bottom,
+    );
+    final topScore = _horizontalLineScore(
+      gray,
+      targetWidth,
+      targetHeight,
+      top,
+      left,
+      right,
+    );
+    final bottomScore = _horizontalLineScore(
+      gray,
+      targetWidth,
+      targetHeight,
+      bottom,
+      left,
+      right,
+    );
     final globalEdge = _globalEdgeMean(gray, targetWidth, targetHeight);
     final innerVariance = _regionVariance(
       gray,
@@ -704,48 +839,51 @@ class _CameraScreenState extends State<CameraScreen>
       ((bottom - top) * 0.52).round(),
       targetHeight,
     );
-    final outerMean = <double>[
-      _regionMean(
-        gray,
-        targetWidth,
-        left - ((right - left) * 0.18).round(),
-        top,
-        ((right - left) * 0.14).round(),
-        bottom - top,
-        targetHeight,
-      ),
-      _regionMean(
-        gray,
-        targetWidth,
-        right + 2,
-        top,
-        ((right - left) * 0.14).round(),
-        bottom - top,
-        targetHeight,
-      ),
-      _regionMean(
-        gray,
-        targetWidth,
-        left,
-        top - ((bottom - top) * 0.18).round(),
-        right - left,
-        ((bottom - top) * 0.14).round(),
-        targetHeight,
-      ),
-      _regionMean(
-        gray,
-        targetWidth,
-        left,
-        bottom + 2,
-        right - left,
-        ((bottom - top) * 0.14).round(),
-        targetHeight,
-      ),
-    ].fold<double>(0, (sum, value) => sum + value) /
+    final outerMean =
+        <double>[
+          _regionMean(
+            gray,
+            targetWidth,
+            left - ((right - left) * 0.18).round(),
+            top,
+            ((right - left) * 0.14).round(),
+            bottom - top,
+            targetHeight,
+          ),
+          _regionMean(
+            gray,
+            targetWidth,
+            right + 2,
+            top,
+            ((right - left) * 0.14).round(),
+            bottom - top,
+            targetHeight,
+          ),
+          _regionMean(
+            gray,
+            targetWidth,
+            left,
+            top - ((bottom - top) * 0.18).round(),
+            right - left,
+            ((bottom - top) * 0.14).round(),
+            targetHeight,
+          ),
+          _regionMean(
+            gray,
+            targetWidth,
+            left,
+            bottom + 2,
+            right - left,
+            ((bottom - top) * 0.14).round(),
+            targetHeight,
+          ),
+        ].fold<double>(0, (sum, value) => sum + value) /
         4;
 
-    final minVertical = globalEdge * 1.45;
-    final minHorizontal = globalEdge * 1.35;
+    final bool isDocumentSheet =
+        featureName == 'Документ' || featureName == '+10 страниц';
+    final minVertical = globalEdge * (isDocumentSheet ? 1.62 : 1.45);
+    final minHorizontal = globalEdge * (isDocumentSheet ? 1.52 : 1.35);
     final frameScores = [leftScore, rightScore, topScore, bottomScore];
     final strongLineCount = [
       leftScore > minVertical,
@@ -755,26 +893,26 @@ class _CameraScreenState extends State<CameraScreen>
     ].where((strong) => strong).length;
     final averageFrameScore =
         frameScores.fold<double>(0, (sum, value) => sum + value) /
-            frameScores.length;
-    final hasStrongLines =
-        strongLineCount >= 3 && averageFrameScore > globalEdge * 1.45;
+        frameScores.length;
+    final hasStrongLines = isDocumentSheet
+        ? strongLineCount >= 4 && averageFrameScore > globalEdge * 1.58
+        : strongLineCount >= 3 && averageFrameScore > globalEdge * 1.45;
     final areaRatio =
         ((right - left) * (bottom - top)) / (targetWidth * targetHeight);
     final hasPlainDocumentSurface =
         (innerVariance < 1500 && innerMean > 118) ||
-            (innerMean > 92 && innerMean - outerMean > 16);
-    final hasDetailedDocumentSurface =
-        innerMean > 122 && innerVariance < 5200;
+        (innerMean > 92 && innerMean - outerMean > 16);
+    final hasDetailedDocumentSurface = innerMean > 122 && innerVariance < 5200;
     final hasDocumentSurface =
         hasPlainDocumentSurface || hasDetailedDocumentSurface;
 
     // Карта всегда заметно ЯРЧЕ окружения (карта светлая, рука/стол/ковёр
     // темнее). Без этого условия детектор ложно срабатывал на однородном
     // ярком фоне и снимал «документ», когда карты в кадре нет.
-    final hasContrast = innerMean - outerMean > 14;
+    final hasContrast = innerMean - outerMean > (isDocumentSheet ? 18 : 14);
 
     return hasStrongLines &&
-        areaRatio > 0.18 &&
+        areaRatio > (isDocumentSheet ? 0.24 : 0.18) &&
         hasDocumentSurface &&
         hasContrast;
   }
@@ -783,68 +921,27 @@ class _CameraScreenState extends State<CameraScreen>
     switch (featureName) {
       case 'Удостоверение личности':
         return const [
-          _DocumentFrameSpec(
-            left: 0.08,
-            right: 0.92,
-            top: 0.27,
-            bottom: 0.57,
-          ),
-          _DocumentFrameSpec(
-            left: 0.05,
-            right: 0.95,
-            top: 0.23,
-            bottom: 0.61,
-          ),
-          _DocumentFrameSpec(
-            left: 0.10,
-            right: 0.90,
-            top: 0.31,
-            bottom: 0.65,
-          ),
+          _DocumentFrameSpec(left: 0.08, right: 0.92, top: 0.27, bottom: 0.57),
+          _DocumentFrameSpec(left: 0.05, right: 0.95, top: 0.23, bottom: 0.61),
+          _DocumentFrameSpec(left: 0.10, right: 0.90, top: 0.31, bottom: 0.65),
         ];
       case 'Документ':
       case '+10 страниц':
         return const [
-          _DocumentFrameSpec(
-            left: 0.11,
-            right: 0.89,
-            top: 0.12,
-            bottom: 0.62,
-          ),
-          _DocumentFrameSpec(
-            left: 0.08,
-            right: 0.92,
-            top: 0.08,
-            bottom: 0.70,
-          ),
-          _DocumentFrameSpec(
-            left: 0.06,
-            right: 0.94,
-            top: 0.06,
-            bottom: 0.80,
-          ),
+          _DocumentFrameSpec(left: 0.11, right: 0.89, top: 0.12, bottom: 0.62),
+          _DocumentFrameSpec(left: 0.08, right: 0.92, top: 0.08, bottom: 0.70),
+          _DocumentFrameSpec(left: 0.06, right: 0.94, top: 0.06, bottom: 0.80),
         ];
       case 'Паспорт':
       default:
         return const [
-          _DocumentFrameSpec(
-            left: 0.08,
-            right: 0.92,
-            top: 0.05,
-            bottom: 0.58,
-          ),
-          _DocumentFrameSpec(
-            left: 0.07,
-            right: 0.93,
-            top: 0.08,
-            bottom: 0.68,
-          ),
-          _DocumentFrameSpec(
-            left: 0.05,
-            right: 0.95,
-            top: 0.12,
-            bottom: 0.76,
-          ),
+          // Паспортный overlay заметно ниже верхней кромки экрана, поэтому
+          // live-детектор должен смотреть в ту же область. Старые значения
+          // были слишком высокими и широкими, из-за чего «паспорт» находился
+          // на фоне без документа.
+          _DocumentFrameSpec(left: 0.08, right: 0.92, top: 0.14, bottom: 0.68),
+          _DocumentFrameSpec(left: 0.06, right: 0.94, top: 0.11, bottom: 0.71),
+          _DocumentFrameSpec(left: 0.10, right: 0.90, top: 0.17, bottom: 0.65),
         ];
     }
   }
@@ -861,18 +958,19 @@ class _CameraScreenState extends State<CameraScreen>
       final bytes = plane.bytes;
       final bytesPerRow = plane.bytesPerRow;
       for (int y = 0; y < targetHeight; y++) {
-        final srcPortraitY = ((y / (targetHeight - 1)) * (image.width - 1)).round();
+        final srcPortraitY = ((y / (targetHeight - 1)) * (image.width - 1))
+            .round();
         for (int x = 0; x < targetWidth; x++) {
-          final srcPortraitX =
-              ((x / (targetWidth - 1)) * (image.height - 1)).round();
+          final srcPortraitX = ((x / (targetWidth - 1)) * (image.height - 1))
+              .round();
           final srcX = srcPortraitY;
           final srcY = image.height - 1 - srcPortraitX;
           final offset = srcY * bytesPerRow + srcX * 4;
           final b = bytes[offset];
           final g = bytes[offset + 1];
           final r = bytes[offset + 2];
-          result[y * targetWidth + x] =
-              (0.114 * b + 0.587 * g + 0.299 * r).round();
+          result[y * targetWidth + x] = (0.114 * b + 0.587 * g + 0.299 * r)
+              .round();
         }
       }
       return result;
@@ -884,10 +982,11 @@ class _CameraScreenState extends State<CameraScreen>
     final pixelStride = plane.bytesPerPixel ?? 1;
 
     for (int y = 0; y < targetHeight; y++) {
-      final srcPortraitY = ((y / (targetHeight - 1)) * (image.width - 1)).round();
+      final srcPortraitY = ((y / (targetHeight - 1)) * (image.width - 1))
+          .round();
       for (int x = 0; x < targetWidth; x++) {
-        final srcPortraitX =
-            ((x / (targetWidth - 1)) * (image.height - 1)).round();
+        final srcPortraitX = ((x / (targetWidth - 1)) * (image.height - 1))
+            .round();
         final srcX = srcPortraitY;
         final srcY = image.height - 1 - srcPortraitX;
         result[y * targetWidth + x] =
@@ -945,8 +1044,8 @@ class _CameraScreenState extends State<CameraScreen>
     for (int y = 2; y < height - 2; y += 4) {
       for (int x = 2; x < width - 2; x += 4) {
         final dx = (gray[y * width + x + 2] - gray[y * width + x - 2]).abs();
-        final dy =
-            (gray[(y + 2) * width + x] - gray[(y - 2) * width + x]).abs();
+        final dy = (gray[(y + 2) * width + x] - gray[(y - 2) * width + x])
+            .abs();
         sum += dx + dy;
         count += 2;
       }
@@ -1015,6 +1114,8 @@ class _CameraScreenState extends State<CameraScreen>
   void _resetTwoPageState() {
     _firstCapturedImage = null;
     _secondCapturedImage = null;
+    _passportBatch = [];
+    _awaitDocumentExit = false;
   }
 
   void _resetIdCardState() {
@@ -1101,10 +1202,9 @@ class _CameraScreenState extends State<CameraScreen>
       if (uriField is List) {
         uriStrings = uriField.whereType<String>().toList();
       } else if (uriField is String) {
-        uriStrings = RegExp(r'(content://[^,\]\s}]+|file://[^,\]\s}]+)')
-            .allMatches(uriField)
-            .map((m) => m.group(0)!)
-            .toList();
+        uriStrings = RegExp(
+          r'(content://[^,\]\s}]+|file://[^,\]\s}]+)',
+        ).allMatches(uriField).map((m) => m.group(0)!).toList();
       } else {
         uriStrings = const [];
       }
@@ -1128,11 +1228,48 @@ class _CameraScreenState extends State<CameraScreen>
   Future<List<XFile>> _scanImagesWithNativeScanner({
     required int pageLimit,
   }) async {
-    final dynamic rawResult = await FlutterDocScanner().getScannedDocumentAsImages(
-      page: pageLimit,
-    );
+    final dynamic rawResult = await FlutterDocScanner()
+        .getScannedDocumentAsImages(page: pageLimit);
     final paths = await _resolveScannedImagePaths(rawResult);
     return paths.map(XFile.new).toList();
+  }
+
+  Future<XFile> _autoCropPassportXFile(XFile file) async {
+    final croppedFile = await PassportScanner.autoCrop(File(file.path));
+    return XFile(croppedFile.path);
+  }
+
+  Future<XFile> _autoCropDocumentXFile(XFile file) async {
+    final croppedFile = await DocumentScanner.autoCrop(File(file.path));
+    return XFile(croppedFile.path);
+  }
+
+  int get _passportTargetPageCount {
+    final match = RegExp(r'\d+').firstMatch(_pageMode);
+    final parsed = int.tryParse(match?.group(0) ?? '');
+    return (parsed ?? 1).clamp(1, 10);
+  }
+
+  String _passportPageModeLabel(int count) {
+    final mod10 = count % 10;
+    final mod100 = count % 100;
+    if (count == 1) return '1 страница';
+    if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) {
+      return '$count страницы';
+    }
+    return '$count страниц';
+  }
+
+  void _setPassportPageCount(int count) {
+    setState(() => _pageMode = _passportPageModeLabel(count));
+  }
+
+  String _passportOverlayLabel() {
+    final target = _passportTargetPageCount;
+    if (_passportBatch.isNotEmpty && _passportBatch.length < target) {
+      return '${_passportBatch.length + 1} из $target';
+    }
+    return _passportPageModeLabel(target);
   }
 
   /// Повторный запуск нативного скана из кнопки «Переснять». Откладываем на
@@ -1174,12 +1311,55 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  Future<void> _openRestorePhotoEditor(
+    XFile imageFile, {
+    bool restartDetectionOnReturn = true,
+  }) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RestorePhotoScreen(
+          initialImagePath: imageFile.path,
+          autoEnhanceOnOpen: true,
+          onSaved: () => widget.onScanCompleted?.call(''),
+        ),
+      ),
+    );
+
+    if (restartDetectionOnReturn) {
+      _startDocumentDetectionStream();
+    }
+  }
+
+  Future<void> _openRemoveSpotsEditor(
+    XFile imageFile, {
+    required bool startInManualMode,
+    required bool autoProcessOnOpen,
+    bool restartDetectionOnReturn = true,
+  }) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RemoveSpotsScreen(
+          initialImagePath: imageFile.path,
+          startInManualMode: startInManualMode,
+          autoProcessOnOpen: autoProcessOnOpen,
+          onImageSaved: () => widget.onScanCompleted?.call(''),
+        ),
+      ),
+    );
+
+    if (restartDetectionOnReturn) {
+      _startDocumentDetectionStream();
+    }
+  }
+
   Future<void> _startNativeAutoScan() async {
     final feature = _features.firstWhere(
       (f) => f['name'] == _selectedFeature,
       orElse: () => _features.first,
     );
-    final bool isDocumentMode = feature['isDocument'] == true;
+    final bool isDocumentMode = _isGuidedCameraFeature(feature);
     if (!isDocumentMode || _isScanning) return;
 
     final l10n = AppLocalizations.of(context);
@@ -1195,22 +1375,40 @@ class _CameraScreenState extends State<CameraScreen>
       List<XFile> scannedFiles;
 
       if (_selectedFeature == 'Паспорт') {
-        final limit = _pageMode == '2 страницы' ? 2 : 1;
+        final limit = _passportTargetPageCount;
         scannedFiles = await _scanImagesWithNativeScanner(pageLimit: limit);
         if (scannedFiles.isEmpty || !mounted) return;
 
-        if (_pageMode == '2 страницы' && scannedFiles.length >= 2) {
-          await _openPreview(
-            imageFile: scannedFiles.first,
-            secondImageFile: scannedFiles[1],
-            isTwoPage: true,
-          );
-        } else {
-          await _openPreview(
-            imageFile: scannedFiles.first,
-            isTwoPage: false,
-          );
+        final passportFiles = <XFile>[];
+        for (final scannedFile in scannedFiles.take(limit)) {
+          passportFiles.add(await _autoCropPassportXFile(scannedFile));
+          if (!mounted) return;
         }
+
+        _passportBatch.addAll(passportFiles);
+
+        if (_passportBatch.length >= limit) {
+          final readyFiles = _passportBatch.take(limit).toList();
+          await _openPreview(
+            imageFiles: readyFiles,
+            isTwoPage: readyFiles.length > 1,
+            onRetake: () {
+              Navigator.pop(context);
+              _resetTwoPageState();
+              _restartNativeScan();
+            },
+            restartDetectionOnReturn: false,
+          );
+          _resetTwoPageState();
+          return;
+        }
+
+        AppNotification.show(
+          context,
+          message: l10n.camPageNofM(_passportBatch.length + 1, limit),
+          type: NotificationType.success,
+        );
+        _restartNativeScan();
         return;
       }
 
@@ -1282,11 +1480,19 @@ class _CameraScreenState extends State<CameraScreen>
         return;
       }
 
-      final pageLimit = _selectedFeature == 'Документ' ? 10 : 30;
+      final pageLimit = _selectedFeature == 'Документ'
+          ? _documentTargetPageCount
+          : 30;
       scannedFiles = await _scanImagesWithNativeScanner(pageLimit: pageLimit);
       if (scannedFiles.isEmpty || !mounted) return;
 
-      await _openBatchPreview(scannedFiles);
+      final processedFiles = <XFile>[];
+      for (final scannedFile in scannedFiles) {
+        processedFiles.add(await _autoCropDocumentXFile(scannedFile));
+        if (!mounted) return;
+      }
+
+      await _openBatchPreview(processedFiles);
     } catch (e) {
       if (mounted) {
         AppNotification.show(
@@ -1305,7 +1511,6 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  
   Future<void> _takePicture({bool bypassCaptureMode = false}) async {
     _cancelAutoCapture();
     if (_cameraController == null ||
@@ -1323,7 +1528,7 @@ class _CameraScreenState extends State<CameraScreen>
       (f) => f['name'] == _selectedFeature,
       orElse: () => _features.first,
     );
-    final bool isDocumentMode = currentFeature['isDocument'] == true;
+    final bool isDocumentMode = _isGuidedCameraFeature(currentFeature);
     final bool isMultiPageLimited = _selectedFeature == "Документ";
     final bool isMultiPageUnlimited = _selectedFeature == "+10 страниц";
 
@@ -1349,9 +1554,48 @@ class _CameraScreenState extends State<CameraScreen>
       XFile file = await _cameraController!.takePicture();
       if (!mounted) return;
 
+      if (_isRestorePhotoFeature(_selectedFeature)) {
+        // Авто-обрезка по краям снятого фото — как у документа/ID-карты:
+        // убираем стол/фон, в редактор попадает только сама фотография.
+        // DocumentScanner при неуверенности возвращает оригинал, так что
+        // порезать кадр он не может (square-фото просто останется целым).
+        final restoreImage = await _autoCropDocumentXFile(file);
+        if (!mounted) return;
+        await _openRestorePhotoEditor(
+          restoreImage,
+          restartDetectionOnReturn: false,
+        );
+        if (!mounted) return;
+        _isScanning = false;
+        captureModeController.isScanning = false;
+        _startDocumentDetectionStream();
+        return;
+      }
+
+      if (_isRemoveSpotsFeature(_selectedFeature)) {
+        final removeSpotsImage = await _autoCropDocumentXFile(file);
+        if (!mounted) return;
+        final startInManualMode =
+            captureModeController.captureMode == 'Вручную';
+        await _openRemoveSpotsEditor(
+          removeSpotsImage,
+          startInManualMode: startInManualMode,
+          autoProcessOnOpen: !startInManualMode,
+          restartDetectionOnReturn: false,
+        );
+        if (!mounted) return;
+        _isScanning = false;
+        captureModeController.isScanning = false;
+        _startDocumentDetectionStream();
+        return;
+      }
+
       if (isMultiPageLimited || isMultiPageUnlimited) {
+        final documentImage = await _autoCropDocumentXFile(file);
+        if (!mounted) return;
+
         if (isMultiPageLimited) {
-          const int maxPages = 10;
+          final int maxPages = _documentTargetPageCount;
           if (_currentBatchPageCount >= maxPages) {
             AppNotification.show(
               context,
@@ -1365,7 +1609,7 @@ class _CameraScreenState extends State<CameraScreen>
           }
         }
 
-        _multiPageBatch.add(file);
+        _multiPageBatch.add(documentImage);
         setState(() {});
 
         _isScanning = false;
@@ -1414,11 +1658,10 @@ class _CameraScreenState extends State<CameraScreen>
             builder: (_) => IdCardPhotoPreviewScreen(
               frontImage: _idCardFrontImage!,
               backImage: _idCardBackImage!,
-              onRetake: () {
-                Navigator.popUntil(context, (route) => route.isFirst);
-                _resetIdCardState();
-                _startDocumentDetectionStream();
-              },
+              // «Переснять» — просто закрываем превью и возвращаемся на
+              // камеру в режиме «ID-карта». Сброс состояния и перезапуск
+              // детекции делает код ниже (после await Navigator.push).
+              onRetake: () => Navigator.pop(context),
               onConfirm: () {
                 widget.onScanCompleted?.call(_idCardFrontImage!.path);
               },
@@ -1433,7 +1676,40 @@ class _CameraScreenState extends State<CameraScreen>
         return;
       }
 
-      if (currentFeature['hasTwoPageMode'] == true && _pageMode == "2 страницы") {
+      if (_selectedFeature == "Паспорт") {
+        final passportImage = await _autoCropPassportXFile(file);
+        if (!mounted) return;
+        final targetPageCount = _passportTargetPageCount;
+        _passportBatch.add(passportImage);
+
+        if (_passportBatch.length >= targetPageCount) {
+          final readyFiles = List<XFile>.from(_passportBatch);
+          await _openPreview(
+            imageFiles: readyFiles,
+            isTwoPage: readyFiles.length > 1,
+          );
+
+          _resetTwoPageState();
+          _isScanning = false;
+          captureModeController.isScanning = false;
+          _startDocumentDetectionStream();
+          return;
+        }
+
+        _isScanning = false;
+        captureModeController.isScanning = false;
+        _awaitDocumentExit = true;
+        _startDocumentDetectionStream();
+        AppNotification.show(
+          context,
+          message: l10n.camPageNofM(_passportBatch.length + 1, targetPageCount),
+          type: NotificationType.success,
+        );
+        return;
+      }
+
+      if (currentFeature['hasTwoPageMode'] == true &&
+          _pageMode == "2 страницы") {
         if (_firstCapturedImage == null) {
           setState(() => _firstCapturedImage = file);
           _isScanning = false;
@@ -1458,17 +1734,13 @@ class _CameraScreenState extends State<CameraScreen>
         return;
       }
 
-      await _openPreview(
-        imageFile: file,
-        isTwoPage: false,
-      );
+      await _openPreview(imageFile: file, isTwoPage: false);
 
       setState(() {
         _isScanning = false;
         captureModeController.isScanning = false;
       });
       _startDocumentDetectionStream();
-
     } catch (e) {
       setState(() {
         _isScanning = false;
@@ -1526,55 +1798,122 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _openPreview({
-    required XFile imageFile,
+    XFile? imageFile,
     XFile? secondImageFile,
+    List<XFile>? imageFiles,
     required bool isTwoPage,
+    VoidCallback? onRetake,
+    bool restartDetectionOnReturn = true,
   }) async {
+    final previewFiles =
+        imageFiles ??
+        [
+          if (imageFile != null) imageFile,
+          if (secondImageFile != null) secondImageFile,
+        ];
+    if (previewFiles.isEmpty) return;
+    final normalizedPreviewFiles = isTwoPage || previewFiles.length > 1
+        ? previewFiles
+        : [previewFiles.first];
+
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PhotoPreviewScreen(
-          imageFile: imageFile,
-          secondImageFile: secondImageFile,
-          isTwoPageMode: isTwoPage,
-          onRetake: () {
-            Navigator.pop(context);
-            _startDocumentDetectionStream();
-          },
+          imageFiles: normalizedPreviewFiles,
+          onRetake:
+              onRetake ??
+              () {
+                Navigator.pop(context);
+                _startDocumentDetectionStream();
+              },
           onConfirm: () {
-            widget.onScanCompleted?.call(imageFile.path);
+            widget.onScanCompleted?.call(normalizedPreviewFiles.first.path);
           },
         ),
       ),
     );
-    _startDocumentDetectionStream();
+    if (restartDetectionOnReturn) {
+      _startDocumentDetectionStream();
+    }
   }
 
   Future<void> _pickImageFromGallery() async {
     final l10n = AppLocalizations.of(context);
     final ImagePicker picker = ImagePicker();
-    final XFile? galleryImage = await picker.pickImage(source: ImageSource.gallery);
+    final XFile? galleryImage = await picker.pickImage(
+      source: ImageSource.gallery,
+    );
 
     if (galleryImage == null) return;
     if (!mounted) return;
 
     if (_selectedFeature == 'Сканер qr-код') return;
 
+    if (_selectedFeature == 'Паспорт') {
+      final passportImage = await _autoCropPassportXFile(galleryImage);
+      if (!mounted) return;
+
+      _passportBatch.add(passportImage);
+      final targetPageCount = _passportTargetPageCount;
+
+      if (_passportBatch.length >= targetPageCount) {
+        final readyFiles = List<XFile>.from(_passportBatch);
+        await _openPreview(
+          imageFiles: readyFiles,
+          isTwoPage: readyFiles.length > 1,
+        );
+        _resetTwoPageState();
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(
+              context,
+            ).camPageNofM(_passportBatch.length + 1, targetPageCount),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      _startDocumentDetectionStream();
+      return;
+    }
+
     final bool isMultiPageLimited = _selectedFeature == "Документ";
     final bool isMultiPageUnlimited = _selectedFeature == "+10 страниц";
 
+    if (_isRestorePhotoFeature(_selectedFeature)) {
+      await _openRestorePhotoEditor(galleryImage);
+      return;
+    }
+
+    if (_isRemoveSpotsFeature(_selectedFeature)) {
+      final startInManualMode = captureModeController.captureMode == 'Вручную';
+      await _openRemoveSpotsEditor(
+        galleryImage,
+        startInManualMode: startInManualMode,
+        autoProcessOnOpen: !startInManualMode,
+      );
+      return;
+    }
+
     if (isMultiPageLimited || isMultiPageUnlimited) {
+      final documentImage = await _autoCropDocumentXFile(galleryImage);
+      if (!mounted) return;
+
       if (isMultiPageLimited) {
-        const int maxPages = 10;
+        final int maxPages = _documentTargetPageCount;
         if (_currentBatchPageCount >= maxPages) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(l10n.camMaxPages)),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(l10n.camMaxPages)));
           return;
         }
       }
 
-      _multiPageBatch.add(galleryImage);
+      _multiPageBatch.add(documentImage);
       setState(() {});
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1588,10 +1927,6 @@ class _CameraScreenState extends State<CameraScreen>
     }
 
     await _openPreview(imageFile: galleryImage, isTwoPage: false);
-  }
-
-  void _setPageMode(String mode) {
-    setState(() => _pageMode = mode);
   }
 
   void _scrollToSelectedFeature() {
@@ -1621,7 +1956,8 @@ class _CameraScreenState extends State<CameraScreen>
         _featureScrollController.position.viewportDimension;
 
     // Центр выбранного тайла в координатах контента, центрируем в вьюпорте.
-    final double itemCenter = leadingPadding + index * itemWidth + itemWidth / 2;
+    final double itemCenter =
+        leadingPadding + index * itemWidth + itemWidth / 2;
     final double targetOffset = itemCenter - (viewportWidth / 2);
 
     final maxOffset = _featureScrollController.position.maxScrollExtent;
@@ -1637,10 +1973,8 @@ class _CameraScreenState extends State<CameraScreen>
     _isInitialScrollDone = true;
   }
 
-
   Future<void> _launchInBrowser(String string) async {
     String urlString = string;
-
 
     if (!urlString.toLowerCase().startsWith('http://') &&
         !urlString.toLowerCase().startsWith('https://') &&
@@ -1661,7 +1995,11 @@ class _CameraScreenState extends State<CameraScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context).camCantOpenLink(string, e.runtimeType.toString())),
+            content: Text(
+              AppLocalizations.of(
+                context,
+              ).camCantOpenLink(string, e.runtimeType.toString()),
+            ),
             duration: const Duration(seconds: 4),
           ),
         );
@@ -1891,6 +2229,39 @@ class _CameraScreenState extends State<CameraScreen>
     unawaited(_ensureCameraReady());
   }
 
+  bool _isPremiumFeatureName(String featureName) {
+    return _premiumFeatureNames.contains(featureName);
+  }
+
+  bool _isRestorePhotoFeature(String featureName) {
+    return featureName == 'Восстановить фото';
+  }
+
+  bool _isRemoveSpotsFeature(String featureName) {
+    return featureName == 'Убрать пятна';
+  }
+
+  bool _isGuidedCameraFeature(Map<String, dynamic> feature) {
+    return feature['isDocument'] == true ||
+        _isRestorePhotoFeature(feature['name'] as String? ?? '') ||
+        _isRemoveSpotsFeature(feature['name'] as String? ?? '');
+  }
+
+  bool _canUseFeature(String featureName) {
+    if (!_isPremiumFeatureName(featureName)) {
+      return true;
+    }
+    return PremiumService().isPremium;
+  }
+
+  bool _guardPremiumFeatureSelection(String featureName) {
+    if (_canUseFeature(featureName)) {
+      return true;
+    }
+    showPremiumPaywall(context, featureName);
+    return false;
+  }
+
   bool _openToolFeature(Map<String, dynamic> feature) {
     final IconData? icon = feature['icon'] as IconData?;
 
@@ -1902,35 +2273,12 @@ class _CameraScreenState extends State<CameraScreen>
       return true;
     }
 
-    if (icon == Icons.restore) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ColorAdjustmentScreen(
-            onImageSaved: () => widget.onScanCompleted?.call(''),
-          ),
-        ),
-      ).then(_afterToolReturn);
-      return true;
-    }
-
-    if (icon == Icons.cleaning_services) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => RemoveSpotsScreen(
-            onImageSaved: () => widget.onScanCompleted?.call(''),
-          ),
-        ),
-      ).then(_afterToolReturn);
-      return true;
-    }
-
     if (icon == Icons.highlight) {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => HighlightScreen(onSaved: () => widget.onScanCompleted?.call('')),
+          builder: (_) =>
+              HighlightScreen(onSaved: () => widget.onScanCompleted?.call('')),
         ),
       ).then(_afterToolReturn);
       return true;
@@ -1940,7 +2288,9 @@ class _CameraScreenState extends State<CameraScreen>
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => AddPasswordScreen(onSaved: () => widget.onScanCompleted?.call('')),
+          builder: (_) => AddPasswordScreen(
+            onSaved: () => widget.onScanCompleted?.call(''),
+          ),
         ),
       ).then(_afterToolReturn);
       return true;
@@ -1950,7 +2300,9 @@ class _CameraScreenState extends State<CameraScreen>
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => RemoveWatermarkScreen(onSaved: () => widget.onScanCompleted?.call('')),
+          builder: (_) => RemoveWatermarkScreen(
+            onSaved: () => widget.onScanCompleted?.call(''),
+          ),
         ),
       ).then(_afterToolReturn);
       return true;
@@ -2020,8 +2372,11 @@ class _CameraScreenState extends State<CameraScreen>
                 children: [
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
-                    child: const Icon(Icons.arrow_back,
-                        color: Colors.white, size: 28),
+                    child: const Icon(
+                      Icons.arrow_back,
+                      color: Colors.white,
+                      size: 28,
+                    ),
                   ),
                   Row(
                     children: [
@@ -2036,8 +2391,11 @@ class _CameraScreenState extends State<CameraScreen>
                       const SizedBox(width: 12),
                       GestureDetector(
                         onTap: _openSettings,
-                        child: const Icon(Icons.settings,
-                            color: Colors.white, size: 26),
+                        child: const Icon(
+                          Icons.settings,
+                          color: Colors.white,
+                          size: 26,
+                        ),
                       ),
                     ],
                   ),
@@ -2057,7 +2415,10 @@ class _CameraScreenState extends State<CameraScreen>
             right: 0,
             child: Container(
               padding: EdgeInsets.fromLTRB(
-                8, 8, 8, 8 + MediaQuery.of(context).padding.bottom,
+                8,
+                8,
+                8,
+                8 + MediaQuery.of(context).padding.bottom,
               ),
               color: Colors.black.withValues(alpha: 0.5),
               child: SizedBox(
@@ -2065,8 +2426,11 @@ class _CameraScreenState extends State<CameraScreen>
                 child: Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.delete_outline,
-                          color: Colors.white70, size: 22),
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        color: Colors.white70,
+                        size: 22,
+                      ),
                       tooltip: l10n.actionDelete,
                       onPressed: _clearQrHistory,
                     ),
@@ -2075,7 +2439,8 @@ class _CameraScreenState extends State<CameraScreen>
                         scrollDirection: Axis.horizontal,
                         itemCount: _qrHistory.length,
                         separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemBuilder: (_, i) => _buildQrHistoryChip(_qrHistory[i]),
+                        itemBuilder: (_, i) =>
+                            _buildQrHistoryChip(_qrHistory[i]),
                       ),
                     ),
                   ],
@@ -2117,7 +2482,7 @@ class _CameraScreenState extends State<CameraScreen>
       ),
     );
   }
-  
+
   Widget _buildFeatureSelector() {
     final mq = MediaQuery.of(context);
     final isCompact = mq.size.width < 360;
@@ -2137,10 +2502,10 @@ class _CameraScreenState extends State<CameraScreen>
           final feature = _features[index];
           final newFeature = feature['name']!;
           final isSelected = _selectedFeature == newFeature;
+          final isPremiumFeature = _isPremiumFeatureName(newFeature);
 
           return GestureDetector(
             onTap: () {
-
               if (newFeature == 'Импорт документов') {
                 final cameraContext = context;
                 Navigator.push(
@@ -2148,7 +2513,7 @@ class _CameraScreenState extends State<CameraScreen>
                   MaterialPageRoute(
                     builder: (importerContext) => DocumentImporter(
                       initialPath: _importedDocumentPath,
-                  
+
                       onConfirm: (selectedPath) {
                         Navigator.pop(importerContext);
                         widget.onScanCompleted?.call(selectedPath);
@@ -2160,6 +2525,10 @@ class _CameraScreenState extends State<CameraScreen>
                     ),
                   ),
                 );
+                return;
+              }
+
+              if (!_guardPremiumFeatureSelection(newFeature)) {
                 return;
               }
 
@@ -2190,11 +2559,13 @@ class _CameraScreenState extends State<CameraScreen>
                 unawaited(_stopLiveDocumentDetection());
 
                 if (_cameraController == null) {
-                  unawaited(_initializeCamera().then((_) {
-                    if (mounted && _selectedFeature == 'Сканер qr-код') {
-                      _startBarcodeScanning();
-                    }
-                  }));
+                  unawaited(
+                    _initializeCamera().then((_) {
+                      if (mounted && _selectedFeature == 'Сканер qr-код') {
+                        _startBarcodeScanning();
+                      }
+                    }),
+                  );
                 } else {
                   // Отложенно: даём предыдущему вью (напр. живой перевод)
                   // в dispose остановить свой стрим раньше старта сканера.
@@ -2214,14 +2585,16 @@ class _CameraScreenState extends State<CameraScreen>
                 }
 
                 if (newFeature != 'Перевод' && newFeature != 'OCR') {
-                  Future.delayed(const Duration(milliseconds: 500), _startDocumentDetectionStream);
+                  Future.delayed(
+                    const Duration(milliseconds: 500),
+                    _startDocumentDetectionStream,
+                  );
                 } else {
                   captureModeController.resetDetectionState();
                   setState(() => _isDocumentDetected = false);
                   unawaited(_stopLiveDocumentDetection());
                 }
               }
-              
 
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) {
@@ -2249,18 +2622,36 @@ class _CameraScreenState extends State<CameraScreen>
                         boxShadow: isSelected
                             ? [
                                 BoxShadow(
-                                  color: const Color(0xFF2CA5E0)
-                                      .withValues(alpha: 0.55),
+                                  color: const Color(
+                                    0xFF2CA5E0,
+                                  ).withValues(alpha: 0.55),
                                   blurRadius: 14,
                                   spreadRadius: 1,
                                 ),
                               ]
                             : null,
                       ),
-                      child: Icon(
-                        feature['icon'] ?? Icons.circle,
-                        size: iconSize,
-                        color: Colors.white,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Center(
+                            child: Icon(
+                              feature['icon'] ?? Icons.circle,
+                              size: iconSize,
+                              color: Colors.white,
+                            ),
+                          ),
+                          if (isPremiumFeature)
+                            Positioned(
+                              right: isCompact ? 6 : 8,
+                              top: isCompact ? 6 : 8,
+                              child: Icon(
+                                Icons.workspace_premium,
+                                size: isCompact ? 11 : 12,
+                                color: Colors.amber.shade300,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -2277,8 +2668,9 @@ class _CameraScreenState extends State<CameraScreen>
                           color: isSelected
                               ? Colors.white
                               : Colors.white.withValues(alpha: 0.7),
-                          fontWeight:
-                              isSelected ? FontWeight.w700 : FontWeight.w500,
+                          fontWeight: isSelected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
                         ),
                       ),
                     ),
@@ -2336,7 +2728,6 @@ class _CameraScreenState extends State<CameraScreen>
       }
     });
 
-  
     if (!_isCameraInitialized && _selectedFeature != 'Перевод') {
       return const Scaffold(
         backgroundColor: Colors.black,
@@ -2362,9 +2753,10 @@ class _CameraScreenState extends State<CameraScreen>
         captureModeController: captureModeController,
         isDocumentDetected: _isDocumentDetected,
         isScanning: _isScanning,
-        pageMode: _pageMode,
+        pageModeLabel: _passportOverlayLabel(),
+        pageCount: _passportTargetPageCount,
         takePicture: _takePicture,
-        setPageMode: _setPageMode,
+        setPageCount: _setPassportPageCount,
         resetTwoPageState: _resetTwoPageState,
         pickImageFromGallery: _pickImageFromGallery,
         setCaptureModeAuto: _setCaptureModeAutoInline,
@@ -2397,6 +2789,7 @@ class _CameraScreenState extends State<CameraScreen>
         setCaptureModeManual: _setCaptureModeManual,
         onBack: () => Navigator.pop(context),
         onSettings: _openSettings,
+        maxPages: _documentTargetPageCount,
         currentBatchPageCount: _currentBatchPageCount,
         onFinishBatch: _onFinishBatch,
         onClearBatch: _onClearBatch,
@@ -2429,6 +2822,32 @@ class _CameraScreenState extends State<CameraScreen>
         setCaptureModeAuto: _setCaptureModeAutoInline,
         setCaptureModeManual: _setCaptureModeManual,
       ),
+      'Восстановить фото': () => RestorePhotoCameraView(
+        cameraController: _cameraController,
+        captureModeController: captureModeController,
+        isDocumentDetected: _isDocumentDetected,
+        isScanning: _isScanning,
+        photoQuad: _photoQuad,
+        previewAspect: _previewAspect,
+        takePicture: _takePicture,
+        pickImageFromGallery: _pickImageFromGallery,
+        setCaptureModeAuto: _setCaptureModeAutoInline,
+        setCaptureModeManual: _setCaptureModeManual,
+        onBack: () => Navigator.pop(context),
+        onSettings: _openSettings,
+      ),
+      'Убрать пятна': () => RemoveSpotsCameraView(
+        cameraController: _cameraController,
+        captureModeController: captureModeController,
+        isDocumentDetected: _isDocumentDetected,
+        isScanning: _isScanning,
+        takePicture: _takePicture,
+        pickImageFromGallery: _pickImageFromGallery,
+        setCaptureModeAuto: _setCaptureModeAutoInline,
+        setCaptureModeManual: _setCaptureModeManual,
+        onBack: () => Navigator.pop(context),
+        onSettings: _openSettings,
+      ),
       'OCR': () => OcrCameraView(
         cameraController: _cameraController,
         onCapture: _captureForOcr,
@@ -2439,7 +2858,8 @@ class _CameraScreenState extends State<CameraScreen>
       'Сканер qr-код': () => _buildQrCodeView(),
     };
 
-    Widget currentCameraView = featureViews[_selectedFeature]?.call() ??
+    Widget currentCameraView =
+        featureViews[_selectedFeature]?.call() ??
         Container(
           color: Colors.black,
           child: Center(
@@ -2452,8 +2872,8 @@ class _CameraScreenState extends State<CameraScreen>
 
     // QR теперь использует общий persistentCameraPreview (раньше был
     // исключён — отдельный плагин рисовал своё превью).
-    final bool showPersistentPreview = _isCameraInitialized
-        && _cameraController != null;
+    final bool showPersistentPreview =
+        _isCameraInitialized && _cameraController != null;
     final bool isTranslateSelected = _selectedFeature == 'Перевод';
 
     return Scaffold(

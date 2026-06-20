@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'api_service.dart';
 
 /// Категория ошибки AI-анализа — экран маппит её в локализованный текст,
@@ -82,6 +83,67 @@ class AIService {
         ],
       }
     ]);
+  }
+
+  /// Восстановление старого фото через сервер (Replicate/GFPGAN). Отправляет
+  /// картинку как base64, получает URL восстановленного файла, скачивает его
+  /// и возвращает локальный временный файл. Бросает [AiException] при сбое —
+  /// экран показывает локализованную ошибку и может откатиться на локальное
+  /// улучшение.
+  Future<File> restorePhoto(File imageFile) async {
+    final bytes = await imageFile.readAsBytes();
+    final base64Image = base64Encode(bytes);
+    final ext = imageFile.path.toLowerCase();
+    final mimeType = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
+
+    try {
+      final response = await ApiService().dio.post(
+        '/ai/restore',
+        data: {'imageBase64': base64Image, 'mimeType': mimeType},
+        // Модель на Replicate может «холодно стартовать» десятки секунд —
+        // даём щедрый receiveTimeout, чтобы не падать раньше сервера.
+        options: Options(
+          sendTimeout: const Duration(seconds: 60),
+          receiveTimeout: const Duration(seconds: 150),
+        ),
+      );
+      final url = response.data?['url'];
+      if (url is! String || url.isEmpty) {
+        throw AiException(AiErrorKind.generic);
+      }
+
+      // Скачиваем восстановленное фото (абсолютный URL CDN Replicate —
+      // dio не подставляет baseUrl, т.к. путь начинается с https://).
+      final download = await ApiService().dio.get<List<int>>(
+        url,
+        options: Options(
+          responseType: ResponseType.bytes,
+          receiveTimeout: const Duration(seconds: 60),
+        ),
+      );
+      final data = download.data;
+      if (data == null || data.isEmpty) {
+        throw AiException(AiErrorKind.generic);
+      }
+
+      final dir = await getTemporaryDirectory();
+      final out =
+          '${dir.path}/airestore_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final file = File(out);
+      await file.writeAsBytes(data);
+      return file;
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.connectionTimeout) {
+        throw AiException(AiErrorKind.timeout);
+      }
+      final status = e.response?.statusCode ?? 0;
+      if (status >= 500 || status == 0) {
+        throw AiException(AiErrorKind.unavailable);
+      }
+      throw AiException(AiErrorKind.generic);
+    }
   }
 
   Future<String> _send(List<Map<String, dynamic>> messages) async {

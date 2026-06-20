@@ -8,6 +8,8 @@ enum CaptureStatusOverlayKind {
   idCard,
   document,
   batchDocument,
+  restorePhoto,
+  removeSpots,
 }
 
 class _StatusOverlayLayout {
@@ -145,6 +147,20 @@ class CaptureModeController {
           maxWidth: 252,
           icon: Icons.layers_outlined,
         );
+      case CaptureStatusOverlayKind.restorePhoto:
+        return const _StatusOverlayLayout(
+          alignment: Alignment.topCenter,
+          padding: EdgeInsets.fromLTRB(24, 78, 24, 0),
+          maxWidth: 272,
+          icon: Icons.auto_fix_high_outlined,
+        );
+      case CaptureStatusOverlayKind.removeSpots:
+        return const _StatusOverlayLayout(
+          alignment: Alignment.topCenter,
+          padding: EdgeInsets.fromLTRB(24, 78, 24, 0),
+          maxWidth: 272,
+          icon: Icons.cleaning_services_outlined,
+        );
     }
   }
 
@@ -160,6 +176,10 @@ class CaptureModeController {
       case CaptureStatusOverlayKind.document:
       case CaptureStatusOverlayKind.batchDocument:
         return _compactFeatureLabel(featureName);
+      case CaptureStatusOverlayKind.restorePhoto:
+        return 'Восстановить';
+      case CaptureStatusOverlayKind.removeSpots:
+        return 'Убрать пятна';
     }
   }
 

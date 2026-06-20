@@ -45,11 +45,20 @@ class IdCardPhotoPreviewScreen extends StatelessWidget {
           width: double.infinity,
           margin: const EdgeInsets.symmetric(horizontal: 16.0),
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.white24, width: 2),
-            borderRadius: BorderRadius.circular(8),
+            color: const Color(0xFF1E2A3A),
+            border: Border.all(
+                color: const Color(0xFF2CA5E0).withValues(alpha: 0.35), width: 1.5),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(12.5),
             child: Image.file(
               File(file.path),
               fit: BoxFit.cover,
@@ -65,14 +74,14 @@ class IdCardPhotoPreviewScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF0F1923),
       body: Stack(
         children: [
           Positioned.fill(
             child: SafeArea(
               child: SingleChildScrollView(
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 60, bottom: 120),
+                  padding: const EdgeInsets.only(top: 16, bottom: 120),
                   child: Column(
                     children: [
                       // Первая сторона
@@ -89,62 +98,108 @@ class IdCardPhotoPreviewScreen extends StatelessWidget {
             ),
           ),
 
-          // Кнопка закрытия
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white, size: 30),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ),
-          ),
-
-          // Нижняя панель
+          // Нижняя панель: затемнение-градиент + две кнопки во всю ширину.
           Positioned(
-            bottom: 40,
+            bottom: 0,
             left: 0,
             right: 0,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                // Кнопка Переснять
-                ElevatedButton.icon(
-                  onPressed: onRetake,
-                  icon: const Icon(Icons.refresh, color: Colors.white),
-                  label: Text(l10n.camRetake),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.grey.shade800,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  ),
+            child: Container(
+              padding: EdgeInsets.fromLTRB(
+                16, 24, 16, 20 + MediaQuery.of(context).padding.bottom,
+              ),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.85),
+                  ],
                 ),
-                // Кнопка Редактировать
-                ElevatedButton.icon(
-                  onPressed: () {
-                    // ПЕРЕХОД НА РЕДАКТИРОВАНИЕ ID CARD
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => IdCardPhotoEditScreen(
-                          frontImage: frontImage,
-                          backImage: backImage,
-                          onSave: (editedPaths) {
-                            
-                            Navigator.popUntil(context, (route) => route.isFirst);
-                            onConfirm();
-                          },
+              ),
+              child: Row(
+                children: [
+                  // Переснять — вторичная кнопка (уже, текст короткий).
+                  Expanded(
+                    flex: 2,
+                    child: SizedBox(
+                      height: 52,
+                      child: OutlinedButton(
+                        onPressed: onRetake,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          backgroundColor: Colors.white.withValues(alpha: 0.06),
+                          side: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.28)),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.refresh, size: 19),
+                              const SizedBox(width: 8),
+                              Text(l10n.camRetake,
+                                  style: const TextStyle(
+                                      fontSize: 15, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
                         ),
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.check_circle, color: Colors.white),
-                  label: Text(l10n.editCount(2)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade600,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 12),
+                  // Редактировать — основная кнопка (шире, акцент).
+                  Expanded(
+                    flex: 3,
+                    child: SizedBox(
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => IdCardPhotoEditScreen(
+                                frontImage: frontImage,
+                                backImage: backImage,
+                                onSave: (editedPaths) {
+                                  Navigator.popUntil(
+                                      context, (route) => route.isFirst);
+                                  onConfirm();
+                                },
+                              ),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF22C55E),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.check_circle, size: 20),
+                              const SizedBox(width: 8),
+                              Text(l10n.editCount(2),
+                                  style: const TextStyle(
+                                      fontSize: 15, fontWeight: FontWeight.w700)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

@@ -7,12 +7,22 @@ import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/ai_service.dart';
+import '../../services/document_registry.dart';
 
 const _documentKey = 'saved_document_paths';
 
 class RestorePhotoScreen extends StatefulWidget {
   final VoidCallback? onSaved;
-  const RestorePhotoScreen({super.key, this.onSaved});
+  final String? initialImagePath;
+  final bool autoEnhanceOnOpen;
+
+  const RestorePhotoScreen({
+    super.key,
+    this.onSaved,
+    this.initialImagePath,
+    this.autoEnhanceOnOpen = false,
+  });
 
   @override
   State<RestorePhotoScreen> createState() => _RestorePhotoScreenState();
@@ -22,6 +32,37 @@ class _RestorePhotoScreenState extends State<RestorePhotoScreen> {
   File? _selectedFile;
   File? _previewFile;
   bool _isProcessing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitialImage();
+  }
+
+  Future<void> _loadInitialImage() async {
+    final initialPath = widget.initialImagePath;
+    if (initialPath == null || initialPath.isEmpty) {
+      return;
+    }
+
+    final file = File(initialPath);
+    if (!await file.exists()) {
+      return;
+    }
+
+    setState(() {
+      _selectedFile = file;
+      _previewFile = file;
+    });
+
+    if (widget.autoEnhanceOnOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _autoEnhance();
+        }
+      });
+    }
+  }
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -34,33 +75,70 @@ class _RestorePhotoScreenState extends State<RestorePhotoScreen> {
     }
   }
 
+  /// Локальное улучшение (резкость + лёгкий буст цвета). Дёшево, без сети —
+  /// используется для авто-улучшения при открытии и как фолбэк, если облачное
+  /// восстановление недоступно. Источник — всегда оригинал, не превью.
+  Future<void> _localEnhanceCore() async {
+    if (_selectedFile == null) return;
+    final bytes = await _selectedFile!.readAsBytes();
+    final image = img.decodeImage(bytes);
+    if (image == null) return;
+
+    final sharpened = img.convolution(
+      image,
+      filter: [0, -1, 0, -1, 5, -1, 0, -1, 0],
+      div: 1,
+      offset: 0,
+    );
+    final enhanced = img.adjustColor(
+      sharpened,
+      contrast: 1.1,
+      brightness: 1.05,
+      saturation: 1.1,
+    );
+
+    final dir = await getApplicationDocumentsDirectory();
+    final name = 'restored_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final path = '${dir.path}/$name';
+    await File(path)
+        .writeAsBytes(Uint8List.fromList(img.encodeJpg(enhanced, quality: 92)));
+
+    if (mounted) setState(() => _previewFile = File(path));
+  }
+
+  /// Авто-улучшение при открытии (из камеры) — локальное, без обращения к
+  /// платному облаку.
   Future<void> _autoEnhance() async {
     if (_selectedFile == null) return;
     setState(() => _isProcessing = true);
     try {
-      final bytes = await _selectedFile!.readAsBytes();
-      final image = img.decodeImage(bytes);
-      if (image == null) return;
+      await _localEnhanceCore();
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
 
-      final sharpened = img.convolution(
-        image,
-        filter: [0, -1, 0, -1, 5, -1, 0, -1, 0],
-        div: 1,
-        offset: 0,
+  /// Облачное восстановление (Replicate/GFPGAN): восстановление лиц + апскейл.
+  /// Восстанавливает из оригинала. При недоступности сервиса откатывается на
+  /// локальное улучшение, чтобы кнопка всегда давала результат.
+  Future<void> _aiRestore() async {
+    if (_selectedFile == null) return;
+    setState(() => _isProcessing = true);
+    try {
+      final restored = await AIService().restorePhoto(_selectedFile!);
+      if (mounted) setState(() => _previewFile = restored);
+    } on AiException catch (e) {
+      await _localEnhanceCore();
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      final reason = switch (e.kind) {
+        AiErrorKind.timeout => l10n.aiErrorTimeout,
+        AiErrorKind.unavailable => l10n.aiErrorUnavailable,
+        AiErrorKind.generic => l10n.aiErrorGeneric,
+      };
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${l10n.restoreAiFallback} ($reason)')),
       );
-      final enhanced = img.adjustColor(
-        sharpened,
-        contrast: 1.1,
-        brightness: 1.05,
-        saturation: 1.1,
-      );
-
-      final dir = await getApplicationDocumentsDirectory();
-      final name = 'restored_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final path = '${dir.path}/$name';
-      await File(path).writeAsBytes(Uint8List.fromList(img.encodeJpg(enhanced, quality: 92)));
-
-      setState(() => _previewFile = File(path));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -99,6 +177,14 @@ class _RestorePhotoScreenState extends State<RestorePhotoScreen> {
         paths.add(dest);
         await prefs.setStringList(_documentKey, paths);
       }
+      await DocumentRegistry().load();
+      await DocumentRegistry().add(
+        DocEntry(
+          localPath: dest,
+          remoteId: null,
+          name: DocumentRegistry.nameFromPath(dest),
+        ),
+      );
 
       widget.onSaved?.call();
       if (mounted) {
@@ -184,9 +270,9 @@ class _RestorePhotoScreenState extends State<RestorePhotoScreen> {
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: _isProcessing ? null : _autoEnhance,
+                            onPressed: _isProcessing ? null : _aiRestore,
                             icon: const Icon(Icons.auto_fix_high, size: 18),
-                            label: Text(l10n.restoreAuto),
+                            label: Text(l10n.restoreAiButton),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: const Color(0xFF2CA5E0),
                               side: const BorderSide(color: Color(0xFF2CA5E0)),

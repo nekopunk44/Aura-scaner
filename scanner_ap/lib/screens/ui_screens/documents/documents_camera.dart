@@ -17,6 +17,7 @@ class MultiPageDocumentView extends StatelessWidget {
     required this.setCaptureModeManual,
     required this.onBack,
     required this.onSettings,
+    required this.maxPages,
     required this.currentBatchPageCount,  
     required this.onFinishBatch,       
     required this.onClearBatch,         
@@ -27,7 +28,8 @@ class MultiPageDocumentView extends StatelessWidget {
   final dynamic captureModeController;
   final bool isDocumentDetected;
   final bool isScanning;
-  final int currentBatchPageCount; // 0-10
+  final int maxPages;
+  final int currentBatchPageCount; // 0-maxPages
 
   // ------------------ Функции ------------------
   final Future<void> Function() takePicture;
@@ -154,7 +156,6 @@ class MultiPageDocumentView extends StatelessWidget {
 
   Widget _buildBottomBar(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    const int maxPages = 9;
     const bool isDocumentMode = true;
 
     final bool canSnap = (captureModeController as dynamic)
@@ -200,7 +201,9 @@ class MultiPageDocumentView extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  l10n.camDoneBatch(currentBatchPageCount),
+                  isBatchActive
+                      ? l10n.camDoneBatch(currentBatchPageCount)
+                      : '0/$maxPages',
                   style: TextStyle(
                     fontSize: 13,
                     color: isBatchActive ? Colors.white : Colors.white38,
@@ -231,7 +234,6 @@ class MultiPageDocumentView extends StatelessWidget {
     final double cameraHeightLimit = size.height * 0.85;
 
     final bool isAutoMode = (captureModeController as dynamic).captureMode == 'Автоматически';
-    const int maxPages = 10;
     final String pageStatus = currentBatchPageCount < maxPages
         ? l10n.camPageNofM(currentBatchPageCount + 1, maxPages)
         : l10n.camMaxPagesReached(maxPages);

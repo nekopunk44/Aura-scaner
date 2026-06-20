@@ -6,18 +6,14 @@ import 'photo_edit_passport.dart';
 import '../../../l10n/app_localizations.dart';
 
 class PhotoPreviewScreen extends StatelessWidget {
-  final XFile imageFile;
-  final XFile? secondImageFile;
-  final bool isTwoPageMode;
+  final List<XFile> imageFiles;
 
   final void Function()? onConfirm;
   final void Function()? onRetake;
 
   const PhotoPreviewScreen({
     super.key,
-    required this.imageFile,
-    this.secondImageFile,
-    this.isTwoPageMode = false,
+    required this.imageFiles,
     this.onConfirm,
     this.onRetake,
   });
@@ -65,10 +61,7 @@ class PhotoPreviewScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final List<XFile> filesToEdit = [imageFile];
-    if (isTwoPageMode && secondImageFile != null) {
-      filesToEdit.add(secondImageFile!);
-    }
+    final List<XFile> filesToEdit = imageFiles;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -80,14 +73,18 @@ class PhotoPreviewScreen extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.only(top: 60, bottom: 120),
                   child: Column(
-                    children: [
-                      _buildImagePreview(context, imageFile, 1),
-
-                      if (isTwoPageMode && secondImageFile != null) ...[
-                        const SizedBox(height: 20),
-                        _buildImagePreview(context, secondImageFile!, 2),
-                      ],
-                    ],
+                    children: List.generate(filesToEdit.length, (index) {
+                      return Padding(
+                        padding: EdgeInsets.only(
+                          bottom: index == filesToEdit.length - 1 ? 0 : 20,
+                        ),
+                        child: _buildImagePreview(
+                          context,
+                          filesToEdit[index],
+                          index + 1,
+                        ),
+                      );
+                    }),
                   ),
                 ),
               ),

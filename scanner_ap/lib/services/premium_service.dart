@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'api_service.dart';
@@ -19,14 +20,23 @@ class PremiumService {
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    _isPremium = prefs.getBool('is_premium') ?? false;
+    _isPremium = prefs.getBool('is_premium') ?? kDebugMode;
     final expiresStr = prefs.getString('premium_expires_at');
     _expiresAt = expiresStr != null ? DateTime.tryParse(expiresStr) : null;
     _activeProductId = prefs.getString('premium_product_id');
+
+    // In debug builds we keep Premium enabled by default for local testing.
+    if (kDebugMode && !_isPremium) {
+      _isPremium = true;
+      await prefs.setBool('is_premium', true);
+    }
   }
 
   /// Синхронизирует статус с сервером. Вызывается при старте если пользователь авторизован.
   Future<void> syncWithServer() async {
+    if (kDebugMode) {
+      return;
+    }
     try {
       final response = await ApiService().dio.get('/auth/profile');
       final serverPremium = response.data['isPremium'] as bool? ?? false;

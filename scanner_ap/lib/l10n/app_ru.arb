@@ -585,6 +585,10 @@
 
   "restoreAuto": "Авто улучшение",
   "restoreEditor": "Редактор",
+  "restoreAiButton": "Восстановить AI",
+  "@restoreAiButton": {"description": "Кнопка облачного AI-восстановления фото."},
+  "restoreAiFallback": "Онлайн-восстановление недоступно, применено базовое улучшение.",
+  "@restoreAiFallback": {"description": "Сообщение, когда AI-восстановление не сработало и применён локальный фильтр."},
 
   "spotsSelectFilter": "Выберите фильтр:",
   "spotsMedianTitle": "Медианный фильтр",

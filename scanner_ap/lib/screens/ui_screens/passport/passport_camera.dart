@@ -12,8 +12,9 @@ class PassportCameraView extends StatelessWidget {
     required this.isDocumentDetected,
     required this.isScanning,
     required this.takePicture,
-    required this.pageMode,
-    required this.setPageMode,
+    required this.pageModeLabel,
+    required this.pageCount,
+    required this.setPageCount,
     required this.resetTwoPageState,
     required this.pickImageFromGallery,
     required this.setCaptureModeAuto,
@@ -27,11 +28,12 @@ class PassportCameraView extends StatelessWidget {
   final CaptureModeController captureModeController;
   final bool isDocumentDetected;
   final bool isScanning;
-  final String pageMode;
+  final String pageModeLabel;
+  final int pageCount;
 
   // ------------------ Функции ------------------
   final Future<void> Function() takePicture;
-  final void Function(String mode) setPageMode;
+  final void Function(int count) setPageCount;
   final void Function() resetTwoPageState;
   final Future<void> Function() pickImageFromGallery;
   final void Function() setCaptureModeAuto; 
@@ -177,9 +179,40 @@ class PassportCameraView extends StatelessWidget {
       ],
       rightActions: [
         CameraActionPill(
-          label: pageMode == "1 страница" ? "1 → 2" : "2 → 1",
-          onTap: () {
-            setPageMode(pageMode == "1 страница" ? "2 страницы" : "1 страница");
+          label: '$pageCount стр.',
+          onTap: () async {
+            final selectedCount = await showModalBottomSheet<int>(
+              context: context,
+              backgroundColor: const Color(0xFF111111),
+              builder: (sheetContext) {
+                return SafeArea(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: 10,
+                    itemBuilder: (context, index) {
+                      final count = index + 1;
+                      final isSelected = count == pageCount;
+                      return ListTile(
+                        title: Text(
+                          '$count стр.',
+                          style: TextStyle(
+                            color: isSelected ? const Color(0xFF2CA5E0) : Colors.white,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                          ),
+                        ),
+                        trailing: isSelected
+                            ? const Icon(Icons.check, color: Color(0xFF2CA5E0))
+                            : null,
+                        onTap: () => Navigator.pop(sheetContext, count),
+                      );
+                    },
+                  ),
+                );
+              },
+            );
+
+            if (selectedCount == null || selectedCount == pageCount) return;
+            setPageCount(selectedCount);
             resetTwoPageState();
             setCaptureModeAuto();
           },
@@ -205,7 +238,7 @@ class PassportCameraView extends StatelessWidget {
         Positioned.fill(
           child: captureModeController.buildStatusOverlay(
             isDocumentMode: true,
-            pageMode: pageMode,
+            pageMode: pageModeLabel,
             featureName: "Паспорт",
             overlayKind: CaptureStatusOverlayKind.passport,
           ),

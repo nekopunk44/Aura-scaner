@@ -396,6 +396,10 @@
 
   "restoreAuto": "Auto enhance",
   "restoreEditor": "Editor",
+  "restoreAiButton": "Restore (AI)",
+  "@restoreAiButton": {"description": "Cloud AI photo restoration button."},
+  "restoreAiFallback": "Online restore unavailable, applied basic enhancement.",
+  "@restoreAiFallback": {"description": "Shown when AI restore failed and the local filter was used instead."},
 
   "spotsSelectFilter": "Choose a filter:",
   "spotsMedianTitle": "Median filter",
