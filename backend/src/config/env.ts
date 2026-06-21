@@ -60,6 +60,11 @@ export const env = {
   replicateRefineModel:
     process.env.REPLICATE_RESTORE_REFINE ?? 'sczhou/codeformer',
   replicateCodeformerFidelity: _codeformerFidelity,
+  // FLUX Fill reconstructs only white areas of the supplied mask. Keeping this
+  // model configurable lets deployments switch providers without an app update.
+  replicateInpaintModel:
+    process.env.REPLICATE_INPAINT_MODEL ||
+    'black-forest-labs/flux-fill-pro',
   // Apple Sign In
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'com.aurascanner.app',
   // Apple App Store Server API (для проверки receipt)

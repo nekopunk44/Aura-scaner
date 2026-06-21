@@ -321,14 +321,14 @@ async function runReplicateModel(
     };
   }
   const versionId = modelInfo.json?.latest_version?.id;
-  if (typeof versionId !== 'string' || versionId.length === 0) {
-    return { ok: false, status: 502, detail: `model ${model} has no version` };
-  }
+  const hasVersion = typeof versionId === 'string' && versionId.length > 0;
 
   const created = await replicateRequest(
     'POST',
-    `${REPLICATE_API}/predictions`,
-    { version: versionId, input },
+    hasVersion
+      ? `${REPLICATE_API}/predictions`
+      : `${REPLICATE_API}/models/${model}/predictions`,
+    hasVersion ? { version: versionId, input } : { input },
     { Prefer: 'wait' },
   );
   if (created.status !== 200 && created.status !== 201) {
@@ -366,6 +366,76 @@ async function runReplicateModel(
     return { ok: false, status: 502, detail: 'unexpected output' };
   }
   return { ok: true, url: output };
+}
+
+/**
+ * Rebuilds masked areas with a semantic inpainting model. Unlike the old
+ * client-side texture copy, this can continue mountains, clouds and buildings
+ * through translucent repeated text without creating rectangular patches.
+ */
+export async function removeWatermarks(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
+  if (!env.replicateApiToken) {
+    res.status(503).json({ message: 'Inpainting service is not configured' });
+    return;
+  }
+
+  const { imageBase64, imageMimeType, maskBase64 } = req.body ?? {};
+  if (
+    typeof imageBase64 !== 'string' ||
+    imageBase64.trim().length === 0 ||
+    typeof maskBase64 !== 'string' ||
+    maskBase64.trim().length === 0
+  ) {
+    res.status(400).json({ message: 'imageBase64 and maskBase64 are required' });
+    return;
+  }
+
+  const image = normalizeImagePayload(
+    imageBase64,
+    typeof imageMimeType === 'string' ? imageMimeType : undefined,
+  );
+  const mask = normalizeImagePayload(maskBase64, 'image/png');
+  if (!image || !mask) {
+    res.status(400).json({ message: 'Unsupported image type' });
+    return;
+  }
+  if (
+    image.base64Length > MAX_OCR_IMAGE_BASE64_LENGTH ||
+    mask.base64Length > MAX_OCR_IMAGE_BASE64_LENGTH
+  ) {
+    res.status(413).json({ message: 'Image is too large' });
+    return;
+  }
+
+  const result = await runReplicateModel(
+    env.replicateInpaintModel,
+    {
+      image: image.dataUrl,
+      mask: mask.dataUrl,
+      prompt:
+        'Remove all text, logos, and watermark marks inside the white mask. ' +
+        'Seamlessly reconstruct the original natural background, preserving ' +
+        'the composition, colors, lighting, perspective, and details outside the mask.',
+      output_format: 'jpg',
+    },
+    Date.now() + RESTORE_TIMEOUT_MS,
+  );
+
+  if (!result.ok) {
+    logger.warn('[removeWatermarks] inpainting failed', {
+      model: env.replicateInpaintModel,
+      detail: result.detail,
+    });
+    res
+      .status(result.status)
+      .json({ message: 'Inpainting failed', detail: result.detail });
+    return;
+  }
+
+  res.json({ url: result.url });
 }
 
 /**
