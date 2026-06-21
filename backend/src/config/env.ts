@@ -7,6 +7,13 @@ dotenv.config();
 // продакшен с предсказуемым секретом и подделывать чужие токены.
 const _jwtSecret = process.env.JWT_SECRET ?? '';
 
+// CodeFormer fidelity (2-я стадия восстановления): ближе к 1 = вернее лицам
+// (меньше «кукольности»/пластика), ближе к 0 = резче, но рискует «приукрасить».
+const _codeformerFidelity = (() => {
+  const v = parseFloat(process.env.REPLICATE_CODEFORMER_FIDELITY ?? '');
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.85;
+})();
+
 export const env = {
   port: parseInt(process.env.PORT || '3000', 10),
   mongoUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/aura_scanner',
@@ -52,6 +59,7 @@ export const env = {
   // результата 1-й стадии. Пусто = выключить вторую стадию.
   replicateRefineModel:
     process.env.REPLICATE_RESTORE_REFINE ?? 'sczhou/codeformer',
+  replicateCodeformerFidelity: _codeformerFidelity,
   // Apple Sign In
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'com.aurascanner.app',
   // Apple App Store Server API (для проверки receipt)

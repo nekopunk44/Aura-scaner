@@ -278,8 +278,8 @@ function buildRefineInput(
   if (m.includes('codeformer')) {
     return {
       image: imageUrl,
-      // 0.7 — чётче и детальнее, но всё ещё верно лицам (меньше «пластика»).
-      codeformer_fidelity: 0.7,
+      // Ближе к 1 = вернее лицам, меньше «кукольности» (env-настройка).
+      codeformer_fidelity: env.replicateCodeformerFidelity,
       background_enhance: true, // Real-ESRGAN для фона/деталей
       face_upsample: true, // повышает чёткость лиц
       upscale: 2,
