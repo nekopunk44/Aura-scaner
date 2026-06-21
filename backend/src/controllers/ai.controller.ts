@@ -267,9 +267,110 @@ const delay = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Восстановление старого фото через Replicate (по умолчанию GFPGAN —
- * улучшение лиц + апскейл). Картинка приходит из приложения как base64,
- * уходит в Replicate как data-URL; возвращаем URL восстановленного файла.
+ * Вход для модели-уточнителя (2-я стадия). На вход идёт URL результата 1-й
+ * стадии (Replicate принимает http-URL как файловый вход).
+ */
+function buildRefineInput(
+  model: string,
+  imageUrl: string,
+): Record<string, unknown> {
+  const m = model.toLowerCase();
+  if (m.includes('codeformer')) {
+    return {
+      image: imageUrl,
+      // 0.7 — чётче и детальнее, но всё ещё верно лицам (меньше «пластика»).
+      codeformer_fidelity: 0.7,
+      background_enhance: true, // Real-ESRGAN для фона/деталей
+      face_upsample: true, // повышает чёткость лиц
+      upscale: 2,
+    };
+  }
+  if (m.includes('gfpgan')) {
+    return { img: imageUrl, version: 'v1.4', scale: 2 };
+  }
+  // Real-ESRGAN и совместимые апскейлеры.
+  return { image: imageUrl, scale: 2 };
+}
+
+type ModelRun =
+  | { ok: true; url: string }
+  | { ok: false; status: number; detail: string };
+
+/**
+ * Прогоняет одну модель Replicate: версия модели → создание предсказания →
+ * поллинг до готовности (в рамках общего [deadline]) → URL результата.
+ * Community-модели требуют version-хэш на /v1/predictions, поэтому сперва
+ * GET модели.
+ */
+async function runReplicateModel(
+  model: string,
+  input: Record<string, unknown>,
+  deadline: number,
+): Promise<ModelRun> {
+  const modelInfo = await replicateRequest(
+    'GET',
+    `${REPLICATE_API}/models/${model}`,
+  );
+  if (modelInfo.status !== 200) {
+    return {
+      ok: false,
+      status: 502,
+      detail: modelInfo.json?.detail ?? modelInfo.raw.slice(0, 300),
+    };
+  }
+  const versionId = modelInfo.json?.latest_version?.id;
+  if (typeof versionId !== 'string' || versionId.length === 0) {
+    return { ok: false, status: 502, detail: `model ${model} has no version` };
+  }
+
+  const created = await replicateRequest(
+    'POST',
+    `${REPLICATE_API}/predictions`,
+    { version: versionId, input },
+    { Prefer: 'wait' },
+  );
+  if (created.status !== 200 && created.status !== 201) {
+    return {
+      ok: false,
+      status: 502,
+      detail: created.json?.detail ?? created.raw.slice(0, 300),
+    };
+  }
+
+  let prediction: ReplicatePrediction = created.json ?? {};
+  const getUrl = prediction.urls?.get;
+  const terminal = ['succeeded', 'failed', 'canceled'];
+  while (
+    getUrl &&
+    !terminal.includes(prediction.status ?? '') &&
+    Date.now() < deadline
+  ) {
+    await delay(RESTORE_POLL_INTERVAL_MS);
+    const poll = await replicateRequest('GET', getUrl);
+    if (poll.json) prediction = poll.json;
+  }
+
+  if (prediction.status !== 'succeeded') {
+    return {
+      ok: false,
+      status: 502,
+      detail: String(prediction.error ?? prediction.status ?? 'timeout'),
+    };
+  }
+  const output = Array.isArray(prediction.output)
+    ? prediction.output[0]
+    : prediction.output;
+  if (typeof output !== 'string' || output.length === 0) {
+    return { ok: false, status: 502, detail: 'unexpected output' };
+  }
+  return { ok: true, url: output };
+}
+
+/**
+ * Восстановление старого фото в две стадии:
+ *   1) удаление дефектов (BOPBTL: царапины/трещины + аккуратная реставрация);
+ *   2) уточнение (CodeFormer: чёткость лиц + апскейл/детали, fidelity 0.7).
+ * Если 2-я стадия не задана/упала — отдаём результат 1-й.
  */
 export async function restorePhoto(
   req: AuthRequest,
@@ -299,93 +400,55 @@ export async function restorePhoto(
     return;
   }
 
-  // 1. Узнаём актуальную версию модели. Endpoint /models/{m}/predictions
-  //    работает только для official-моделей Replicate; community-модели
-  //    (GFPGAN, CodeFormer) на нём дают 404. Поэтому берём version-хэш через
-  //    GET и создаём предсказание уже на /v1/predictions.
-  const modelInfo = await replicateRequest(
-    'GET',
-    `${REPLICATE_API}/models/${env.replicateRestoreModel}`,
-  );
-  if (modelInfo.status !== 200) {
-    const detail = modelInfo.json?.detail ?? modelInfo.raw.slice(0, 300);
-    logger.warn('[restorePhoto] model lookup failed', {
-      status: modelInfo.status,
-      model: env.replicateRestoreModel,
-      detail,
-    });
-    res.status(502).json({ message: 'Restore service error', detail });
-    return;
-  }
-  const versionId = modelInfo.json?.latest_version?.id;
-  if (typeof versionId !== 'string' || versionId.length === 0) {
-    logger.warn('[restorePhoto] model has no version', {
-      model: env.replicateRestoreModel,
-    });
-    res.status(502).json({ message: 'Restore model has no version' });
-    return;
-  }
-
-  // 2. Создаём предсказание. Prefer: wait — Replicate держит соединение и
-  //    возвращает готовый результат, если уложился в окно (~60с).
-  const created = await replicateRequest(
-    'POST',
-    `${REPLICATE_API}/predictions`,
-    {
-      version: versionId,
-      input: buildRestoreInput(env.replicateRestoreModel, image.dataUrl),
-    },
-    { Prefer: 'wait' },
-  );
-
-  if (created.status !== 200 && created.status !== 201) {
-    const detail = created.json?.detail ?? created.raw.slice(0, 300);
-    logger.warn('[restorePhoto] create failed', {
-      status: created.status,
-      detail,
-    });
-    res.status(502).json({ message: 'Restore service error', detail });
-    return;
-  }
-
-  let prediction: ReplicatePrediction = created.json ?? {};
-
-  // 3. Если из-за холодного старта результат ещё не готов — опрашиваем статус.
-  const getUrl = prediction.urls?.get;
+  // Общий бюджет времени на обе стадии (держим HTTP-соединение открытым).
   const deadline = Date.now() + RESTORE_TIMEOUT_MS;
-  const terminal = ['succeeded', 'failed', 'canceled'];
-  while (
-    getUrl &&
-    !terminal.includes(prediction.status ?? '') &&
+
+  // Стадия 1 — удаление дефектов (BOPBTL). Критична: при провале возвращаем
+  // ошибку, приложение откатится на локальное улучшение.
+  const stage1 = await runReplicateModel(
+    env.replicateRestoreModel,
+    buildRestoreInput(env.replicateRestoreModel, image.dataUrl),
+    deadline,
+  );
+  if (!stage1.ok) {
+    logger.warn('[restorePhoto] stage1 failed', {
+      model: env.replicateRestoreModel,
+      detail: stage1.detail,
+    });
+    res
+      .status(stage1.status)
+      .json({ message: 'Restore failed', detail: stage1.detail });
+    return;
+  }
+
+  let finalUrl = stage1.url;
+
+  // Стадия 2 — уточнение (CodeFormer): чёткость лиц + апскейл/детали.
+  // Некритична: если упадёт/таймаутнет — отдаём результат 1-й стадии.
+  // Пропускаем, если refine-модель не задана, совпадает со стадией 1, или
+  // бюджет времени уже исчерпан.
+  const refineModel = env.replicateRefineModel;
+  if (
+    refineModel &&
+    refineModel.toLowerCase() !== env.replicateRestoreModel.toLowerCase() &&
     Date.now() < deadline
   ) {
-    await delay(RESTORE_POLL_INTERVAL_MS);
-    const poll = await replicateRequest('GET', getUrl);
-    if (poll.json) prediction = poll.json;
+    const stage2 = await runReplicateModel(
+      refineModel,
+      buildRefineInput(refineModel, finalUrl),
+      deadline,
+    );
+    if (stage2.ok) {
+      finalUrl = stage2.url;
+    } else {
+      logger.warn('[restorePhoto] refine stage failed, using stage1', {
+        model: refineModel,
+        detail: stage2.detail,
+      });
+    }
   }
 
-  if (prediction.status !== 'succeeded') {
-    logger.warn('[restorePhoto] not succeeded', {
-      status: prediction.status,
-      error: prediction.error,
-    });
-    res.status(502).json({
-      message: 'Restore failed',
-      detail: String(prediction.error ?? prediction.status ?? 'timeout'),
-    });
-    return;
-  }
-
-  // У GFPGAN output — строка-URL; у части моделей это массив URL.
-  const output = Array.isArray(prediction.output)
-    ? prediction.output[0]
-    : prediction.output;
-  if (typeof output !== 'string' || output.length === 0) {
-    res.status(502).json({ message: 'Unexpected restore output' });
-    return;
-  }
-
-  res.json({ url: output });
+  res.json({ url: finalUrl });
 }
 
 export async function recognizeOcrText(

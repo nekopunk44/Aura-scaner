@@ -48,6 +48,10 @@ export const env = {
   replicateRestoreModel:
     process.env.REPLICATE_RESTORE_MODEL ||
     'microsoft/bringing-old-photos-back-to-life',
+  // 2-я стадия (уточнение): CodeFormer — чёткость лиц + апскейл/детали поверх
+  // результата 1-й стадии. Пусто = выключить вторую стадию.
+  replicateRefineModel:
+    process.env.REPLICATE_RESTORE_REFINE ?? 'sczhou/codeformer',
   // Apple Sign In
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'com.aurascanner.app',
   // Apple App Store Server API (для проверки receipt)
