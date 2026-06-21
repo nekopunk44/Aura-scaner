@@ -174,7 +174,36 @@ export async function analyzeDocument(
 
 const REPLICATE_API = 'https://api.replicate.com/v1';
 const RESTORE_POLL_INTERVAL_MS = 2000;
-const RESTORE_TIMEOUT_MS = 90_000;
+// BOPBTL с HR/scratch считается ~46с (+ холодный старт) — даём запас.
+const RESTORE_TIMEOUT_MS = 150_000;
+
+/**
+ * Поля input у разных моделей восстановления различаются — собираем под
+ * конкретную модель. По умолчанию это BOPBTL (удаление царапин + HR).
+ */
+function buildRestoreInput(
+  model: string,
+  imageDataUrl: string,
+): Record<string, unknown> {
+  const m = model.toLowerCase();
+  if (m.includes('gfpgan')) {
+    return { img: imageDataUrl, version: 'v1.4', scale: 2 };
+  }
+  if (m.includes('codeformer')) {
+    return {
+      image: imageDataUrl,
+      // Ближе к 1 = вернее оригиналу (меньше «галлюцинаций» лица).
+      codeformer_fidelity: 0.9,
+      background_enhance: true,
+      face_upsample: true,
+      upscale: 2,
+    };
+  }
+  // microsoft/bringing-old-photos-back-to-life и совместимые:
+  // with_scratch — детекция и инпейнтинг царапин; HR — режим высокого
+  // разрешения (качественнее, но дольше).
+  return { image: imageDataUrl, HR: true, with_scratch: true };
+}
 
 interface ReplicatePrediction {
   id?: string;
@@ -304,7 +333,7 @@ export async function restorePhoto(
     `${REPLICATE_API}/predictions`,
     {
       version: versionId,
-      input: { img: image.dataUrl, version: 'v1.4', scale: 2 },
+      input: buildRestoreInput(env.replicateRestoreModel, image.dataUrl),
     },
     { Prefer: 'wait' },
   );
