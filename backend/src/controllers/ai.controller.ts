@@ -174,6 +174,7 @@ export async function analyzeDocument(
 
 const REPLICATE_API = 'https://api.replicate.com/v1';
 const RESTORE_POLL_INTERVAL_MS = 2000;
+const TRANSCRIBE_TIMEOUT_MS = 180_000;
 // BOPBTL с HR/scratch считается ~46с (+ холодный старт) — даём запас.
 const RESTORE_TIMEOUT_MS = 150_000;
 
@@ -366,6 +367,175 @@ async function runReplicateModel(
     return { ok: false, status: 502, detail: 'unexpected output' };
   }
   return { ok: true, url: output };
+}
+
+type TranscriptionRun =
+  | { ok: true; text: string; language?: string }
+  | { ok: false; status: number; detail: string };
+
+function transcriptionFromOutput(
+  output: unknown,
+): { text: string; language?: string } | null {
+  if (typeof output === 'string') {
+    const text = output.trim();
+    return text ? { text } : null;
+  }
+  if (!output || typeof output !== 'object' || Array.isArray(output)) {
+    return null;
+  }
+
+  const result = output as Record<string, unknown>;
+  const directText = [result.transcription, result.text].find(
+    (value): value is string =>
+      typeof value === 'string' && value.trim().length > 0,
+  );
+  let text = directText?.trim() ?? '';
+  if (!text && Array.isArray(result.segments)) {
+    text = result.segments
+      .map((segment) => {
+        if (!segment || typeof segment !== 'object') return '';
+        const value = (segment as Record<string, unknown>).text;
+        return typeof value === 'string' ? value.trim() : '';
+      })
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+  }
+  if (!text) return null;
+
+  const languageValue = result.detected_language ?? result.language;
+  const language =
+    typeof languageValue === 'string' && languageValue.trim()
+      ? languageValue.trim()
+      : undefined;
+  return { text, ...(language ? { language } : {}) };
+}
+
+async function runReplicateTranscription(
+  model: string,
+  audioDataUrl: string,
+): Promise<TranscriptionRun> {
+  const modelInfo = await replicateRequest(
+    'GET',
+    `${REPLICATE_API}/models/${model}`,
+  );
+  if (modelInfo.status !== 200) {
+    return {
+      ok: false,
+      status: 502,
+      detail: modelInfo.json?.detail ?? modelInfo.raw.slice(0, 300),
+    };
+  }
+
+  const versionId = modelInfo.json?.latest_version?.id;
+  const hasVersion = typeof versionId === 'string' && versionId.length > 0;
+  const input = {
+    audio: audioDataUrl,
+    model: 'large-v3',
+    translate: false,
+    transcription: 'plain text',
+  };
+  const created = await replicateRequest(
+    'POST',
+    hasVersion
+      ? `${REPLICATE_API}/predictions`
+      : `${REPLICATE_API}/models/${model}/predictions`,
+    hasVersion ? { version: versionId, input } : { input },
+    { Prefer: 'wait' },
+  );
+  if (created.status !== 200 && created.status !== 201) {
+    return {
+      ok: false,
+      status: 502,
+      detail: created.json?.detail ?? created.raw.slice(0, 300),
+    };
+  }
+
+  let prediction: ReplicatePrediction = created.json ?? {};
+  const getUrl = prediction.urls?.get;
+  const terminal = ['succeeded', 'failed', 'canceled'];
+  const deadline = Date.now() + TRANSCRIBE_TIMEOUT_MS;
+  while (
+    getUrl &&
+    !terminal.includes(prediction.status ?? '') &&
+    Date.now() < deadline
+  ) {
+    await delay(RESTORE_POLL_INTERVAL_MS);
+    const poll = await replicateRequest('GET', getUrl);
+    if (poll.json) prediction = poll.json;
+  }
+
+  if (prediction.status !== 'succeeded') {
+    const timedOut = Date.now() >= deadline;
+    return {
+      ok: false,
+      status: timedOut ? 504 : 502,
+      detail: String(
+        prediction.error ?? (timedOut ? 'timeout' : prediction.status),
+      ),
+    };
+  }
+
+  const transcription = transcriptionFromOutput(prediction.output);
+  if (!transcription) {
+    return { ok: false, status: 422, detail: 'No speech recognized' };
+  }
+  return { ok: true, ...transcription };
+}
+
+function normalizedAudioMime(file: Express.Multer.File): string {
+  if (file.mimetype.startsWith('audio/')) return file.mimetype;
+  const name = file.originalname.toLowerCase();
+  if (name.endsWith('.m4a') || name.endsWith('.mp4')) return 'audio/mp4';
+  if (name.endsWith('.mp3')) return 'audio/mpeg';
+  if (name.endsWith('.wav')) return 'audio/wav';
+  if (name.endsWith('.ogg')) return 'audio/ogg';
+  if (name.endsWith('.webm')) return 'audio/webm';
+  return 'audio/aac';
+}
+
+export async function transcribeVoiceNote(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
+  if (!env.replicateApiToken) {
+    res.status(503).json({ message: 'Transcription service is not configured' });
+    return;
+  }
+  const file = req.file;
+  if (!file?.buffer?.length) {
+    res.status(400).json({ message: 'Audio file is required' });
+    return;
+  }
+
+  const mimeType = normalizedAudioMime(file);
+  const audioDataUrl = `data:${mimeType};base64,${file.buffer.toString('base64')}`;
+  const result = await runReplicateTranscription(
+    env.replicateTranscribeModel,
+    audioDataUrl,
+  );
+  if (!result.ok) {
+    logger.warn('[transcribeVoiceNote] transcription failed', {
+      model: env.replicateTranscribeModel,
+      status: result.status,
+      detail: result.detail,
+    });
+    res.status(result.status).json({
+      message:
+        result.status === 422
+          ? 'No speech recognized'
+          : 'Transcription failed',
+      detail: result.detail,
+    });
+    return;
+  }
+
+  res.json({
+    text: result.text,
+    language: result.language,
+    provider: 'replicate',
+    model: env.replicateTranscribeModel,
+  });
 }
 
 /**

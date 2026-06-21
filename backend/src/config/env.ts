@@ -65,6 +65,10 @@ export const env = {
   replicateInpaintModel:
     process.env.REPLICATE_INPAINT_MODEL ||
     'black-forest-labs/flux-fill-pro',
+  // Speech-to-text for voice notes. This remains configurable so a deployment
+  // can switch Whisper-compatible models without requiring an app update.
+  replicateTranscribeModel:
+    process.env.REPLICATE_TRANSCRIBE_MODEL || 'openai/whisper',
   // Удаление водяного знака со ВСЕГО кадра без маски: инструкционный редактор
   // (FLUX Kontext) убирает сплошные/тайловые знаки и достраивает сцену.
   replicateDewatermarkModel:

@@ -12,6 +12,28 @@ const ALLOWED_MIME_TYPES = [
   'text/plain',
 ];
 
+const ALLOWED_AUDIO_MIME_TYPES = [
+  'audio/aac',
+  'audio/m4a',
+  'audio/mp4',
+  'audio/mpeg',
+  'audio/ogg',
+  'audio/wav',
+  'audio/webm',
+  'audio/x-m4a',
+  'audio/x-wav',
+];
+
+const ALLOWED_AUDIO_EXTENSIONS = new Set([
+  '.aac',
+  '.m4a',
+  '.mp3',
+  '.mp4',
+  '.ogg',
+  '.wav',
+  '.webm',
+]);
+
 function ensureUploadDir(dir: string): void {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -38,6 +60,25 @@ export const upload = multer({
       cb(null, true);
     } else {
       cb(new Error(`Формат файла не поддерживается: ${file.mimetype}`));
+    }
+  },
+});
+
+export const audioUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: Math.min(env.maxFileSizeMb, 25) * 1024 * 1024,
+    files: 1,
+  },
+  fileFilter: (_req, file, cb) => {
+    const extension = path.extname(file.originalname).toLowerCase();
+    if (
+      ALLOWED_AUDIO_MIME_TYPES.includes(file.mimetype) ||
+      ALLOWED_AUDIO_EXTENSIONS.has(extension)
+    ) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Unsupported audio format: ${file.mimetype}`));
     }
   },
 });
