@@ -439,6 +439,67 @@ export async function removeWatermarks(
 }
 
 /**
+ * Удаление водяного знака со ВСЕГО кадра без маски — инструкционный редактор
+ * (FLUX Kontext). В отличие от маски-инпейнтинга справляется со сплошными /
+ * тайловыми знаками, перекрывающими всю картинку.
+ */
+export async function dewatermarkImage(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
+  if (!env.replicateApiToken) {
+    res.status(503).json({ message: 'Dewatermark service is not configured' });
+    return;
+  }
+
+  const { imageBase64, mimeType } = req.body ?? {};
+  if (typeof imageBase64 !== 'string' || imageBase64.trim().length === 0) {
+    res.status(400).json({ message: 'imageBase64 is required' });
+    return;
+  }
+
+  const image = normalizeImagePayload(
+    imageBase64,
+    typeof mimeType === 'string' ? mimeType : undefined,
+  );
+  if (!image) {
+    res.status(400).json({ message: 'Unsupported image type' });
+    return;
+  }
+  if (image.base64Length > MAX_OCR_IMAGE_BASE64_LENGTH) {
+    res.status(413).json({ message: 'Image is too large' });
+    return;
+  }
+
+  const result = await runReplicateModel(
+    env.replicateDewatermarkModel,
+    {
+      prompt:
+        'Remove all watermarks, text overlays, stamps, and logos from the ' +
+        'image, including repeated diagonal watermark tiles. Reconstruct the ' +
+        'underlying scene naturally and keep every other detail, color, ' +
+        'lighting, perspective, and composition exactly the same.',
+      input_image: image.dataUrl,
+      output_format: 'jpg',
+    },
+    Date.now() + RESTORE_TIMEOUT_MS,
+  );
+
+  if (!result.ok) {
+    logger.warn('[dewatermarkImage] failed', {
+      model: env.replicateDewatermarkModel,
+      detail: result.detail,
+    });
+    res
+      .status(result.status)
+      .json({ message: 'Dewatermark failed', detail: result.detail });
+    return;
+  }
+
+  res.json({ url: result.url });
+}
+
+/**
  * Восстановление старого фото в две стадии:
  *   1) удаление дефектов (BOPBTL: царапины/трещины + аккуратная реставрация);
  *   2) уточнение (CodeFormer: чёткость лиц + апскейл/детали, fidelity 0.7).

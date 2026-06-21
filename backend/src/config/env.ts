@@ -65,6 +65,11 @@ export const env = {
   replicateInpaintModel:
     process.env.REPLICATE_INPAINT_MODEL ||
     'black-forest-labs/flux-fill-pro',
+  // Удаление водяного знака со ВСЕГО кадра без маски: инструкционный редактор
+  // (FLUX Kontext) убирает сплошные/тайловые знаки и достраивает сцену.
+  replicateDewatermarkModel:
+    process.env.REPLICATE_DEWATERMARK_MODEL ||
+    'black-forest-labs/flux-kontext-pro',
   // Apple Sign In
   appleBundleId: process.env.APPLE_BUNDLE_ID || 'com.aurascanner.app',
   // Apple App Store Server API (для проверки receipt)
