@@ -273,13 +273,15 @@ const delay = (ms: number): Promise<void> =>
 function buildRefineInput(
   model: string,
   imageUrl: string,
+  fidelity: number,
 ): Record<string, unknown> {
   const m = model.toLowerCase();
   if (m.includes('codeformer')) {
     return {
       image: imageUrl,
-      // Ближе к 1 = вернее лицам, меньше «кукольности» (env-настройка).
-      codeformer_fidelity: env.replicateCodeformerFidelity,
+      // Ближе к 1 = вернее лицам, меньше «кукольности». Приходит из приложения
+      // («Естественно ↔ Чётче») либо из env по умолчанию.
+      codeformer_fidelity: fidelity,
       background_enhance: true, // Real-ESRGAN для фона/деталей
       face_upsample: true, // повышает чёткость лиц
       upscale: 2,
@@ -400,6 +402,14 @@ export async function restorePhoto(
     return;
   }
 
+  // Сила восстановления из приложения («Естественно ↔ Чётче» → fidelity).
+  // Невалидное/отсутствующее значение → дефолт из env.
+  const bodyFidelity = (req.body as { fidelity?: unknown })?.fidelity;
+  const fidelity =
+    typeof bodyFidelity === 'number' && bodyFidelity >= 0 && bodyFidelity <= 1
+      ? bodyFidelity
+      : env.replicateCodeformerFidelity;
+
   // Общий бюджет времени на обе стадии (держим HTTP-соединение открытым).
   const deadline = Date.now() + RESTORE_TIMEOUT_MS;
 
@@ -435,7 +445,7 @@ export async function restorePhoto(
   ) {
     const stage2 = await runReplicateModel(
       refineModel,
-      buildRefineInput(refineModel, finalUrl),
+      buildRefineInput(refineModel, finalUrl, fidelity),
       deadline,
     );
     if (stage2.ok) {
