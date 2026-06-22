@@ -56,22 +56,27 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
       throw Exception('Не удалось декодировать изображение для страницы ${index + 1}');
     }
 
-    // Применение Поворота и Ч/Б
+    // Поворот.
     if (state.rotation != 0.0) {
-      int angle = state.rotation.round();
+      final int angle = state.rotation.round();
       if (angle == 90 || angle == 180 || angle == 270) {
         image = img_lib.copyRotate(image, angle: angle);
       }
     }
+    // WYSIWYG: повторяем формулу превью (_getColorFilter). При Ч/Б превью
+    // показывает ТОЛЬКО оттенки серого (яркость/контраст не применяет), иначе
+    // out = contrast*канал + brightness*255 (ColorFilter.matrix).
     if (state.isGrayScale) {
       image = img_lib.grayscale(image);
-    }
-    if (state.brightness != 0.0 || state.contrast != 1.0) {
-      image = img_lib.adjustColor(
-        image,
-        brightness: (state.brightness * 100).round(),
-        contrast: ((state.contrast - 1.0) * 100).round(),
-      );
+    } else if (state.brightness != 0.0 || state.contrast != 1.0) {
+      final double c = state.contrast;
+      final double off = state.brightness * 255.0;
+      for (final p in image) {
+        p
+          ..r = (c * p.r + off).clamp(0, 255)
+          ..g = (c * p.g + off).clamp(0, 255)
+          ..b = (c * p.b + off).clamp(0, 255);
+      }
     }
 
     // Сохранение во временную директорию
@@ -190,14 +195,15 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
       for (final file in filesToProcess) {
         final imageBytes = await file.readAsBytes();
         final pdfImage = pw.MemoryImage(imageBytes);
-
+        // Размер страницы = пропорции скана → без белых полей A4, край-в-край.
+        final double w = (pdfImage.width ?? 1000).toDouble();
+        final double h = (pdfImage.height ?? 1414).toDouble();
         pdf.addPage(
           pw.Page(
-            pageFormat: PdfPageFormat.a4,
+            pageFormat: PdfPageFormat(w, h),
+            margin: pw.EdgeInsets.zero,
             build: (pw.Context context) {
-              return pw.Center(
-                child: pw.Image(pdfImage),
-              );
+              return pw.Image(pdfImage, fit: pw.BoxFit.contain);
             },
           ),
         );
