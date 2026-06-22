@@ -3,14 +3,18 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:image_editor_plus/image_editor_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:image/image.dart' as img;
+import 'package:pdf/pdf.dart' show PdfPageFormat;
+import 'package:pdf/widgets.dart' as pw;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/document_registry.dart';
+import 'highlight_editor_screen.dart';
 
 const _documentKey = 'saved_document_paths';
+const _maxPages = 30; // защита от OOM на огромных PDF
 
 class HighlightScreen extends StatefulWidget {
   final VoidCallback? onSaved;
@@ -32,69 +36,94 @@ class _HighlightScreenState extends State<HighlightScreen> {
           type: FileType.custom,
           allowedExtensions: ['pdf'],
         );
-        if (result?.files.first.path == null) return;
-        file = File(result!.files.first.path!);
+        final path = result?.files.first.path;
+        if (path == null) return;
+        file = File(path);
       } else {
-        final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+        final picked =
+            await ImagePicker().pickImage(source: ImageSource.gallery);
         if (picked == null) return;
         file = File(picked.path);
       }
 
-      File imageFile;
-      if (isPdf) {
-        imageFile = await _renderFirstPdfPage(file);
-      } else {
-        imageFile = file;
-      }
+      final List<Uint8List> pages = isPdf
+          ? await _renderAllPdfPages(file)
+          : <Uint8List>[await file.readAsBytes()];
+      if (pages.isEmpty || !mounted) return;
 
-      if (!mounted) return;
-      final imageBytes = await imageFile.readAsBytes();
-      if (!mounted) return;
       final navigator = Navigator.of(context);
-      final result = await navigator.push(
+      final result = await navigator.push<List<Uint8List>>(
         MaterialPageRoute(
-          builder: (_) => ImageEditor(image: imageBytes),
+          builder: (_) => HighlightEditorScreen(pages: pages, textMode: isPdf),
         ),
       );
+      if (result == null || result.isEmpty || !mounted) return;
 
-      if (result != null && result is Uint8List && mounted) {
-        final dir = await getApplicationDocumentsDirectory();
-        final tmpPath = '${dir.path}/hl_edited_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        await File(tmpPath).writeAsBytes(result);
-        await _saveFile(File(tmpPath));
-      }
+      await _saveResult(result, asPdf: isPdf);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<File> _renderFirstPdfPage(File pdfFile) async {
-    final pdfDoc = await PdfDocument.openFile(pdfFile.path);
-    final page = pdfDoc.pages[0];
-    final pdfImage = await page.render(
-      fullWidth: page.width * 2,
-      fullHeight: page.height * 2,
-    );
-    final image = img.Image.fromBytes(
-      width: pdfImage!.width,
-      height: pdfImage.height,
-      bytes: pdfImage.pixels.buffer,
-      order: img.ChannelOrder.bgra,
-    );
-    pdfImage.dispose();
-    await pdfDoc.dispose();
-
-    final dir = await getApplicationDocumentsDirectory();
-    final path = '${dir.path}/highlight_tmp.png';
-    await File(path).writeAsBytes(Uint8List.fromList(img.encodePng(image)));
-    return File(path);
+  /// Рендерит все страницы PDF (до [_maxPages]) в PNG-байты.
+  Future<List<Uint8List>> _renderAllPdfPages(File pdfFile) async {
+    final doc = await PdfDocument.openFile(pdfFile.path);
+    final out = <Uint8List>[];
+    try {
+      final count = doc.pages.length.clamp(0, _maxPages);
+      for (var i = 0; i < count; i++) {
+        final page = doc.pages[i];
+        final rendered = await page.render(
+          fullWidth: page.width * 2,
+          fullHeight: page.height * 2,
+        );
+        if (rendered == null) continue;
+        final image = img.Image.fromBytes(
+          width: rendered.width,
+          height: rendered.height,
+          bytes: rendered.pixels.buffer,
+          order: img.ChannelOrder.bgra,
+        );
+        rendered.dispose();
+        out.add(Uint8List.fromList(img.encodePng(image)));
+      }
+    } finally {
+      await doc.dispose();
+    }
+    return out;
   }
 
-  Future<void> _saveFile(File file) async {
+  /// Сохраняет результат: многостраничный документ — в PDF, одиночную
+  /// картинку — в JPG. Регистрирует в списке документов.
+  Future<void> _saveResult(List<Uint8List> pages, {required bool asPdf}) async {
     final dir = await getApplicationDocumentsDirectory();
-    final name = 'highlight_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final dest = '${dir.path}/$name';
-    await file.copy(dest);
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final String dest;
+
+    if (asPdf || pages.length > 1) {
+      final pdfDoc = pw.Document();
+      for (final bytes in pages) {
+        final image = pw.MemoryImage(bytes);
+        final w = (image.width ?? 1000).toDouble();
+        final h = (image.height ?? 1414).toDouble();
+        pdfDoc.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat(w, h),
+            margin: pw.EdgeInsets.zero,
+            build: (_) => pw.Image(image, fit: pw.BoxFit.contain),
+          ),
+        );
+      }
+      dest = '${dir.path}/highlight_$ts.pdf';
+      await File(dest).writeAsBytes(await pdfDoc.save());
+    } else {
+      final decoded = img.decodeImage(pages.first);
+      final jpg = decoded != null
+          ? img.encodeJpg(decoded, quality: 92)
+          : pages.first;
+      dest = '${dir.path}/highlight_$ts.jpg';
+      await File(dest).writeAsBytes(Uint8List.fromList(jpg));
+    }
 
     final prefs = await SharedPreferences.getInstance();
     final paths = prefs.getStringList(_documentKey) ?? [];
@@ -102,10 +131,22 @@ class _HighlightScreenState extends State<HighlightScreen> {
       paths.add(dest);
       await prefs.setStringList(_documentKey, paths);
     }
+    await DocumentRegistry().load();
+    await DocumentRegistry().add(
+      DocEntry(
+        localPath: dest,
+        remoteId: null,
+        name: DocumentRegistry.nameFromPath(dest),
+      ),
+    );
+
     widget.onSaved?.call();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context).savedPlain), backgroundColor: Colors.green),
+        SnackBar(
+          content: Text(AppLocalizations.of(context).savedPlain),
+          backgroundColor: Colors.green,
+        ),
       );
     }
   }
@@ -137,7 +178,9 @@ class _HighlightScreenState extends State<HighlightScreen> {
                   Text(
                     l10n.highlightSelectDoc,
                     style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600, color: textColor),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: textColor),
                   ),
                   const SizedBox(height: 8),
                   Text(
