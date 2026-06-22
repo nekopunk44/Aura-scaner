@@ -1,6 +1,10 @@
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:opencv_core/opencv.dart' as cv;
+
+// Троттлинг диагностики: detectPhotoQuad зовётся каждый кадр, логируем редко.
+int _diagCounter = 0;
 
 /// Живой поиск четырёхугольника фотографии для overlay-рамки (CamScanner-стиль).
 ///
@@ -13,18 +17,19 @@ import 'package:opencv_core/opencv.dart' as cv;
 /// вызов из стрима камеры на каждом N-м кадре. Это лишь визуальная подсказка;
 /// финальная обрезка делается отдельно (DocumentScanner) уже по снимку.
 List<Offset>? detectPhotoQuad(List<int> gray, int width, int height) {
-  cv.Mat? mat, blurred, edges, kernel, dilated;
+  cv.Mat? mat, blurred, edges, kernel, closed;
   cv.VecVecPoint? contours;
   try {
     mat = cv.Mat.fromList(height, width, cv.MatType.CV_8UC1, gray);
     blurred = cv.gaussianBlur(mat, (5, 5), 0);
-    edges = cv.canny(blurred, 50.0, 150.0);
-    // Замыкаем разрывы краёв, чтобы контур фото получился цельным.
-    kernel = cv.getStructuringElement(cv.MORPH_RECT, (3, 3));
-    dilated = cv.dilate(edges, kernel);
+    edges = cv.canny(blurred, 40.0, 120.0);
+    // Морфологическое закрытие большим ядром — заметно надёжнее одиночного
+    // dilate: бридж-ит разрывы краёв Canny, чтобы контур фото замкнулся.
+    kernel = cv.getStructuringElement(cv.MORPH_RECT, (9, 9));
+    closed = cv.morphologyEx(edges, cv.MORPH_CLOSE, kernel);
 
     final (cnts, hierarchy) =
-        cv.findContours(dilated, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        cv.findContours(closed, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
     hierarchy.dispose();
     contours = cnts;
 
@@ -70,19 +75,29 @@ List<Offset>? detectPhotoQuad(List<int> gray, int width, int height) {
       best = quad;
     }
 
+    // Редкая диагностика: видно, находятся ли контуры и почему отбраковка.
+    if ((_diagCounter++ % 12) == 0) {
+      debugPrint('detectPhotoQuad: контуров=${contours.length} '
+          'лучший=${(bestArea / imgArea * 100).toStringAsFixed(0)}% '
+          '→ ${best == null ? "null" : "quad"}');
+    }
+
     if (best == null) return null;
     final ordered = _orderCorners(best);
     return ordered
         .map((p) => Offset(p[0] / width, p[1] / height))
         .toList(growable: false);
-  } catch (_) {
+  } catch (e) {
+    if ((_diagCounter++ % 12) == 0) {
+      debugPrint('detectPhotoQuad: ошибка $e');
+    }
     return null;
   } finally {
     mat?.dispose();
     blurred?.dispose();
     edges?.dispose();
     kernel?.dispose();
-    dilated?.dispose();
+    closed?.dispose();
     contours?.dispose();
   }
 }

@@ -43,6 +43,7 @@ import 'importDocument/document_importer.dart';
 import 'ocr/ocr_screen.dart';
 import 'ocr/ocr_camera_view.dart';
 import 'remove_spots_camera_view.dart';
+import 'remove_watermark_camera_view.dart';
 import 'restore_photo_camera_view.dart';
 import 'restore_photo_screen.dart';
 import 'signature/home_screen.dart' as sig;
@@ -126,6 +127,7 @@ class _CameraScreenState extends State<CameraScreen>
   bool _isDocumentDetectionStreaming = false;
   bool _isDocumentFrameBusy = false;
   int _documentFrameCounter = 0;
+  int _quadDiagCounter = 0; // троттлинг диагностики живого контура
   // Живой контур фото для режима «Восстановить»: 4 угла в нормализованных
   // координатах сенсора (0..1), упорядочены tl,tr,br,bl. null — контур не
   // найден. Обновляется из стрима без setState (через ValueNotifier), чтобы
@@ -494,11 +496,23 @@ class _CameraScreenState extends State<CameraScreen>
       // принимал ЛИЦЕВУЮ сторону за обратную («Нужна лицевая сторона») и
       // блокировал автоснимок. Детекцию по нему больше не гейтим — снимаем
       // любую сторону, которую показал пользователь.
-      final detected = _detectDocumentContour(image, featureName: featureName);
-      // Живой контур фото — только для «Восстановить». Обновляем КАЖДЫЙ
-      // обработанный кадр (до early-return ниже), чтобы рамка непрерывно
-      // следовала за фотографией, а не только в момент смены состояния.
-      _updatePhotoQuad(image, featureName);
+      // Живой контур фото обновляем КАЖДЫЙ обработанный кадр (до early-return),
+      // чтобы рамка непрерывно следовала за фотографией.
+      final quadFound = _updatePhotoQuad(image, featureName);
+      final bool detected;
+      if (_isRestorePhotoFeature(featureName) ||
+          _isRemoveWatermarkFeature(featureName)) {
+        // Фоторежимы: только реальный четырёхугольник (без ложных автоснимков
+        // эвристики на фактурном фоне — ковёр/стол).
+        detected = quadFound;
+      } else if (_isDocumentSheetFeature(featureName)) {
+        // Документ: квадрат ИЛИ эвристика. Геометрия ловит лист где угодно в
+        // кадре (эвристика требовала совпадения с фиксированной рамкой).
+        detected =
+            quadFound || _detectDocumentContour(image, featureName: featureName);
+      } else {
+        detected = _detectDocumentContour(image, featureName: featureName);
+      }
       if (!mounted || !_isDocumentDetectionStreaming) return;
       if (detected == _isDocumentDetected) return;
 
@@ -535,11 +549,18 @@ class _CameraScreenState extends State<CameraScreen>
     return size.height / size.width;
   }
 
-  /// Обновляет живой контур фото (только для «Восстановить»). Семплит кадр в
+  /// Обновляет живой контур фото для фоторежимов. Семплит кадр в
   /// портретный luma чуть большего разрешения и ищет четырёхугольник; результат
   /// сглаживается EMA по упорядоченным углам, чтобы рамка не дёргалась.
-  void _updatePhotoQuad(CameraImage image, String featureName) {
-    if (!_isRestorePhotoFeature(featureName)) return;
+  /// Возвращает true, если найден реальный четырёхугольник фото. Для фоторежимов
+  /// («Восстановить», «Убрать пятна») это и есть сигнал детекции — заодно
+  /// рисуется живой контур.
+  bool _updatePhotoQuad(CameraImage image, String featureName) {
+    if (!_isRestorePhotoFeature(featureName) &&
+        !_isRemoveWatermarkFeature(featureName) &&
+        !_isDocumentSheetFeature(featureName)) {
+      return false;
+    }
 
     const int targetWidth = 180;
     final int targetHeight = ((targetWidth * image.width) / image.height)
@@ -552,9 +573,17 @@ class _CameraScreenState extends State<CameraScreen>
     );
     final quad = detectPhotoQuad(gray, targetWidth, targetHeight);
 
+    if ((_quadDiagCounter++ % 12) == 0) {
+      debugPrint(
+        'PhotoQuad: aspect=${_previewAspect?.toStringAsFixed(3)} '
+        'quad=${quad == null ? "—" : "найден"} '
+        'res=${targetWidth}x$targetHeight',
+      );
+    }
+
     if (quad == null) {
       _photoQuad.value = null;
-      return;
+      return false;
     }
 
     final prev = _photoQuad.value;
@@ -571,6 +600,7 @@ class _CameraScreenState extends State<CameraScreen>
     } else {
       _photoQuad.value = quad;
     }
+    return true;
   }
 
   void _scheduleAutoCapture() {
@@ -1354,6 +1384,27 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  Future<void> _openRemoveWatermarkEditor(
+    XFile imageFile, {
+    bool autoDetectOnOpen = false,
+    bool restartDetectionOnReturn = true,
+  }) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RemoveWatermarkScreen(
+          initialImagePath: imageFile.path,
+          autoDetectOnOpen: autoDetectOnOpen,
+          onSaved: () => widget.onScanCompleted?.call(''),
+        ),
+      ),
+    );
+
+    if (restartDetectionOnReturn) {
+      _startDocumentDetectionStream();
+    }
+  }
+
   Future<void> _startNativeAutoScan() async {
     final feature = _features.firstWhere(
       (f) => f['name'] == _selectedFeature,
@@ -1581,6 +1632,25 @@ class _CameraScreenState extends State<CameraScreen>
           removeSpotsImage,
           startInManualMode: startInManualMode,
           autoProcessOnOpen: !startInManualMode,
+          restartDetectionOnReturn: false,
+        );
+        if (!mounted) return;
+        _isScanning = false;
+        captureModeController.isScanning = false;
+        _startDocumentDetectionStream();
+        return;
+      }
+
+      if (_isRemoveWatermarkFeature(_selectedFeature)) {
+        final useAutoCrop =
+            captureModeController.captureMode == 'Автоматически';
+        final watermarkImage = useAutoCrop
+            ? await _autoCropDocumentXFile(file)
+            : file;
+        if (!mounted) return;
+        await _openRemoveWatermarkEditor(
+          watermarkImage,
+          autoDetectOnOpen: useAutoCrop,
           restartDetectionOnReturn: false,
         );
         if (!mounted) return;
@@ -1895,6 +1965,14 @@ class _CameraScreenState extends State<CameraScreen>
         galleryImage,
         startInManualMode: startInManualMode,
         autoProcessOnOpen: !startInManualMode,
+      );
+      return;
+    }
+
+    if (_isRemoveWatermarkFeature(_selectedFeature)) {
+      await _openRemoveWatermarkEditor(
+        galleryImage,
+        autoDetectOnOpen: captureModeController.captureMode == 'Автоматически',
       );
       return;
     }
@@ -2241,10 +2319,19 @@ class _CameraScreenState extends State<CameraScreen>
     return featureName == 'Убрать пятна';
   }
 
+  bool _isRemoveWatermarkFeature(String featureName) {
+    return featureName == 'Удалить водяной знак';
+  }
+
+  bool _isDocumentSheetFeature(String featureName) {
+    return featureName == 'Документ' || featureName == '+10 страниц';
+  }
+
   bool _isGuidedCameraFeature(Map<String, dynamic> feature) {
     return feature['isDocument'] == true ||
         _isRestorePhotoFeature(feature['name'] as String? ?? '') ||
-        _isRemoveSpotsFeature(feature['name'] as String? ?? '');
+        _isRemoveSpotsFeature(feature['name'] as String? ?? '') ||
+        _isRemoveWatermarkFeature(feature['name'] as String? ?? '');
   }
 
   bool _canUseFeature(String featureName) {
@@ -2289,18 +2376,6 @@ class _CameraScreenState extends State<CameraScreen>
         context,
         MaterialPageRoute(
           builder: (_) => AddPasswordScreen(
-            onSaved: () => widget.onScanCompleted?.call(''),
-          ),
-        ),
-      ).then(_afterToolReturn);
-      return true;
-    }
-
-    if (icon == Icons.delete_forever_outlined) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => RemoveWatermarkScreen(
             onSaved: () => widget.onScanCompleted?.call(''),
           ),
         ),
@@ -2841,6 +2916,20 @@ class _CameraScreenState extends State<CameraScreen>
         captureModeController: captureModeController,
         isDocumentDetected: _isDocumentDetected,
         isScanning: _isScanning,
+        takePicture: _takePicture,
+        pickImageFromGallery: _pickImageFromGallery,
+        setCaptureModeAuto: _setCaptureModeAutoInline,
+        setCaptureModeManual: _setCaptureModeManual,
+        onBack: () => Navigator.pop(context),
+        onSettings: _openSettings,
+      ),
+      'Удалить водяной знак': () => RemoveWatermarkCameraView(
+        cameraController: _cameraController,
+        captureModeController: captureModeController,
+        isDocumentDetected: _isDocumentDetected,
+        isScanning: _isScanning,
+        photoQuad: _photoQuad,
+        previewAspect: _previewAspect,
         takePicture: _takePicture,
         pickImageFromGallery: _pickImageFromGallery,
         setCaptureModeAuto: _setCaptureModeAutoInline,

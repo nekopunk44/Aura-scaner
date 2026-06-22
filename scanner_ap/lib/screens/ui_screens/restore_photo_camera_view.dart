@@ -21,6 +21,9 @@ class RestorePhotoCameraView extends StatelessWidget {
     required this.onSettings,
     this.photoQuad,
     this.previewAspect,
+    this.featureTitle,
+    this.featureSubtitle,
+    this.overlayKind = CaptureStatusOverlayKind.restorePhoto,
   });
 
   final CameraController? cameraController;
@@ -38,6 +41,9 @@ class RestorePhotoCameraView extends StatelessWidget {
   final void Function() setCaptureModeManual;
   final void Function() onBack;
   final void Function() onSettings;
+  final String? featureTitle;
+  final String? featureSubtitle;
+  final CaptureStatusOverlayKind overlayKind;
 
   Widget _buildTopSegment(String label, bool active, VoidCallback onTap) {
     return GestureDetector(
@@ -71,7 +77,11 @@ class RestorePhotoCameraView extends StatelessWidget {
           children: [
             GestureDetector(
               onTap: onBack,
-              child: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+              child: const Icon(
+                Icons.arrow_back,
+                color: Colors.white,
+                size: 28,
+              ),
             ),
             Container(
               padding: const EdgeInsets.all(4),
@@ -125,7 +135,11 @@ class RestorePhotoCameraView extends StatelessWidget {
                 const SizedBox(width: 12),
                 GestureDetector(
                   onTap: onSettings,
-                  child: const Icon(Icons.settings, color: Colors.white, size: 26),
+                  child: const Icon(
+                    Icons.settings,
+                    color: Colors.white,
+                    size: 26,
+                  ),
                 ),
               ],
             ),
@@ -188,8 +202,9 @@ class RestorePhotoCameraView extends StatelessWidget {
 
   Widget _buildBottomBar(BuildContext context) {
     const isDocumentMode = true;
-    final canSnap =
-        captureModeController.canTakePicture(isDocumentMode: isDocumentMode);
+    final canSnap = captureModeController.canTakePicture(
+      isDocumentMode: isDocumentMode,
+    );
 
     return CameraControlsBar(
       onCapture: canSnap ? takePicture : null,
@@ -224,18 +239,13 @@ class RestorePhotoCameraView extends StatelessWidget {
         Positioned.fill(
           child: captureModeController.buildStatusOverlay(
             isDocumentMode: true,
-            pageMode: l10n.featRestorePhotoSub,
-            featureName: l10n.featRestorePhoto,
-            overlayKind: CaptureStatusOverlayKind.restorePhoto,
+            pageMode: featureSubtitle ?? l10n.featRestorePhotoSub,
+            featureName: featureTitle ?? l10n.featRestorePhoto,
+            overlayKind: overlayKind,
             l10n: l10n,
           ),
         ),
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: _buildTopPanel(l10n),
-        ),
+        Positioned(top: 0, left: 0, right: 0, child: _buildTopPanel(l10n)),
         Positioned(
           bottom: 0,
           left: 0,
@@ -291,8 +301,9 @@ class _PhotoQuadPainter extends CustomPainter {
       Paint()..color = Colors.black.withValues(alpha: 0.35),
     );
 
-    final Color color =
-        active ? const Color(0xFF22C55E) : const Color(0xFF2CA5E0);
+    final Color color = active
+        ? const Color(0xFF22C55E)
+        : const Color(0xFF2CA5E0);
     canvas.drawPath(
       path,
       Paint()
