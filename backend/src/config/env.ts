@@ -14,6 +14,11 @@ const _codeformerFidelity = (() => {
   return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.85;
 })();
 
+// Рабочая vision-цепочка OpenRouter (проверена для AI-анализа). Используется
+// и для AI-анализа, и для облачного OCR.
+const _defaultVisionModels =
+  'google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free,nvidia/nemotron-nano-12b-v2-vl:free';
+
 export const env = {
   port: parseInt(process.env.PORT || '3000', 10),
   mongoUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/aura_scanner',
@@ -40,10 +45,14 @@ export const env = {
   // максимальный шанс, что хоть одна доступна. Переопределяется через env
   // OPENROUTER_MODEL (один слаг или список через запятую).
   // Проверено openrouter.ai/api/v1/models (15.06.2026).
-  openRouterModel:
+  openRouterModel: process.env.OPENROUTER_MODEL || _defaultVisionModels,
+  // OCR использует ту же рабочую vision-цепочку. Раньше дефолт был невалидный
+  // 'openrouter/free' → /ai/ocr падал, и приложение молча откатывалось на
+  // Tesseract (медленнее/менее точно).
+  openRouterOcrModel:
+    process.env.OPENROUTER_OCR_MODEL ||
     process.env.OPENROUTER_MODEL ||
-    'google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free,nvidia/nemotron-nano-12b-v2-vl:free',
-  openRouterOcrModel: process.env.OPENROUTER_OCR_MODEL || 'openrouter/free',
+    _defaultVisionModels,
   // Replicate — восстановление старых фото. По умолчанию Microsoft
   // «Bringing Old Photos Back to Life»: убирает царапины/трещины и бережно
   // реставрирует, не перерисовывая лица заново (в отличие от GFPGAN, который
