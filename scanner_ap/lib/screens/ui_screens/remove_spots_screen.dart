@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -39,10 +40,12 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
   bool _isProcessing = false;
   bool _manualMode = false;
   int _selectedFilter = 2;
-  int _lastManualTouchMs = 0;
   List<Offset> _detectedSpots = const [];
-  List<Offset> _manualSpots = const [];
+  List<Rect> _repairedRegions = const [];
   bool _showSpotMarkers = false;
+  Offset? _selectionStart;
+  Rect? _selectionRect;
+  Uint8List? _undoImage;
   Timer? _markerTimer;
 
   @override
@@ -101,8 +104,11 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
       _previewImage = bytes;
       _imageSize = _decodeSize(bytes);
       _detectedSpots = const [];
-      _manualSpots = const [];
+      _repairedRegions = const [];
       _showSpotMarkers = false;
+      _selectionStart = null;
+      _selectionRect = null;
+      _undoImage = null;
     });
 
     if (autoProcess) {
@@ -140,7 +146,7 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
         _previewImage = cleaned;
         _imageSize = _decodeSize(cleaned);
         _detectedSpots = detected;
-        _manualSpots = const [];
+        _repairedRegions = const [];
         _showSpotMarkers = showMarkers && detected.isNotEmpty;
       });
 
@@ -165,33 +171,42 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
     }
   }
 
-  Future<void> _applyManualCleanupAt(
-    Offset localPosition,
-    Size canvasSize,
-  ) async {
-    if (_previewImage == null || canvasSize.isEmpty) return;
+  Future<void> _applyManualCleanupIn(Rect normalizedSelection) async {
+    if (_previewImage == null) return;
     final messenger = ScaffoldMessenger.of(context);
-
-    final normalized = Offset(
-      (localPosition.dx / canvasSize.width).clamp(0.0, 1.0),
-      (localPosition.dy / canvasSize.height).clamp(0.0, 1.0),
-    );
+    final imageBeforeCleanup = _previewImage!;
 
     setState(() => _isProcessing = true);
     try {
-      final cleaned = await ImageEditingService.removeSpotAt(
-        imageBytes: _previewImage!,
-        normalizedCenter: normalized,
+      final cleaned = await ImageEditingService.removeSpotInSelection(
+        imageBytes: imageBeforeCleanup,
+        normalizedSelection: normalizedSelection,
       );
       if (!mounted) return;
+      _markerTimer?.cancel();
       setState(() {
         _previewImage = cleaned;
         _imageSize = _decodeSize(cleaned);
-        _manualSpots = [..._manualSpots.take(24), normalized];
+        _undoImage = imageBeforeCleanup;
+        _selectionStart = null;
+        _selectionRect = null;
+        _repairedRegions = [
+          ..._repairedRegions.skip(math.max(0, _repairedRegions.length - 3)),
+          normalizedSelection,
+        ];
         _showSpotMarkers = false;
+      });
+      _markerTimer = Timer(const Duration(milliseconds: 1100), () {
+        if (mounted) {
+          setState(() => _repairedRegions = const []);
+        }
       });
     } catch (e) {
       if (!mounted) return;
+      setState(() {
+        _selectionStart = null;
+        _selectionRect = null;
+      });
       messenger.showSnackBar(
         SnackBar(
           content: Text('${AppLocalizations.of(context).processingError}: $e'),
@@ -204,12 +219,75 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
     }
   }
 
-  void _handleManualGesture(Offset localPosition, Size canvasSize) {
+  Offset _clampToCanvas(Offset position, Size canvasSize) {
+    return Offset(
+      position.dx.clamp(0.0, canvasSize.width),
+      position.dy.clamp(0.0, canvasSize.height),
+    );
+  }
+
+  void _startSelection(Offset localPosition, Size canvasSize) {
     if (!_manualMode || _isProcessing) return;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _lastManualTouchMs < 90) return;
-    _lastManualTouchMs = now;
-    unawaited(_applyManualCleanupAt(localPosition, canvasSize));
+    final start = _clampToCanvas(localPosition, canvasSize);
+    setState(() {
+      _selectionStart = start;
+      _selectionRect = Rect.fromPoints(start, start);
+      _repairedRegions = const [];
+    });
+  }
+
+  void _updateSelection(Offset localPosition, Size canvasSize) {
+    final start = _selectionStart;
+    if (!_manualMode || _isProcessing || start == null) return;
+    final current = _clampToCanvas(localPosition, canvasSize);
+    setState(() => _selectionRect = Rect.fromPoints(start, current));
+  }
+
+  void _finishSelection(Size canvasSize) {
+    final selection = _selectionRect;
+    if (!_manualMode || _isProcessing || selection == null) return;
+    if (selection.width < 18 || selection.height < 18) {
+      setState(() {
+        _selectionStart = null;
+        _selectionRect = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).spotsSelectionTooSmall),
+        ),
+      );
+      return;
+    }
+
+    final normalizedSelection = Rect.fromLTRB(
+      (selection.left / canvasSize.width).clamp(0.0, 1.0),
+      (selection.top / canvasSize.height).clamp(0.0, 1.0),
+      (selection.right / canvasSize.width).clamp(0.0, 1.0),
+      (selection.bottom / canvasSize.height).clamp(0.0, 1.0),
+    );
+    unawaited(_applyManualCleanupIn(normalizedSelection));
+  }
+
+  void _cancelSelection() {
+    if (_selectionStart == null && _selectionRect == null) return;
+    setState(() {
+      _selectionStart = null;
+      _selectionRect = null;
+    });
+  }
+
+  void _undoManualCleanup() {
+    final previous = _undoImage;
+    if (previous == null || _isProcessing) return;
+    _markerTimer?.cancel();
+    setState(() {
+      _previewImage = previous;
+      _imageSize = _decodeSize(previous);
+      _undoImage = null;
+      _selectionStart = null;
+      _selectionRect = null;
+      _repairedRegions = const [];
+    });
   }
 
   void _switchMode(bool manualMode) {
@@ -221,8 +299,11 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
       _previewImage = _originalImage;
       _imageSize = _decodeSize(_originalImage!);
       _detectedSpots = const [];
-      _manualSpots = const [];
+      _repairedRegions = const [];
       _showSpotMarkers = false;
+      _selectionStart = null;
+      _selectionRect = null;
+      _undoImage = null;
     });
 
     if (!manualMode) {
@@ -446,25 +527,30 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
               height: fitted.height,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTapDown: _manualMode
+                onPanStart: _manualMode
                     ? (details) =>
-                          _handleManualGesture(details.localPosition, fitted)
+                          _startSelection(details.localPosition, fitted)
                     : null,
                 onPanUpdate: _manualMode
                     ? (details) =>
-                          _handleManualGesture(details.localPosition, fitted)
+                          _updateSelection(details.localPosition, fitted)
                     : null,
+                onPanEnd: _manualMode ? (_) => _finishSelection(fitted) : null,
+                onPanCancel: _manualMode ? _cancelSelection : null,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
                     Image.memory(_previewImage!, fit: BoxFit.fill),
-                    if (_showSpotMarkers || _manualSpots.isNotEmpty)
+                    if (_showSpotMarkers ||
+                        _selectionRect != null ||
+                        _repairedRegions.isNotEmpty)
                       CustomPaint(
                         painter: _SpotOverlayPainter(
                           autoSpots: _showSpotMarkers
                               ? _detectedSpots
                               : const [],
-                          manualSpots: _manualSpots,
+                          selectionRect: _selectionRect,
+                          repairedRegions: _repairedRegions,
                         ),
                       ),
                     if (_isProcessing)
@@ -512,6 +598,16 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
         backgroundColor: appBarBg,
         iconTheme: IconThemeData(color: textColor),
         elevation: 0,
+        actions: [
+          if (_manualMode)
+            IconButton(
+              tooltip: l10n.undo,
+              onPressed: _undoImage == null || _isProcessing
+                  ? null
+                  : _undoManualCleanup,
+              icon: const Icon(Icons.undo_rounded),
+            ),
+        ],
       ),
       body: _originalImage == null
           ? const Center(child: CircularProgressIndicator(color: accent))
@@ -528,8 +624,8 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
                       const SizedBox(height: 12),
                       Text(
                         _manualMode
-                            ? 'Тапайте или ведите по пятнам на фото, чтобы убрать их локально.'
-                            : 'Приложение автоматически ищет дефекты, подсвечивает их и очищает фото.',
+                            ? l10n.spotsManualSelectionHint
+                            : l10n.spotsAutoCleanupHint,
                         style: TextStyle(
                           color: subColor,
                           fontSize: 12,
@@ -602,11 +698,13 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
 class _SpotOverlayPainter extends CustomPainter {
   const _SpotOverlayPainter({
     required this.autoSpots,
-    required this.manualSpots,
+    required this.selectionRect,
+    required this.repairedRegions,
   });
 
   final List<Offset> autoSpots;
-  final List<Offset> manualSpots;
+  final Rect? selectionRect;
+  final List<Rect> repairedRegions;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -617,13 +715,17 @@ class _SpotOverlayPainter extends CustomPainter {
     final autoFill = Paint()
       ..color = const Color(0x33FFD54F)
       ..style = PaintingStyle.fill;
-    final manualStroke = Paint()
+    final selectionStroke = Paint()
       ..color = const Color(0xFF2CA5E0)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    final manualFill = Paint()
-      ..color = const Color(0x332CA5E0)
+      ..strokeWidth = 2.5;
+    final selectionFill = Paint()
+      ..color = const Color(0x292CA5E0)
       ..style = PaintingStyle.fill;
+    final repairedStroke = Paint()
+      ..color = const Color(0xFF63D7A5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
 
     for (final spot in autoSpots) {
       final center = Offset(spot.dx * size.width, spot.dy * size.height);
@@ -631,16 +733,44 @@ class _SpotOverlayPainter extends CustomPainter {
       canvas.drawCircle(center, 18, autoStroke);
     }
 
-    for (final spot in manualSpots) {
-      final center = Offset(spot.dx * size.width, spot.dy * size.height);
-      canvas.drawCircle(center, 22, manualFill);
-      canvas.drawCircle(center, 22, manualStroke);
+    for (final region in repairedRegions) {
+      final scaled = Rect.fromLTRB(
+        region.left * size.width,
+        region.top * size.height,
+        region.right * size.width,
+        region.bottom * size.height,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(scaled, const Radius.circular(6)),
+        repairedStroke,
+      );
+    }
+
+    final selection = selectionRect;
+    if (selection != null) {
+      final rounded = RRect.fromRectAndRadius(
+        selection,
+        const Radius.circular(6),
+      );
+      canvas.drawRRect(rounded, selectionFill);
+      canvas.drawRRect(rounded, selectionStroke);
+
+      const handleRadius = 4.5;
+      for (final point in <Offset>[
+        selection.topLeft,
+        selection.topRight,
+        selection.bottomLeft,
+        selection.bottomRight,
+      ]) {
+        canvas.drawCircle(point, handleRadius, selectionStroke);
+      }
     }
   }
 
   @override
   bool shouldRepaint(covariant _SpotOverlayPainter oldDelegate) {
     return oldDelegate.autoSpots != autoSpots ||
-        oldDelegate.manualSpots != manualSpots;
+        oldDelegate.selectionRect != selectionRect ||
+        oldDelegate.repairedRegions != repairedRegions;
   }
 }

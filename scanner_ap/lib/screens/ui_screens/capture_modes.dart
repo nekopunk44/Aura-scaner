@@ -10,6 +10,7 @@ enum CaptureStatusOverlayKind {
   batchDocument,
   restorePhoto,
   removeSpots,
+  removeWatermark,
 }
 
 class _StatusOverlayLayout {
@@ -35,8 +36,6 @@ class _StatusOverlayLayout {
 ///
 /// Используется во всех модулях камеры: документы, паспорт, ID-карта.
 class CaptureModeController {
- 
-
   String captureMode = 'Вручную';
   bool isDocumentDetected = false;
   bool isScanning = false;
@@ -67,9 +66,7 @@ class CaptureModeController {
     }
   }
 
-  bool canTakePicture({
-    required bool isDocumentMode,
-  }) {
+  bool canTakePicture({required bool isDocumentMode}) {
     if (isScanning) return false;
 
     // В документных режимах пользователь снимает только вручную.
@@ -161,13 +158,17 @@ class CaptureModeController {
           maxWidth: 272,
           icon: Icons.cleaning_services_outlined,
         );
+      case CaptureStatusOverlayKind.removeWatermark:
+        return const _StatusOverlayLayout(
+          alignment: Alignment.topCenter,
+          padding: EdgeInsets.fromLTRB(24, 78, 24, 0),
+          maxWidth: 272,
+          icon: Icons.auto_fix_off_outlined,
+        );
     }
   }
 
-  String _overlayTitleFor(
-    CaptureStatusOverlayKind kind,
-    String featureName,
-  ) {
+  String _overlayTitleFor(CaptureStatusOverlayKind kind, String featureName) {
     switch (kind) {
       case CaptureStatusOverlayKind.passport:
         return 'Паспорт';
@@ -180,6 +181,8 @@ class CaptureModeController {
         return 'Восстановить';
       case CaptureStatusOverlayKind.removeSpots:
         return 'Убрать пятна';
+      case CaptureStatusOverlayKind.removeWatermark:
+        return 'Без водзнака';
     }
   }
 
@@ -236,9 +239,7 @@ class CaptureModeController {
             ),
             color: Colors.white.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.22),
-            ),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.12),
@@ -344,22 +345,20 @@ class CaptureModeController {
               switchInCurve: Curves.easeOutCubic,
               switchOutCurve: Curves.easeInCubic,
               transitionBuilder: (child, animation) {
-                final slide = Tween<Offset>(
-                  begin: const Offset(0, -0.08),
-                  end: Offset.zero,
-                ).animate(
-                  CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeOutCubic,
-                  ),
-                );
+                final slide =
+                    Tween<Offset>(
+                      begin: const Offset(0, -0.08),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      ),
+                    );
 
                 return SlideTransition(
                   position: slide,
-                  child: FadeTransition(
-                    opacity: animation,
-                    child: child,
-                  ),
+                  child: FadeTransition(opacity: animation, child: child),
                 );
               },
               child: visible

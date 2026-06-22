@@ -14,8 +14,8 @@ void main() {
   });
 
   group('PremiumService.load — чтение из хранилища', () {
-    test('пустое хранилище → не premium, без срока', () async {
-      expect(PremiumService().isPremium, isFalse);
+    test('пустое хранилище → premium в debug-сборке, без срока', () async {
+      expect(PremiumService().isPremium, isTrue);
       expect(PremiumService().expiresAt, isNull);
     });
 
