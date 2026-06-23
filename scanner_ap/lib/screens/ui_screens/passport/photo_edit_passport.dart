@@ -444,10 +444,11 @@ class _EditToolButton extends StatelessWidget {
       margin: const EdgeInsets.only(right: 12),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 50,
-            height: 50,
+            width: 46,
+            height: 46,
             decoration: BoxDecoration(
               color: isActive ? Colors.amber.withValues(alpha: 0.2) : Colors.white12,
               borderRadius: BorderRadius.circular(12),
@@ -467,6 +468,8 @@ class _EditToolButton extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: isActive ? Colors.amber : Colors.white70,
               fontSize: 11,

@@ -16,13 +16,24 @@ int _diagCounter = 0;
 /// Лёгкая операция (Canny + контуры на уменьшенном кадре) — рассчитана на
 /// вызов из стрима камеры на каждом N-м кадре. Это лишь визуальная подсказка;
 /// финальная обрезка делается отдельно (DocumentScanner) уже по снимку.
-List<Offset>? detectPhotoQuad(List<int> gray, int width, int height) {
+/// [lowContrast] — для бумажных листов: слабые края (бел-на-светлом, мелкий
+/// текст) → ниже пороги Canny, чтобы граница листа/текст вообще зарегистрировались.
+List<Offset>? detectPhotoQuad(
+  List<int> gray,
+  int width,
+  int height, {
+  bool lowContrast = false,
+}) {
   cv.Mat? mat, blurred, edges, kernel, closed;
   cv.VecVecPoint? contours;
   try {
     mat = cv.Mat.fromList(height, width, cv.MatType.CV_8UC1, gray);
     blurred = cv.gaussianBlur(mat, (5, 5), 0);
-    edges = cv.canny(blurred, 40.0, 120.0);
+    edges = cv.canny(
+      blurred,
+      lowContrast ? 18.0 : 40.0,
+      lowContrast ? 60.0 : 120.0,
+    );
     // Морфологическое закрытие большим ядром — заметно надёжнее одиночного
     // dilate: бридж-ит разрывы краёв Canny, чтобы контур фото замкнулся.
     kernel = cv.getStructuringElement(cv.MORPH_RECT, (9, 9));

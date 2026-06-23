@@ -66,7 +66,8 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
   }
 
   File _getCurrentFile() => File(_currentEditState.path);
-  bool get _isMultiPageMode => widget.imageFiles.length > 1;
+  bool get _isMultiPageMode => _editStates.length > 1;
+  int get _pageCount => _editStates.length;
 
   void _rotateImage() {
     setState(() { _rotation = (_rotation + 90) % 360; });
@@ -101,9 +102,39 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
   }
 
   void _switchPage(int index) {
-    if (index >= 0 && index < widget.imageFiles.length && index != _currentPageIndex) {
+    if (index >= 0 && index < _editStates.length && index != _currentPageIndex) {
       setState(() { _currentPageIndex = index; });
     }
+  }
+
+  Future<void> _deleteCurrentPage() async {
+    if (_editStates.length <= 1) return;
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.actionDelete),
+        content: Text(l10n.editDeletePageConfirm(_currentPageIndex + 1)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.actionCancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.actionDelete,
+                style: const TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _editStates.removeAt(_currentPageIndex);
+      if (_currentPageIndex >= _editStates.length) {
+        _currentPageIndex = _editStates.length - 1;
+      }
+    });
   }
 
   void _saveImage() {
@@ -152,11 +183,17 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
         ),
         title: Text(
           _isMultiPageMode
-              ? l10n.editTitleWithCount(_currentPageIndex + 1, widget.imageFiles.length)
+              ? l10n.editTitleWithCount(_currentPageIndex + 1, _pageCount)
               : l10n.editTitle,
           style: const TextStyle(color: Colors.white),
         ),
         actions: [
+          if (_isMultiPageMode)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.white),
+              onPressed: _deleteCurrentPage,
+              tooltip: l10n.actionDelete,
+            ),
           IconButton(
             icon: const Icon(Icons.restart_alt, color: Colors.white),
             onPressed: _resetFilters,
@@ -322,7 +359,7 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
                       icon: const Icon(Icons.save, color: Colors.white, size: 20),
                       label: Text(
                         _isMultiPageMode
-                            ? l10n.editSaveAllPages(widget.imageFiles.length)
+                            ? l10n.editSaveAllPages(_pageCount)
                             : l10n.editSaveChanges,
                         style: const TextStyle(color: Colors.white, fontSize: 16),
                       ),
@@ -353,7 +390,7 @@ class _DocumentCameraEditScreenState extends State<DocumentCameraEditScreen> {
         height: 40,
         child: ListView.builder(
           scrollDirection: Axis.horizontal,
-          itemCount: widget.imageFiles.length,
+          itemCount: _editStates.length,
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           itemBuilder: (context, index) {
             final l10n = AppLocalizations.of(context);
@@ -404,10 +441,11 @@ class _EditToolButton extends StatelessWidget {
       margin: const EdgeInsets.only(right: 12),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 50,
-            height: 50,
+            width: 46,
+            height: 46,
             decoration: BoxDecoration(
               color: isActive ? Colors.amber.withValues(alpha: 0.2) : Colors.white12,
               borderRadius: BorderRadius.circular(12),
@@ -427,6 +465,8 @@ class _EditToolButton extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: isActive ? Colors.amber : Colors.white70,
               fontSize: 11,

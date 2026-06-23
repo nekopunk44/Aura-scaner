@@ -83,54 +83,21 @@ class DocumentScanner {
       kernel = cv.getStructuringElement(cv.MORPH_RECT, (13, 13));
       closed = cv.morphologyEx(maskMat, cv.MORPH_CLOSE, kernel);
 
-      final (contours, hierarchy) = cv.findContours(
-        closed,
-        cv.RETR_EXTERNAL,
-        cv.CHAIN_APPROX_SIMPLE,
-      );
-      hierarchy.dispose();
-
       final imageArea = (_procWidth * procHeight).toDouble();
-      List<List<double>>? bestQuad;
-      var bestArea = 0.0;
 
-      for (final contour in contours) {
-        final area = cv.contourArea(contour);
-        if (area < imageArea * _minAreaRatio ||
-            area > imageArea * _maxAreaRatio) {
-          continue;
-        }
+      // Попытка 1 — по маске сегментации (надёжно на контрастном фоне).
+      List<List<double>>? bestQuad = _bestQuadFromBinary(closed, imageArea);
+      final bool maskFound = bestQuad != null;
 
-        final rect = cv.minAreaRect(contour);
-        final width = rect.size.width;
-        final height = rect.size.height;
-        final rectArea = width * height;
+      // Попытка 2 (фолбэк) — по краям (Canny): работает на СВЕТЛОМ фоне и для
+      // листов, которые сегментация не считает «объектом».
+      bestQuad ??= _bestQuadByEdges(small, imageArea);
 
-        if (rectArea >= 1) {
-          final rectangularity = area / rectArea;
-          final longer = math.max(width, height);
-          final shorter = math.min(width, height);
-          final ratio = shorter < 1 ? 0.0 : longer / shorter;
-
-          if (rectangularity >= _minRectangularity &&
-              ratio >= _minAspectRatio &&
-              ratio <= _maxAspectRatio &&
-              area > bestArea) {
-            final corners = rect.points;
-            bestArea = area;
-            bestQuad = corners
-                .map((point) => [point.x.toDouble(), point.y.toDouble()])
-                .toList();
-            corners.dispose();
-          }
-        }
-
-        rect.dispose();
-      }
-      contours.dispose();
+      debugPrint('DocumentScanner: маска=${maskFound ? "✓" : "✗"} '
+          'края=${maskFound ? "—" : (bestQuad != null ? "✓" : "✗")}');
 
       if (bestQuad == null) {
-        debugPrint('DocumentScanner: no suitable quad found, fallback');
+        debugPrint('DocumentScanner: лист не найден → возвращаю оригинал');
         return input;
       }
 
@@ -171,6 +138,7 @@ class DocumentScanner {
         '${DateTime.now().millisecondsSinceEpoch}.jpg',
       );
       await output.writeAsBytes(encoded);
+      debugPrint('DocumentScanner: обрезано ${outWidth}x$outHeight');
       return output;
     } catch (error) {
       debugPrint('DocumentScanner: $error');
@@ -191,6 +159,88 @@ class DocumentScanner {
           await tempSmall.delete();
         } catch (_) {}
       }
+    }
+  }
+
+  /// Лучший четырёхугольник из контуров по гейтам (площадь, прямоугольность,
+  /// соотношение сторон). Координаты — в пикселях уменьшенной копии.
+  static List<List<double>>? _bestQuad(
+    cv.VecVecPoint contours,
+    double imageArea,
+  ) {
+    List<List<double>>? bestQuad;
+    var bestArea = 0.0;
+    for (final contour in contours) {
+      final area = cv.contourArea(contour);
+      if (area < imageArea * _minAreaRatio || area > imageArea * _maxAreaRatio) {
+        continue;
+      }
+      final rect = cv.minAreaRect(contour);
+      final width = rect.size.width;
+      final height = rect.size.height;
+      final rectArea = width * height;
+      if (rectArea >= 1) {
+        final rectangularity = area / rectArea;
+        final longer = math.max(width, height);
+        final shorter = math.min(width, height);
+        final ratio = shorter < 1 ? 0.0 : longer / shorter;
+        if (rectangularity >= _minRectangularity &&
+            ratio >= _minAspectRatio &&
+            ratio <= _maxAspectRatio &&
+            area > bestArea) {
+          final corners = rect.points;
+          bestArea = area;
+          bestQuad =
+              corners.map((p) => [p.x.toDouble(), p.y.toDouble()]).toList();
+          corners.dispose();
+        }
+      }
+      rect.dispose();
+    }
+    return bestQuad;
+  }
+
+  /// Поиск листа по бинарной маске (сегментация).
+  static List<List<double>>? _bestQuadFromBinary(
+    cv.Mat binary,
+    double imageArea,
+  ) {
+    final (contours, hierarchy) = cv.findContours(
+      binary,
+      cv.RETR_EXTERNAL,
+      cv.CHAIN_APPROX_SIMPLE,
+    );
+    hierarchy.dispose();
+    final quad = _bestQuad(contours, imageArea);
+    contours.dispose();
+    return quad;
+  }
+
+  /// Поиск листа по краям (Canny) — фолбэк для светлого фона.
+  static List<List<double>>? _bestQuadByEdges(cv.Mat small, double imageArea) {
+    cv.Mat? gray, blurred, edges, kernel, closed;
+    cv.VecVecPoint? contours;
+    try {
+      gray = cv.cvtColor(small, cv.COLOR_BGR2GRAY);
+      blurred = cv.gaussianBlur(gray, (5, 5), 0);
+      edges = cv.canny(blurred, 50.0, 150.0);
+      kernel = cv.getStructuringElement(cv.MORPH_RECT, (9, 9));
+      closed = cv.morphologyEx(edges, cv.MORPH_CLOSE, kernel);
+      final (cnts, hierarchy) = cv.findContours(
+        closed,
+        cv.RETR_EXTERNAL,
+        cv.CHAIN_APPROX_SIMPLE,
+      );
+      hierarchy.dispose();
+      contours = cnts;
+      return _bestQuad(cnts, imageArea);
+    } finally {
+      gray?.dispose();
+      blurred?.dispose();
+      edges?.dispose();
+      kernel?.dispose();
+      closed?.dispose();
+      contours?.dispose();
     }
   }
 

@@ -19,6 +19,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:image/image.dart' as img_lib;
+import 'package:flutter_tesseract_ocr/flutter_tesseract_ocr.dart';
+import 'package:printing/printing.dart';
 import 'document_camera_edit.dart';
 import '../main_screen/app_tabs_screen.dart';
 import '../../../services/document_sync_service.dart';
@@ -44,6 +46,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
   String? _finalPath;
   SaveFormat? _finalFormat;
   String? _errorMessage;
+  String? _progressMessage; // например «Распознаём текст 2/10»
 
 
   Future<File> _applyFiltersAndSaveTemp(ImageEditState state, int index) async {
@@ -227,6 +230,133 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
     return file.path;
   }
 
+  /// Searchable PDF: страница = скан-картинка (точная вёрстка оригинала), а
+  /// поверх — НЕВИДИМЫЙ текст по координатам слов из Tesseract hOCR. Выглядит
+  /// пиксель-в-пиксель как оригинал, но текст выделяется/ищется/копируется.
+  Future<String> _saveAsTextPdf(String fileName) async {
+    if (widget.sourceFilePaths.isEmpty) {
+      throw Exception("Нет страниц для распознавания.");
+    }
+    final l10n = AppLocalizations.of(context);
+    final int total = widget.sourceFilePaths.length;
+    final font = await PdfGoogleFonts.robotoRegular();
+    final doc = pw.Document();
+    final tempFiles = <File>[];
+
+    try {
+      for (int i = 0; i < total; i++) {
+        if (mounted) {
+          setState(
+            () => _progressMessage = '${l10n.docOcrInProgress} ${i + 1}/$total',
+          );
+        }
+        // Страница-картинка: применённые фильтры (как видел пользователь).
+        File pageFile;
+        if (widget.editStates != null && widget.editStates!.length == total) {
+          pageFile = await _applyFiltersAndSaveTemp(widget.editStates![i], i);
+          tempFiles.add(pageFile);
+        } else {
+          pageFile = File(widget.sourceFilePaths[i]);
+        }
+
+        final bytes = await pageFile.readAsBytes();
+        final decoded = img_lib.decodeImage(bytes);
+        final double imgW = (decoded?.width ?? 1000).toDouble();
+        final double imgH = (decoded?.height ?? 1414).toDouble();
+
+        // hOCR (rus+eng) — слова + их рамки в пикселях изображения.
+        List<_HocrWord> words = const [];
+        try {
+          final hocr = await FlutterTesseractOcr.extractHocr(
+            pageFile.path,
+            language: 'rus+eng',
+          );
+          words = _parseHocr(hocr);
+        } catch (_) {
+          // Без hOCR страница останется картинкой без текстового слоя.
+        }
+
+        final pdfImage = pw.MemoryImage(bytes);
+        final double pageW = PdfPageFormat.a4.width;
+        final double scale = pageW / imgW;
+        final double pageH = imgH * scale;
+
+        doc.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat(pageW, pageH),
+            margin: pw.EdgeInsets.zero,
+            build: (context) => pw.Stack(
+              children: [
+                pw.Positioned.fill(
+                  child: pw.Image(pdfImage, fit: pw.BoxFit.fill),
+                ),
+                for (final w in words)
+                  pw.Positioned(
+                    left: w.x0 * scale,
+                    top: w.y0 * scale,
+                    child: pw.Text(
+                      w.text,
+                      style: pw.TextStyle(
+                        font: font,
+                        fontSize: ((w.y1 - w.y0) * scale).clamp(4.0, 40.0),
+                        // Прозрачный текст: невидим, но выделяется/ищется.
+                        color: const PdfColor(0, 0, 0, 0),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      }
+    } finally {
+      for (final f in tempFiles) {
+        try {
+          await f.delete();
+        } catch (_) {}
+      }
+    }
+
+    final outputDir = await getApplicationDocumentsDirectory();
+    final baseName = fileName.endsWith('.pdf')
+        ? fileName.substring(0, fileName.length - 4)
+        : fileName;
+    final finalPath = '${outputDir.path}/$baseName.pdf';
+    await File(finalPath).writeAsBytes(await doc.save());
+    return finalPath;
+  }
+
+  /// Парсит hOCR Tesseract → слова с рамками (bbox в пикселях изображения).
+  List<_HocrWord> _parseHocr(String hocr) {
+    final re = RegExp(
+      r'''class=['"]ocrx_word['"][^>]*?title=['"]bbox (\d+) (\d+) (\d+) (\d+)[^'"]*['"][^>]*>(.*?)</span>''',
+      dotAll: true,
+    );
+    final words = <_HocrWord>[];
+    for (final m in re.allMatches(hocr)) {
+      final text = _unescapeHtml(
+        m.group(5)!.replaceAll(RegExp(r'<[^>]*>'), ''),
+      ).trim();
+      if (text.isEmpty) continue;
+      words.add(_HocrWord(
+        double.parse(m.group(1)!),
+        double.parse(m.group(2)!),
+        double.parse(m.group(3)!),
+        double.parse(m.group(4)!),
+        text,
+      ));
+    }
+    return words;
+  }
+
+  String _unescapeHtml(String s) => s
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&apos;', "'");
+
 
 
   Future<void> _handleSave(SaveFormat format) async {
@@ -246,6 +376,7 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
     setState(() {
       _isSaving = true;
       _errorMessage = null;
+      _progressMessage = null;
     });
 
     String finalPath = '';
@@ -256,6 +387,9 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
           throw Exception("IMG доступно только для одной страницы. Используйте PDF.");
         }
         finalPath = await _saveAsImage(newFileName);
+      } else if (format == SaveFormat.textPdf) {
+        if (widget.sourceFilePaths.isEmpty) throw Exception("Отсутствует изображение для сохранения.");
+        finalPath = await _saveAsTextPdf(newFileName);
       } else {
         if (widget.sourceFilePaths.isEmpty) throw Exception("Отсутствует изображение для сохранения.");
         finalPath = await _saveAsPdf(newFileName);
@@ -371,6 +505,15 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
             subText: '($pageCount стр.)',
             onTap: () => _handleSave(SaveFormat.pdf),
           ),
+          const SizedBox(height: 14),
+          _buildOptionButton(
+            context,
+            icon: Icons.text_snippet_outlined,
+            text: l10n.saveAsTextPdf,
+            color: const Color(0xFF22C55E),
+            subText: '(OCR)',
+            onTap: () => _handleSave(SaveFormat.textPdf),
+          ),
         ],
       ),
     );
@@ -390,7 +533,9 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
           children: [
             const CircularProgressIndicator(color: Color(0xFF2CA5E0)),
             const SizedBox(height: 20),
-            Text(l10n.savingInProgress, style: TextStyle(fontSize: 16, color: subColor)),
+            Text(_progressMessage ?? l10n.savingInProgress,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: subColor)),
           ],
         ),
       ),
@@ -398,7 +543,9 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
   }
 
   String _formatText(AppLocalizations l10n) {
-    return _finalFormat == SaveFormat.pdf ? l10n.saveFormatPdf : l10n.saveFormatImage;
+    return _finalFormat == SaveFormat.img
+        ? l10n.saveFormatImage
+        : l10n.saveFormatPdf;
   }
 
   Widget _buildSaveSuccessScreen(BuildContext context) {
@@ -541,4 +688,14 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
       ),
     );
   }
+}
+
+/// Слово из hOCR Tesseract: рамка (bbox в пикселях изображения) + текст.
+class _HocrWord {
+  final double x0;
+  final double y0;
+  final double x1;
+  final double y1;
+  final String text;
+  const _HocrWord(this.x0, this.y0, this.x1, this.y1, this.text);
 }
