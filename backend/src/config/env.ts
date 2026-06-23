@@ -53,6 +53,15 @@ export const env = {
     process.env.OPENROUTER_OCR_MODEL ||
     process.env.OPENROUTER_MODEL ||
     _defaultVisionModels,
+  // Премиальный «Эко-сканер»: для платных пользователей используем более
+  // сильные vision-модели (точнее видят материалы/значки переработки и держат
+  // строгий JSON). Платные слаги требуют баланса на аккаунте OpenRouter; если
+  // их нет/недоступны — цепочка докатывается до бесплатных vision-моделей,
+  // поэтому фича не падает, а лишь теряет в качестве. Переопределяется через
+  // OPENROUTER_ECO_MODEL (один слаг или список через запятую).
+  openRouterEcoModel:
+    process.env.OPENROUTER_ECO_MODEL ||
+    'openai/gpt-4o-mini,google/gemini-flash-1.5,' + _defaultVisionModels,
   // Replicate — восстановление старых фото. По умолчанию Microsoft
   // «Bringing Old Photos Back to Life»: убирает царапины/трещины и бережно
   // реставрирует, не перерисовывая лица заново (в отличие от GFPGAN, который

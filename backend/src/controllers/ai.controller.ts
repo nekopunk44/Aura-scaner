@@ -13,6 +13,10 @@ const OCR_MODELS = env.openRouterOcrModel
   .split(',')
   .map((model) => model.trim())
   .filter(Boolean);
+const ECO_MODELS = env.openRouterEcoModel
+  .split(',')
+  .map((model) => model.trim())
+  .filter(Boolean);
 const MAX_OCR_IMAGE_BASE64_LENGTH = 8_500_000;
 
 interface OpenRouterResult {
@@ -25,6 +29,8 @@ interface OpenRouterResult {
 interface OpenRouterOptions {
   maxTokens?: number;
   temperature?: number;
+  /** Просим модель вернуть строго JSON-объект (response_format). */
+  json?: boolean;
 }
 
 function callOpenRouter(
@@ -39,6 +45,9 @@ function callOpenRouter(
       ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}),
       ...(typeof options.temperature === 'number'
         ? { temperature: options.temperature }
+        : {}),
+      ...(options.json
+        ? { response_format: { type: 'json_object' } }
         : {}),
     });
     const url = new URL(OPENROUTER_URL);
@@ -163,6 +172,114 @@ export async function analyzeDocument(
     }
     lastDetail = result.detail ?? '';
     logger.warn('[analyzeDocument] model failed, trying next', {
+      model,
+      status: result.status,
+      detail: lastDetail,
+    });
+  }
+
+  res.status(502).json({ message: 'AI service error', detail: lastDetail });
+}
+
+// ---------------------------------------------------------------------------
+// Премиальный «Эко-сканер»: структурированный анализ упаковки.
+// ---------------------------------------------------------------------------
+
+const ECO_SYSTEM_PROMPT =
+  'Ты — эксперт по экологичности упаковки и маркировке переработки. ' +
+  'Проанализируй упаковку на фото и верни СТРОГО валидный JSON-объект ' +
+  '(без markdown, без пояснений вне JSON) по схеме:\n' +
+  '{\n' +
+  '  "score": число 0..10 (общая эко-оценка, один знак после запятой),\n' +
+  '  "verdict": "короткий вывод (3-5 слов)",\n' +
+  '  "summary": "1-2 предложения сути",\n' +
+  '  "materials": [{"name":"материал","rating":"good|medium|bad"}],\n' +
+  '  "recyclable": {"status":"yes|partial|no","note":"пояснение"},\n' +
+  '  "composition": "состав упаковки, если видно",\n' +
+  '  "marks": [{"code":"напр. 1 PET / ♻ / FSC","meaning":"расшифровка","recyclable":true}],\n' +
+  '  "disposal": ["шаг утилизации", "..."],\n' +
+  '  "tips": ["рекомендация", "..."]\n' +
+  '}\n' +
+  'Все текстовые значения — на русском. Если что-то не видно — верни пустой ' +
+  'массив или пустую строку, НЕ выдумывай. Особое внимание удели значкам ' +
+  'переработки: петля Мёбиуса ♻, коды пластика 1-7 (PET, HDPE, PVC, LDPE, PP, ' +
+  'PS, OTHER), «Зелёная точка», FSC, Tidyman.';
+
+const ECO_USER_INSTRUCTION =
+  'Проанализируй экологичность этой упаковки и верни JSON по заданной схеме.';
+
+/** Достаёт JSON-объект из ответа модели (срезает ```-ограждения и текст вокруг). */
+function extractEcoJson(text: string): string | null {
+  let candidate = text.trim();
+  const fenced = candidate.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) candidate = fenced[1].trim();
+  const start = candidate.indexOf('{');
+  const end = candidate.lastIndexOf('}');
+  if (start === -1 || end <= start) return null;
+  candidate = candidate.slice(start, end + 1);
+  try {
+    const parsed = JSON.parse(candidate);
+    if (parsed && typeof parsed === 'object') return JSON.stringify(parsed);
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+export async function analyzeEco(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
+  if (!env.openRouterApiKey) {
+    res.status(503).json({ message: 'AI service is not configured' });
+    return;
+  }
+
+  const { imageBase64, mimeType } = req.body ?? {};
+  if (typeof imageBase64 !== 'string' || !imageBase64) {
+    res.status(400).json({ message: 'imageBase64 is required' });
+    return;
+  }
+  const normalized = normalizeImagePayload(imageBase64, mimeType);
+  if (!normalized) {
+    res.status(400).json({ message: 'Unsupported image format' });
+    return;
+  }
+  if (normalized.base64Length > MAX_OCR_IMAGE_BASE64_LENGTH) {
+    res.status(413).json({ message: 'Image is too large' });
+    return;
+  }
+
+  const messages = [
+    { role: 'system', content: ECO_SYSTEM_PROMPT },
+    {
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: normalized.dataUrl } },
+        { type: 'text', text: ECO_USER_INSTRUCTION },
+      ],
+    },
+  ];
+
+  let lastDetail = '';
+  for (const model of ECO_MODELS) {
+    const result = await callOpenRouter(model, messages, {
+      json: true,
+      maxTokens: 1200,
+      temperature: 0.2,
+    });
+    if (result.ok && result.text) {
+      const json = extractEcoJson(result.text);
+      if (json) {
+        res.json({ result: json, model });
+        return;
+      }
+      lastDetail = 'model returned non-JSON';
+      logger.warn('[analyzeEco] non-JSON response, trying next', { model });
+      continue;
+    }
+    lastDetail = result.detail ?? '';
+    logger.warn('[analyzeEco] model failed, trying next', {
       model,
       status: result.status,
       detail: lastDetail,

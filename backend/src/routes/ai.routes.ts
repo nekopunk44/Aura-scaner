@@ -2,6 +2,7 @@ import { NextFunction, Request, Response, Router } from 'express';
 import multer from 'multer';
 import {
   analyzeDocument,
+  analyzeEco,
   dewatermarkImage,
   recognizeOcrText,
   removeWatermarks,
@@ -14,6 +15,7 @@ import { audioUpload } from '../middleware/upload.middleware';
 const router = Router();
 
 router.post('/analyze', authMiddleware, analyzeDocument);
+router.post('/analyze-eco', authMiddleware, analyzeEco);
 router.post('/ocr', authMiddleware, recognizeOcrText);
 router.post('/restore', authMiddleware, restorePhoto);
 router.post('/remove-watermarks', authMiddleware, removeWatermarks);

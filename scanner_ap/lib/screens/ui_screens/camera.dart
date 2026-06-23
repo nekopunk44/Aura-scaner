@@ -51,7 +51,7 @@ import 'remove_spots_screen.dart';
 import 'highlight_screen.dart';
 import 'add_password_screen.dart';
 import 'remove_watermark_screen.dart';
-import 'document_ai_screen.dart';
+import 'eco/eco_packaging_screen.dart';
 import 'premium_paywall.dart';
 import 'settings_screen.dart';
 import '../../services/premium_service.dart';
@@ -562,16 +562,20 @@ class _CameraScreenState extends State<CameraScreen>
       return false;
     }
 
-    const int targetWidth = 180;
+    // Документ — «пустоватый» лист: выше разрешение детекции + мягче пороги
+    // Canny, чтобы граница листа/текст зарегистрировались (на 180px было 0).
+    final bool isDoc = _isDocumentSheetFeature(featureName);
+    final int targetWidth = isDoc ? 300 : 180;
     final int targetHeight = ((targetWidth * image.width) / image.height)
         .round()
-        .clamp(160, 320);
+        .clamp(160, 540);
     final gray = _samplePortraitLuma(
       image,
       targetWidth: targetWidth,
       targetHeight: targetHeight,
     );
-    final quad = detectPhotoQuad(gray, targetWidth, targetHeight);
+    final quad =
+        detectPhotoQuad(gray, targetWidth, targetHeight, lowContrast: isDoc);
 
     if ((_quadDiagCounter++ % 12) == 0) {
       debugPrint(
@@ -2386,7 +2390,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (icon == Icons.eco) {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => DocumentAiScreen.eco()),
+        MaterialPageRoute(builder: (_) => const EcoPackagingScreen()),
       ).then(_afterToolReturn);
       return true;
     }

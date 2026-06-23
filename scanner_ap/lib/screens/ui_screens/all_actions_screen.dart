@@ -18,6 +18,7 @@ import 'add_password_screen.dart';
 import 'restore_photo_screen.dart';
 import 'highlight_screen.dart';
 import 'document_ai_screen.dart';
+import 'eco/eco_packaging_screen.dart';
 import 'package:pdf/pdf.dart' hide PdfDocument;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdfrx/pdfrx.dart';
@@ -780,7 +781,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
             isPremium: true,
             iconColor: Colors.green.shade500,
             onTap: () => Navigator.push(context, MaterialPageRoute(
-              builder: (_) => DocumentAiScreen.eco(),
+              builder: (_) => const EcoPackagingScreen(),
             )),
           ),
         ),

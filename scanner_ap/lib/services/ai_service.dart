@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
+import '../models/eco_report.dart';
 import 'api_service.dart';
 
 /// Категория ошибки AI-анализа — экран маппит её в локализованный текст,
@@ -93,6 +94,48 @@ class AIService {
         ],
       },
     ]);
+  }
+
+  /// Премиальный эко-анализ упаковки: возвращает СТРУКТУРИРОВАННЫЙ [EcoReport]
+  /// (эко-балл, материалы, перерабатываемость, распознанные значки, утилизация,
+  /// советы). Сервер использует более сильную vision-модель и строгий JSON.
+  /// Если модель вернула не-JSON — деградируем в [EcoReport.fromRawText].
+  Future<EcoReport> analyzeEcoReport(File imageFile) async {
+    final bytes = await imageFile.readAsBytes();
+    final base64Image = base64Encode(bytes);
+    final ext = imageFile.path.toLowerCase();
+    final mimeType = ext.endsWith('.png') ? 'image/png' : 'image/jpeg';
+
+    try {
+      final response = await ApiService().dio.post(
+        '/ai/analyze-eco',
+        data: {'imageBase64': base64Image, 'mimeType': mimeType},
+        options: Options(
+          sendTimeout: const Duration(seconds: 60),
+          receiveTimeout: const Duration(seconds: 90),
+        ),
+      );
+      final result = response.data?['result'];
+      if (result is! String || result.isEmpty) {
+        throw AiException(AiErrorKind.generic);
+      }
+      try {
+        return EcoReport.fromServerResult(result);
+      } on FormatException {
+        return EcoReport.fromRawText(result);
+      }
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.connectionTimeout) {
+        throw AiException(AiErrorKind.timeout);
+      }
+      final status = e.response?.statusCode ?? 0;
+      if (status >= 500 || status == 0) {
+        throw AiException(AiErrorKind.unavailable);
+      }
+      throw AiException(AiErrorKind.generic);
+    }
   }
 
   /// Восстановление старого фото через сервер (Replicate/GFPGAN). Отправляет
