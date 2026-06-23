@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -30,11 +31,13 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
   StreamSubscription<Duration>? _playerDurationSubscription;
 
   bool _isRecording = false;
+  bool _isRecorderBusy = false;
   bool _isPlaying = false;
   String? _currentPlayingPath;
   String? _recordingPath;
 
   int _secondsElapsed = 0;
+  DateTime? _recordingStartedAt;
   Timer? _timer;
   double _voiceLevel = 0;
   List<double> _voiceHistory = List<double>.filled(48, 0);
@@ -43,10 +46,12 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
   Duration _playbackDuration = Duration.zero;
 
   List<_VoiceNote> _notes = [];
+  final Map<String, int> _durationMsByPath = {};
   final Map<String, String> _transcripts = {};
   final Set<String> _transcribingPaths = {};
 
   static const _prefsKey = 'voice_note_paths';
+  static const _durationPrefsKey = 'voice_note_duration_ms';
 
   @override
   void initState() {
@@ -86,18 +91,44 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
   Future<void> _loadNotes() async {
     final prefs = await SharedPreferences.getInstance();
     final paths = prefs.getStringList(_prefsKey) ?? [];
+    final savedDurations = prefs.getString(_durationPrefsKey);
+    if (savedDurations != null) {
+      try {
+        final decoded = jsonDecode(savedDurations);
+        if (decoded is Map<String, dynamic>) {
+          for (final entry in decoded.entries) {
+            final value = entry.value;
+            if (value is num && value > 0) {
+              _durationMsByPath[entry.key] = value.round();
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
     final notes = <_VoiceNote>[];
+    var durationsChanged = false;
     for (final path in paths) {
       final file = File(path);
       if (await file.exists()) {
         final stat = await file.stat();
         final name = path.split('/').last.split('\\').last;
+        var durationMs = _durationMsByPath[path] ?? 0;
+        if (durationMs <= 0) {
+          final duration = await _probeDuration(path);
+          durationMs = duration.inMilliseconds;
+          if (durationMs > 0) {
+            _durationMsByPath[path] = durationMs;
+            durationsChanged = true;
+          }
+        }
         notes.add(
           _VoiceNote(
             path: path,
             name: name,
             modifiedAt: stat.modified,
             sizeInBytes: stat.size,
+            duration: Duration(milliseconds: durationMs),
           ),
         );
         final transcriptFile = File(_transcriptPath(path));
@@ -107,15 +138,55 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
         }
       }
     }
-    if (notes.length != paths.length) {
-      await prefs.setStringList(_prefsKey, notes.map((n) => n.path).toList());
+    final validPaths = notes.map((note) => note.path).toSet();
+    final durationCount = _durationMsByPath.length;
+    _durationMsByPath.removeWhere((path, _) => !validPaths.contains(path));
+    if (_durationMsByPath.length != durationCount) durationsChanged = true;
+
+    if (notes.length != paths.length || durationsChanged) {
+      await Future.wait([
+        prefs.setStringList(_prefsKey, notes.map((note) => note.path).toList()),
+        prefs.setString(_durationPrefsKey, jsonEncode(_durationMsByPath)),
+      ]);
     }
     if (mounted) setState(() => _notes = notes);
   }
 
   Future<void> _savePaths() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_prefsKey, _notes.map((n) => n.path).toList());
+    final validPaths = _notes.map((note) => note.path).toSet();
+    _durationMsByPath.removeWhere((path, _) => !validPaths.contains(path));
+    await Future.wait([
+      prefs.setStringList(_prefsKey, _notes.map((note) => note.path).toList()),
+      prefs.setString(_durationPrefsKey, jsonEncode(_durationMsByPath)),
+    ]);
+  }
+
+  Future<Duration> _probeDuration(String path) async {
+    final probe = AudioPlayer();
+    try {
+      await probe.setSource(DeviceFileSource(path));
+      return await probe.getDuration() ?? Duration.zero;
+    } catch (_) {
+      return Duration.zero;
+    } finally {
+      await probe.dispose();
+    }
+  }
+
+  Future<void> _toggleRecording() async {
+    if (_isRecorderBusy) return;
+    await HapticFeedback.mediumImpact();
+    if (mounted) setState(() => _isRecorderBusy = true);
+    try {
+      if (_isRecording) {
+        await _stopRecording();
+      } else {
+        await _startRecording();
+      }
+    } finally {
+      if (mounted) setState(() => _isRecorderBusy = false);
+    }
   }
 
   Future<void> _startRecording() async {
@@ -136,10 +207,16 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
 
     await _recorder.start(const RecordConfig(), path: _recordingPath!);
     _secondsElapsed = 0;
+    _recordingStartedAt = DateTime.now();
     _voiceLevel = 0;
     _voiceHistory = List<double>.filled(48, 0);
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _secondsElapsed++);
+      final startedAt = _recordingStartedAt;
+      if (mounted && startedAt != null) {
+        setState(() {
+          _secondsElapsed = DateTime.now().difference(startedAt).inSeconds;
+        });
+      }
     });
     if (mounted) {
       setState(() => _isRecording = true);
@@ -174,12 +251,17 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
 
   Future<void> _stopRecording() async {
     _timer?.cancel();
+    final startedAt = _recordingStartedAt;
+    final recordedDuration = startedAt == null
+        ? Duration(seconds: math.max(1, _secondsElapsed))
+        : DateTime.now().difference(startedAt);
     await _amplitudeSubscription?.cancel();
     _amplitudeSubscription = null;
     final path = await _recorder.stop();
     if (mounted) {
       setState(() {
         _isRecording = false;
+        _recordingStartedAt = null;
         _voiceLevel = 0;
         _voiceHistory = List<double>.filled(48, 0);
       });
@@ -193,11 +275,90 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
         name: name,
         modifiedAt: stat.modified,
         sizeInBytes: stat.size,
+        duration: recordedDuration,
       );
-      setState(() => _notes.insert(0, note));
+      setState(() {
+        _notes.insert(0, note);
+        _durationMsByPath[path] = recordedDuration.inMilliseconds;
+      });
       await _savePaths();
       widget.onSaved?.call();
+      if (mounted) _showNoteSavedSnackBar(note);
     }
+  }
+
+  void _showNoteSavedSnackBar(_VoiceNote note) {
+    final l10n = AppLocalizations.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 7),
+          backgroundColor: isDark
+              ? const Color(0xFF243348)
+              : const Color(0xFF172438),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    size: 20,
+                    color: Color(0xFF52D79A),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      l10n.voiceNoteSaved,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Wrap(
+                spacing: 2,
+                runSpacing: 0,
+                children: [
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF55BDF0),
+                      textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    onPressed: () {
+                      messenger.hideCurrentSnackBar();
+                      unawaited(_renameNote(note));
+                    },
+                    child: Text(l10n.dialogRename),
+                  ),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF55BDF0),
+                      textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    onPressed: () {
+                      messenger.hideCurrentSnackBar();
+                      unawaited(_transcribeNote(note));
+                    },
+                    child: Text(l10n.voiceTranscribe),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
   }
 
   Future<void> _togglePlay(String path) async {
@@ -512,6 +673,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
       name: '$sanitized$originalExt',
       modifiedAt: note.modifiedAt,
       sizeInBytes: note.sizeInBytes,
+      duration: note.duration,
     );
     setState(() {
       final idx = _notes.indexOf(note);
@@ -519,6 +681,8 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
       if (_currentPlayingPath == note.path) _currentPlayingPath = null;
       final transcript = _transcripts.remove(note.path);
       if (transcript != null) _transcripts[newPath] = transcript;
+      final durationMs = _durationMsByPath.remove(note.path);
+      if (durationMs != null) _durationMsByPath[newPath] = durationMs;
     });
     await _savePaths();
   }
@@ -569,6 +733,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
     setState(() {
       _notes.remove(note);
       _transcripts.remove(note.path);
+      _durationMsByPath.remove(note.path);
     });
     await _savePaths();
   }
@@ -577,6 +742,12 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
     final m = (seconds ~/ 60).toString().padLeft(2, '0');
     final s = (seconds % 60).toString().padLeft(2, '0');
     return '$m:$s';
+  }
+
+  String _formatNoteDuration(Duration duration) {
+    if (duration <= Duration.zero) return '';
+    final seconds = math.max(1, (duration.inMilliseconds / 1000).ceil());
+    return _formatDuration(seconds);
   }
 
   String _displayName(_VoiceNote note, AppLocalizations l10n) {
@@ -604,7 +775,12 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
       TimeOfDay.fromDateTime(note.modifiedAt),
       alwaysUse24HourFormat: MediaQuery.alwaysUse24HourFormatOf(context),
     );
-    return '$date, $time  •  ${_formatFileSize(note.sizeInBytes)}';
+    final duration = _formatNoteDuration(note.duration);
+    return [
+      if (duration.isNotEmpty) duration,
+      '$date, $time',
+      _formatFileSize(note.sizeInBytes),
+    ].join('  •  ');
   }
 
   double get _playbackProgress {
@@ -622,6 +798,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
     const accent = Color(0xFF2CA5E0);
     const recordingColor = Color(0xFFFF5A63);
     final activeColor = _isRecording ? recordingColor : accent;
+    final recordActionLabel = _isRecording ? l10n.voiceStop : l10n.voiceRecord;
 
     return Container(
       clipBehavior: Clip.antiAlias,
@@ -659,14 +836,14 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(26, 24, 26, 26),
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 22),
             child: Column(
               children: [
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 250),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
-                    vertical: 7,
+                    vertical: 6,
                   ),
                   decoration: BoxDecoration(
                     color: activeColor.withValues(alpha: 0.1),
@@ -697,7 +874,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
                       Text(
                         _isRecording
                             ? l10n.voiceRecording
-                            : l10n.voicePressToRecord,
+                            : l10n.voiceReadyToRecord,
                         style: TextStyle(
                           color: activeColor,
                           fontSize: 12,
@@ -708,10 +885,10 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
                 SizedBox(
-                  width: 150,
-                  height: 150,
+                  width: 132,
+                  height: 132,
                   child: TweenAnimationBuilder<double>(
                     tween: Tween<double>(end: _isRecording ? _voiceLevel : 0),
                     duration: const Duration(milliseconds: 90),
@@ -723,8 +900,8 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
                           Transform.scale(
                             scale: 0.88 + (level * 0.16),
                             child: Container(
-                              width: 144,
-                              height: 144,
+                              width: 128,
+                              height: 128,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: activeColor.withValues(
@@ -739,7 +916,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
                             ),
                           ),
                           CustomPaint(
-                            size: const Size.square(150),
+                            size: const Size.square(132),
                             painter: _VoiceWavePainter(
                               samples: _voiceHistory,
                               level: level,
@@ -749,40 +926,56 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
                           ),
                           Transform.scale(
                             scale: 1 + (level * 0.08),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 180),
-                              width: 96,
-                              height: 96,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: activeColor.withValues(
-                                  alpha: 0.14 + (level * 0.1),
-                                ),
-                                border: Border.all(
-                                  color: activeColor.withValues(
-                                    alpha: 0.28 + (level * 0.34),
-                                  ),
-                                ),
-                                boxShadow: _isRecording
-                                    ? [
-                                        BoxShadow(
-                                          color: activeColor.withValues(
-                                            alpha: 0.12 + (level * 0.24),
-                                          ),
-                                          blurRadius: 12 + (level * 20),
-                                          spreadRadius: level * 4,
+                            child: Tooltip(
+                              message: recordActionLabel,
+                              child: Semantics(
+                                button: true,
+                                enabled: !_isRecorderBusy,
+                                label: recordActionLabel,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _isRecorderBusy
+                                      ? null
+                                      : _toggleRecording,
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 180),
+                                    width: 88,
+                                    height: 88,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: activeColor.withValues(
+                                        alpha: 0.14 + (level * 0.1),
+                                      ),
+                                      border: Border.all(
+                                        color: activeColor.withValues(
+                                          alpha: 0.28 + (level * 0.34),
                                         ),
-                                      ]
-                                    : null,
-                              ),
-                              child: Transform.scale(
-                                scale: 1 + (level * 0.08),
-                                child: Icon(
-                                  _isRecording
-                                      ? Icons.mic_rounded
-                                      : Icons.mic_none_rounded,
-                                  size: 44,
-                                  color: activeColor,
+                                      ),
+                                      boxShadow: _isRecording
+                                          ? [
+                                              BoxShadow(
+                                                color: activeColor.withValues(
+                                                  alpha: 0.12 + (level * 0.24),
+                                                ),
+                                                blurRadius: 12 + (level * 20),
+                                                spreadRadius: level * 4,
+                                              ),
+                                            ]
+                                          : null,
+                                    ),
+                                    child: Transform.scale(
+                                      scale: 1 + (level * 0.08),
+                                      child: ExcludeSemantics(
+                                        child: Icon(
+                                          _isRecording
+                                              ? Icons.mic_rounded
+                                              : Icons.mic_none_rounded,
+                                          size: 40,
+                                          color: activeColor,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -792,27 +985,29 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
                     },
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 8),
                 AnimatedDefaultTextStyle(
                   duration: const Duration(milliseconds: 250),
                   style: TextStyle(
-                    fontSize: 44,
+                    fontSize: _isRecording ? 42 : 30,
                     height: 1.05,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: -1.5,
-                    color: _isRecording ? recordingColor : textColor,
+                    letterSpacing: _isRecording ? -1.5 : -0.8,
+                    color: _isRecording
+                        ? recordingColor
+                        : textColor.withValues(alpha: 0.58),
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                   child: Text(
                     _isRecording ? _formatDuration(_secondsElapsed) : '00:00',
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
-                  height: 56,
+                  height: 54,
                   child: FilledButton.icon(
-                    onPressed: _isRecording ? _stopRecording : _startRecording,
+                    onPressed: _isRecorderBusy ? null : _toggleRecording,
                     icon: AnimatedSwitcher(
                       duration: const Duration(milliseconds: 180),
                       child: Icon(
@@ -824,7 +1019,7 @@ class _VoiceNoteScreenState extends State<VoiceNoteScreen> {
                       ),
                     ),
                     label: Text(
-                      _isRecording ? l10n.voiceStop : l10n.voiceRecord,
+                      recordActionLabel,
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -1264,11 +1459,13 @@ class _VoiceNote {
   final String name;
   final DateTime modifiedAt;
   final int sizeInBytes;
+  final Duration duration;
 
   const _VoiceNote({
     required this.path,
     required this.name,
     required this.modifiedAt,
     required this.sizeInBytes,
+    required this.duration,
   });
 }
