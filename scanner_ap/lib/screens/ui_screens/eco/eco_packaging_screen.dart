@@ -161,6 +161,63 @@ class _EcoPackagingScreenState extends State<EcoPackagingScreen> {
     }
   }
 
+  Widget _buildBenefits(
+    AppLocalizations l10n,
+    Color cardBg,
+    Color textColor,
+    Color subColor,
+  ) {
+    final items = <({IconData icon, Color color, String text})>[
+      (icon: Icons.verified_outlined, color: const Color(0xFF16A34A), text: l10n.ecoBenefitScore),
+      (icon: Icons.recycling, color: const Color(0xFF0D9488), text: l10n.ecoBenefitRecycle),
+      (icon: Icons.qr_code_2, color: const Color(0xFF2563EB), text: l10n.ecoBenefitMarks),
+      (icon: Icons.picture_as_pdf_outlined, color: const Color(0xFFDC2626), text: l10n.ecoBenefitPdf),
+    ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _accent.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.ecoBenefitsTitle,
+            style: TextStyle(
+                fontSize: 14, fontWeight: FontWeight.w700, color: textColor),
+          ),
+          const SizedBox(height: 14),
+          for (var i = 0; i < items.length; i++) ...[
+            if (i > 0) const SizedBox(height: 12),
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: items[i].color.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(items[i].icon, color: items[i].color, size: 19),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    items[i].text,
+                    style: TextStyle(fontSize: 13.5, color: textColor, height: 1.35),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -191,38 +248,6 @@ class _EcoPackagingScreenState extends State<EcoPackagingScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Подсказка.
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [_accent.withValues(alpha: 0.16), _accent.withValues(alpha: 0.04)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _accent.withValues(alpha: 0.25)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 44, height: 44,
-                  decoration: BoxDecoration(
-                    color: _accent.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.eco, color: _accent, size: 24),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(l10n.ecoHint,
-                      style: TextStyle(fontSize: 13, color: textColor, height: 1.4)),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
           // Превью/выбор фото.
           GestureDetector(
             onTap: _pickSource,
@@ -291,45 +316,37 @@ class _EcoPackagingScreenState extends State<EcoPackagingScreen> {
           ),
           const SizedBox(height: 12),
 
-          // Кнопки выбора/анализа.
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pickSource,
-                  icon: const Icon(Icons.upload_file, size: 18),
-                  label: Text(_imageFile != null ? l10n.wmChange : l10n.aiSelectFile),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _accent,
-                    side: const BorderSide(color: _accent),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
+          // Кнопка анализа на всю ширину (выбор фото — по тапу на блок выше).
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: (_imageFile == null || _isLoading) ? null : _analyze,
+              icon: _isLoading
+                  ? const SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.eco, size: 18),
+              label: Text(_isLoading ? l10n.aiAnalyzing : l10n.aiAnalyze),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _accent,
+                disabledBackgroundColor: _accent.withValues(alpha: 0.4),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: (_imageFile == null || _isLoading) ? null : _analyze,
-                  icon: _isLoading
-                      ? const SizedBox(
-                          width: 16, height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.eco, size: 18),
-                  label: Text(_isLoading ? l10n.aiAnalyzing : l10n.aiAnalyze),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _accent,
-                    disabledBackgroundColor: _accent.withValues(alpha: 0.4),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
+
+          // Пустое состояние: показываем ценность фичи, а не пустоту.
+          if (_imageFile == null &&
+              _report == null &&
+              _errorKind == null &&
+              !_isLoading) ...[
+            const SizedBox(height: 24),
+            _buildBenefits(l10n, cardBg, textColor, subColor),
+          ],
 
           if (_isLoading) ...[
             const SizedBox(height: 20),

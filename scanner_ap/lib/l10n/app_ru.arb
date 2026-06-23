@@ -444,6 +444,11 @@
   "ecoDeleteEntryTitle": "Удалить запись?",
   "ecoPdfTitle": "Отчёт по экологичности упаковки",
   "ecoPdfFooter": "Сформировано в Aura Scanner • Эко-сканер",
+  "ecoBenefitsTitle": "Что вы получите",
+  "ecoBenefitScore": "Эко-оценка упаковки от 1 до 10",
+  "ecoBenefitRecycle": "Что и как правильно перерабатывать",
+  "ecoBenefitMarks": "Расшифровку значков маркировки",
+  "ecoBenefitPdf": "Отчёт в PDF и историю анализов",
 
   "importVerbTitle": "Импортировать документ",
   "importPdfDocument": "PDF документ",

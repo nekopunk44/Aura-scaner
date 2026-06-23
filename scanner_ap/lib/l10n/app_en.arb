@@ -255,6 +255,11 @@
   "ecoDeleteEntryTitle": "Delete entry?",
   "ecoPdfTitle": "Packaging eco report",
   "ecoPdfFooter": "Generated in Aura Scanner • Eco scanner",
+  "ecoBenefitsTitle": "What you get",
+  "ecoBenefitScore": "An eco score from 1 to 10",
+  "ecoBenefitRecycle": "What and how to recycle properly",
+  "ecoBenefitMarks": "Decoding of packaging marks",
+  "ecoBenefitPdf": "A PDF report and analysis history",
 
   "importVerbTitle": "Import a document",
   "importPdfDocument": "PDF document",
