@@ -2,17 +2,28 @@ import 'package:flutter/material.dart';
 
 import '../../../l10n/app_localizations.dart';
 import '../../../models/eco_report.dart';
+import 'eco_map_screen.dart';
 
 /// Богатое представление структурированного [EcoReport]: эко-балл кольцом,
-/// перерабатываемость, материалы, распознанные значки, утилизация и советы.
-/// Переиспользуется на экране результата и в детале истории.
+/// перерабатываемость, материалы, распознанные значки, утилизация, советы и
+/// поиск ближайшего пункта приёма. Каждая секция — со своим акцентным цветом
+/// (а не сплошной зелёный). Переиспользуется на экране результата и в истории.
 class EcoReportView extends StatelessWidget {
   final EcoReport report;
 
   const EcoReportView({super.key, required this.report});
 
-  static Color scoreColor(double s) =>
-      s >= 7 ? const Color(0xFF16A34A) : (s >= 4 ? const Color(0xFFD97706) : const Color(0xFFDC2626));
+  // Палитра акцентов по секциям — чтобы экран не был «весь зелёный».
+  static const _cMaterials = Color(0xFF2563EB); // синий
+  static const _cMarks = Color(0xFF0D9488); // бирюзовый
+  static const _cComposition = Color(0xFFD97706); // янтарный
+  static const _cDisposal = Color(0xFF7C3AED); // фиолетовый
+  static const _cTips = Color(0xFFF59E0B); // оранжевый
+  static const _cNearby = Color(0xFF0EA5E9); // голубой
+
+  static Color scoreColor(double s) => s >= 7
+      ? const Color(0xFF16A34A)
+      : (s >= 4 ? const Color(0xFFD97706) : const Color(0xFFDC2626));
 
   Color _ratingColor(EcoRating r) {
     switch (r) {
@@ -59,13 +70,16 @@ class EcoReportView extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.07)
+        : const Color(0xFFE8EDF5);
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final subColor = isDark ? Colors.white60 : const Color(0xFF6B7A99);
 
     // Сырой текстовый фолбэк (модель не вернула JSON).
     if (!report.isStructured) {
       return _card(
-        cardBg,
+        cardBg, border,
         child: Text(
           report.rawText ?? '',
           style: TextStyle(fontSize: 14, color: textColor, height: 1.55),
@@ -80,66 +94,74 @@ class EcoReportView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ── Шапка: эко-балл кольцом + вердикт/резюме ──
+        // ── Шапка: эко-балл кольцом + вердикт ──
         _card(
-          cardBg,
-          child: Row(
+          cardBg, border,
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: 78,
-                height: 78,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox(
-                      width: 78,
-                      height: 78,
-                      child: CircularProgressIndicator(
-                        value: score / 10,
-                        strokeWidth: 7,
-                        backgroundColor: color.withValues(alpha: 0.15),
-                        valueColor: AlwaysStoppedAnimation(color),
-                      ),
-                    ),
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 70,
+                    height: 70,
+                    child: Stack(
+                      alignment: Alignment.center,
                       children: [
+                        SizedBox(
+                          width: 70,
+                          height: 70,
+                          child: CircularProgressIndicator(
+                            value: score / 10,
+                            strokeWidth: 8,
+                            strokeCap: StrokeCap.round,
+                            backgroundColor: color.withValues(alpha: 0.14),
+                            valueColor: AlwaysStoppedAnimation(color),
+                          ),
+                        ),
                         Text(
                           score.toStringAsFixed(1),
                           style: TextStyle(
-                              fontSize: 22, fontWeight: FontWeight.w800, color: color),
+                              fontSize: 21, fontWeight: FontWeight.w800, color: color),
                         ),
-                        Text('/ 10',
-                            style: TextStyle(fontSize: 10, color: subColor)),
                       ],
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 4),
-                    Text(
-                      report.verdict.isNotEmpty
-                          ? report.verdict
-                          : l10n.ecoVerdictDefault,
-                      style: TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w700, color: textColor),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l10n.ecoScoreLabel.toUpperCase(),
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.6,
+                              color: subColor),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          report.verdict.isNotEmpty
+                              ? report.verdict
+                              : l10n.ecoVerdictDefault,
+                          style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: textColor,
+                              height: 1.2),
+                        ),
+                      ],
                     ),
-                    Text(l10n.ecoScoreLabel,
-                        style: TextStyle(fontSize: 12, color: subColor)),
-                    if (report.summary.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(report.summary,
-                          style: TextStyle(fontSize: 13, color: textColor, height: 1.45)),
-                    ],
-                  ],
-                ),
+                  ),
+                ],
               ),
+              if (report.summary.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text(report.summary,
+                    style: TextStyle(fontSize: 13, color: textColor, height: 1.45)),
+              ],
             ],
           ),
         ),
@@ -147,7 +169,7 @@ class EcoReportView extends StatelessWidget {
         // ── Перерабатываемость ──
         const SizedBox(height: 12),
         _card(
-          cardBg,
+          cardBg, border,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
@@ -181,10 +203,25 @@ class EcoReportView extends StatelessWidget {
           ),
         ),
 
+        // ── Где сдать на переработку (карта) ──
+        const SizedBox(height: 12),
+        _tappableCard(
+          cardBg, border,
+          accent: _cNearby,
+          icon: Icons.location_on_outlined,
+          title: l10n.ecoFindNearby,
+          subtitle: l10n.ecoFindNearbySub,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const EcoMapScreen()),
+          ),
+        ),
+
         // ── Материалы ──
         if (report.materials.isNotEmpty)
           _sectionCard(
-            cardBg, textColor, subColor,
+            cardBg, border, textColor,
+            accent: _cMaterials,
             icon: Icons.layers_outlined,
             title: l10n.ecoSectionMaterials,
             child: Wrap(
@@ -222,7 +259,8 @@ class EcoReportView extends StatelessWidget {
         // ── Распознанные значки маркировки ──
         if (report.marks.isNotEmpty)
           _sectionCard(
-            cardBg, textColor, subColor,
+            cardBg, border, textColor,
+            accent: _cMarks,
             icon: Icons.recycling,
             title: l10n.ecoSectionMarks,
             child: Column(
@@ -236,7 +274,7 @@ class EcoReportView extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                           decoration: BoxDecoration(
-                            color: (mk.recyclable ? const Color(0xFF16A34A) : Colors.grey)
+                            color: (mk.recyclable ? _cMarks : Colors.grey)
                                 .withValues(alpha: 0.14),
                             borderRadius: BorderRadius.circular(8),
                           ),
@@ -244,7 +282,7 @@ class EcoReportView extends StatelessWidget {
                               style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
-                                  color: mk.recyclable ? const Color(0xFF16A34A) : subColor)),
+                                  color: mk.recyclable ? _cMarks : subColor)),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
@@ -259,7 +297,7 @@ class EcoReportView extends StatelessWidget {
                                     : l10n.ecoMarkNotRecyclable,
                                 style: TextStyle(
                                     fontSize: 11,
-                                    color: mk.recyclable ? const Color(0xFF16A34A) : subColor),
+                                    color: mk.recyclable ? _cMarks : subColor),
                               ),
                             ],
                           ),
@@ -274,7 +312,8 @@ class EcoReportView extends StatelessWidget {
         // ── Состав ──
         if (report.composition.isNotEmpty)
           _sectionCard(
-            cardBg, textColor, subColor,
+            cardBg, border, textColor,
+            accent: _cComposition,
             icon: Icons.inventory_2_outlined,
             title: l10n.ecoSectionComposition,
             child: Text(report.composition,
@@ -284,7 +323,8 @@ class EcoReportView extends StatelessWidget {
         // ── Утилизация (нумерованные шаги) ──
         if (report.disposal.isNotEmpty)
           _sectionCard(
-            cardBg, textColor, subColor,
+            cardBg, border, textColor,
+            accent: _cDisposal,
             icon: Icons.delete_sweep_outlined,
             title: l10n.ecoSectionDisposal,
             child: Column(
@@ -299,7 +339,7 @@ class EcoReportView extends StatelessWidget {
                           width: 22, height: 22,
                           alignment: Alignment.center,
                           decoration: const BoxDecoration(
-                            color: Color(0xFF16A34A), shape: BoxShape.circle),
+                            color: _cDisposal, shape: BoxShape.circle),
                           child: Text('${i + 1}',
                               style: const TextStyle(
                                   fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)),
@@ -319,7 +359,8 @@ class EcoReportView extends StatelessWidget {
         // ── Советы ──
         if (report.tips.isNotEmpty)
           _sectionCard(
-            cardBg, textColor, subColor,
+            cardBg, border, textColor,
+            accent: _cTips,
             icon: Icons.lightbulb_outline,
             title: l10n.ecoSectionTips,
             child: Column(
@@ -330,7 +371,7 @@ class EcoReportView extends StatelessWidget {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.eco, size: 16, color: Color(0xFF16A34A)),
+                        const Icon(Icons.check_circle_outline, size: 16, color: _cTips),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(t,
@@ -346,7 +387,7 @@ class EcoReportView extends StatelessWidget {
     );
   }
 
-  Widget _card(Color bg,
+  Widget _card(Color bg, Color border,
       {required Widget child, EdgeInsets padding = const EdgeInsets.all(16)}) {
     return Container(
       width: double.infinity,
@@ -354,16 +395,68 @@ class EcoReportView extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF16A34A).withValues(alpha: 0.18)),
+        border: Border.all(color: border),
       ),
       child: child,
     );
   }
 
+  Widget _tappableCard(
+    Color bg,
+    Color border, {
+    required Color accent,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: _card(
+          bg, border,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: accent, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: TextStyle(
+                            fontSize: 14.5, fontWeight: FontWeight.w700, color: accent)),
+                    const SizedBox(height: 2),
+                    Text(subtitle,
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            color: accent.withValues(alpha: 0.85))),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: accent.withValues(alpha: 0.7)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _sectionCard(
     Color bg,
-    Color textColor,
-    Color subColor, {
+    Color border,
+    Color textColor, {
+    required Color accent,
     required IconData icon,
     required String title,
     required Widget child,
@@ -371,17 +464,24 @@ class EcoReportView extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: _card(
-        bg,
+        bg, border,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(icon, size: 18, color: const Color(0xFF16A34A)),
-                const SizedBox(width: 8),
+                Container(
+                  width: 30, height: 30,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(icon, size: 17, color: accent),
+                ),
+                const SizedBox(width: 10),
                 Text(title,
                     style: TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w700, color: textColor)),
+                        fontSize: 13.5, fontWeight: FontWeight.w700, color: textColor)),
               ],
             ),
             const SizedBox(height: 12),

@@ -41,6 +41,31 @@ class _EcoHistoryScreenState extends State<EcoHistoryScreen> {
     await _load();
   }
 
+  Future<void> _clearAll() async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.ecoHistoryClear),
+        content: Text(l10n.ecoHistoryClearConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.actionCancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.actionDelete,
+                style: const TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _service.clear();
+    await _load();
+  }
+
   String _formatDate(DateTime d) {
     String two(int n) => n.toString().padLeft(2, '0');
     return '${two(d.day)}.${two(d.month)}.${d.year} ${two(d.hour)}:${two(d.minute)}';
@@ -59,9 +84,18 @@ class _EcoHistoryScreenState extends State<EcoHistoryScreen> {
       backgroundColor: scaffoldBg,
       appBar: AppBar(
         title: Text(l10n.ecoHistoryTitle),
+        centerTitle: true,
         backgroundColor: isDark ? const Color(0xFF141E2B) : Colors.white,
         foregroundColor: textColor,
         elevation: 0,
+        actions: [
+          if (_entries.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete_sweep_outlined),
+              tooltip: l10n.ecoHistoryClear,
+              onPressed: _clearAll,
+            ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF16A34A)))
@@ -208,7 +242,12 @@ class _EcoHistoryDetailScreenState extends State<_EcoHistoryDetailScreen> {
     final l10n = AppLocalizations.of(context);
     setState(() => _exporting = true);
     try {
-      await EcoPdfService().shareReport(widget.entry.report, l10n);
+      await EcoPdfService().saveToHome(widget.entry.report, l10n);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.ecoSavedPdf)),
+        );
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -231,6 +270,7 @@ class _EcoHistoryDetailScreenState extends State<_EcoHistoryDetailScreen> {
       backgroundColor: scaffoldBg,
       appBar: AppBar(
         title: Text(l10n.ecoTitle),
+        centerTitle: true,
         backgroundColor: isDark ? const Color(0xFF141E2B) : Colors.white,
         foregroundColor: textColor,
         elevation: 0,

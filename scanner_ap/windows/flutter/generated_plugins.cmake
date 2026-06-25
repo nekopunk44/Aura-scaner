@@ -9,6 +9,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_windows
   flutter_doc_scanner
   flutter_secure_storage_windows
+  geolocator_windows
   local_auth_windows
   permission_handler_windows
   printing

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -15,7 +16,12 @@ import 'eco_report_view.dart';
 /// (эко-балл, материалы, переработка, значки), экспорт в PDF и история.
 class EcoPackagingScreen extends StatefulWidget {
   final bool autoCamera;
-  const EcoPackagingScreen({super.key, this.autoCamera = false});
+
+  /// Готовый снимок (из камеры режима «Эко») — сразу анализируется без шага
+  /// выбора фото.
+  final File? initialImage;
+
+  const EcoPackagingScreen({super.key, this.autoCamera = false, this.initialImage});
 
   @override
   State<EcoPackagingScreen> createState() => _EcoPackagingScreenState();
@@ -33,7 +39,12 @@ class _EcoPackagingScreenState extends State<EcoPackagingScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.autoCamera) {
+    if (widget.initialImage != null) {
+      // Снимок уже сделан в камере — сразу анализируем.
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _setImage(widget.initialImage!),
+      );
+    } else if (widget.autoCamera) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _takePicture());
     }
   }
@@ -113,6 +124,8 @@ class _EcoPackagingScreenState extends State<EcoPackagingScreen> {
       _report = null;
       _errorKind = null;
     });
+    // Без промежуточного шага: сразу запускаем анализ выбранного фото.
+    _analyze();
   }
 
   Future<void> _analyze() async {
@@ -149,7 +162,12 @@ class _EcoPackagingScreenState extends State<EcoPackagingScreen> {
     final l10n = AppLocalizations.of(context);
     setState(() => _exporting = true);
     try {
-      await EcoPdfService().shareReport(report, l10n, sourceImage: _imageFile);
+      await EcoPdfService().saveToHome(report, l10n, sourceImage: _imageFile);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.ecoSavedPdf)),
+        );
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -227,10 +245,16 @@ class _EcoPackagingScreenState extends State<EcoPackagingScreen> {
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
 
+    // Результат — обычный скролл сверху; до результата — центрируем блок.
+    final showResult = _report != null && !_isLoading;
+    final isEmptyState =
+        _imageFile == null && _errorKind == null && !_isLoading;
+
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
         title: Text(l10n.ecoTitle),
+        centerTitle: true,
         backgroundColor: isDark ? const Color(0xFF141E2B) : Colors.white,
         foregroundColor: textColor,
         elevation: 0,
@@ -245,196 +269,224 @@ class _EcoPackagingScreenState extends State<EcoPackagingScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Превью/выбор фото.
-          GestureDetector(
-            onTap: _pickSource,
-            child: Container(
-              height: 220,
-              decoration: BoxDecoration(
-                color: cardBg,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: _imageFile != null
-                      ? _accent.withValues(alpha: 0.5)
-                      : (isDark ? Colors.white12 : const Color(0xFFE8EDF5)),
-                  width: _imageFile != null ? 1.5 : 1,
+      body: SafeArea(
+        child: showResult
+            ? ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  _imageCard(l10n, isDark, cardBg, textColor, subColor),
+                  const SizedBox(height: 20),
+                  _resultSection(l10n),
+                  const SizedBox(height: 24),
+                ],
+              )
+            : LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: ConstrainedBox(
+                    constraints:
+                        BoxConstraints(minHeight: constraints.maxHeight - 32),
+                    child: IntrinsicHeight(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _imageCard(l10n, isDark, cardBg, textColor, subColor),
+                          if (isEmptyState) ...[
+                            const SizedBox(height: 24),
+                            _buildBenefits(l10n, cardBg, textColor, subColor),
+                          ],
+                          if (_errorKind != null && !_isLoading) ...[
+                            const SizedBox(height: 20),
+                            _errorCard(l10n, isDark, textColor),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              child: _imageFile != null
-                  ? Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(15),
-                          child: Image.file(_imageFile!,
-                              fit: BoxFit.cover, width: double.infinity, height: 220),
+      ),
+    );
+  }
+
+  Widget _imageCard(AppLocalizations l10n, bool isDark, Color cardBg,
+      Color textColor, Color subColor) {
+    return GestureDetector(
+      onTap: _isLoading ? null : _pickSource,
+      child: Container(
+        height: 220,
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: _imageFile != null
+                ? _accent.withValues(alpha: 0.5)
+                : (isDark ? Colors.white12 : const Color(0xFFE8EDF5)),
+            width: _imageFile != null ? 1.5 : 1,
+          ),
+        ),
+        child: _imageFile != null
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(15),
+                    child: Image.file(_imageFile!,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: 220),
+                  ),
+                  if (!_isLoading)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(20),
                         ),
-                        Positioned(
-                          right: 8, top: 8,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.refresh,
+                                color: Colors.white, size: 14),
+                            const SizedBox(width: 4),
+                            Text(l10n.wmChange,
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  // Единый индикатор анализа: матовое размытие поверх фото.
+                  if (_isLoading)
+                    Positioned.fill(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(15),
+                        child: BackdropFilter(
+                          filter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.55),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Row(
+                            color: Colors.black.withValues(alpha: 0.4),
+                            alignment: Alignment.center,
+                            child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.refresh, color: Colors.white, size: 14),
-                                const SizedBox(width: 4),
-                                Text(l10n.wmChange,
-                                    style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                const SizedBox(
+                                  width: 36,
+                                  height: 36,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2.6, color: Colors.white),
+                                ),
+                                const SizedBox(height: 14),
+                                Text(l10n.aiAnalyzing,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600)),
                               ],
                             ),
                           ),
                         ),
-                      ],
-                    )
-                  : Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 64, height: 64,
-                          decoration: BoxDecoration(
-                            color: _accent.withValues(alpha: 0.12),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.eco, size: 32, color: _accent),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(l10n.aiSelectEcoPhoto,
-                            style: TextStyle(
-                                fontSize: 15, fontWeight: FontWeight.w600, color: textColor)),
-                        const SizedBox(height: 4),
-                        Text(l10n.aiTapToSelect,
-                            style: TextStyle(fontSize: 12, color: subColor)),
-                      ],
+                      ),
                     ),
-            ),
-          ),
-          const SizedBox(height: 12),
+                ],
+              )
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: _accent.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.eco, size: 32, color: _accent),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(l10n.aiSelectEcoPhoto,
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: textColor)),
+                  const SizedBox(height: 4),
+                  Text(l10n.aiTapToSelect,
+                      style: TextStyle(fontSize: 12, color: subColor)),
+                ],
+              ),
+      ),
+    );
+  }
 
-          // Кнопка анализа на всю ширину (выбор фото — по тапу на блок выше).
+  Widget _errorCard(AppLocalizations l10n, bool isDark, Color textColor) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.red.withValues(alpha: isDark ? 0.12 : 0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.error_outline, color: Colors.red.shade400, size: 36),
+          const SizedBox(height: 12),
+          Text(_errorText(l10n, _errorKind!),
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: textColor, height: 1.4)),
+          const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: (_imageFile == null || _isLoading) ? null : _analyze,
-              icon: _isLoading
-                  ? const SizedBox(
-                      width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.eco, size: 18),
-              label: Text(_isLoading ? l10n.aiAnalyzing : l10n.aiAnalyze),
+              onPressed: _isLoading ? null : _analyze,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: Text(l10n.actionRetry),
               style: ElevatedButton.styleFrom(
                 backgroundColor: _accent,
-                disabledBackgroundColor: _accent.withValues(alpha: 0.4),
                 foregroundColor: Colors.white,
                 elevation: 0,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ),
-
-          // Пустое состояние: показываем ценность фичи, а не пустоту.
-          if (_imageFile == null &&
-              _report == null &&
-              _errorKind == null &&
-              !_isLoading) ...[
-            const SizedBox(height: 24),
-            _buildBenefits(l10n, cardBg, textColor, subColor),
-          ],
-
-          if (_isLoading) ...[
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 28),
-              decoration: BoxDecoration(
-                color: cardBg,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: _accent.withValues(alpha: 0.25)),
-              ),
-              child: Column(
-                children: [
-                  const SizedBox(
-                    width: 30, height: 30,
-                    child: CircularProgressIndicator(strokeWidth: 2.5, color: _accent),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(l10n.aiAnalyzing, style: TextStyle(fontSize: 14, color: subColor)),
-                ],
-              ),
-            ),
-          ],
-
-          if (_errorKind != null && !_isLoading) ...[
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: Colors.red.withValues(alpha: isDark ? 0.12 : 0.06),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.red.withValues(alpha: 0.35)),
-              ),
-              child: Column(
-                children: [
-                  Icon(Icons.error_outline, color: Colors.red.shade400, size: 36),
-                  const SizedBox(height: 12),
-                  Text(_errorText(l10n, _errorKind!),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 14, color: textColor, height: 1.4)),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isLoading ? null : _analyze,
-                      icon: const Icon(Icons.refresh, size: 18),
-                      label: Text(l10n.actionRetry),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _accent,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          if (_report != null && !_isLoading) ...[
-            const SizedBox(height: 20),
-            EcoReportView(report: _report!),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _exporting ? null : _exportPdf,
-                icon: _exporting
-                    ? const SizedBox(
-                        width: 16, height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: _accent),
-                      )
-                    : const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                label: Text(l10n.ecoExportPdf),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _accent,
-                  side: const BorderSide(color: _accent),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 24),
         ],
       ),
+    );
+  }
+
+  Widget _resultSection(AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        EcoReportView(report: _report!),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _exporting ? null : _exportPdf,
+            icon: _exporting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: _accent),
+                  )
+                : const Icon(Icons.picture_as_pdf_outlined, size: 18),
+            label: Text(l10n.ecoExportPdf),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _accent,
+              side: const BorderSide(color: _accent),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape:
+                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

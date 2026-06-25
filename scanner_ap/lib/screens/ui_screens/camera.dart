@@ -102,7 +102,7 @@ class _CameraScreenState extends State<CameraScreen>
     'Убрать пятна',
     'Подсветка текста',
     'Удалить водяной знак',
-    'Ключевые моменты',
+    'Добавить пароль',
     'Эко упаковка',
   };
 
@@ -501,9 +501,10 @@ class _CameraScreenState extends State<CameraScreen>
       final quadFound = _updatePhotoQuad(image, featureName);
       final bool detected;
       if (_isRestorePhotoFeature(featureName) ||
-          _isRemoveWatermarkFeature(featureName)) {
-        // Фоторежимы: только реальный четырёхугольник (без ложных автоснимков
-        // эвристики на фактурном фоне — ковёр/стол).
+          _isRemoveWatermarkFeature(featureName) ||
+          _isEcoFeature(featureName)) {
+        // Фоторежимы (вкл. эко-упаковку): только реальный четырёхугольник —
+        // без ложных автоснимков эвристики на фактурном фоне (ковёр/стол).
         detected = quadFound;
       } else if (_isDocumentSheetFeature(featureName)) {
         // Документ: квадрат ИЛИ эвристика. Геометрия ловит лист где угодно в
@@ -558,6 +559,7 @@ class _CameraScreenState extends State<CameraScreen>
   bool _updatePhotoQuad(CameraImage image, String featureName) {
     if (!_isRestorePhotoFeature(featureName) &&
         !_isRemoveWatermarkFeature(featureName) &&
+        !_isEcoFeature(featureName) &&
         !_isDocumentSheetFeature(featureName)) {
       return false;
     }
@@ -1664,6 +1666,22 @@ class _CameraScreenState extends State<CameraScreen>
         return;
       }
 
+      if (_isEcoFeature(_selectedFeature)) {
+        // Снимок упаковки → эко-анализ. Камера остаётся открытой: после
+        // возврата с экрана отчёта перезапускаем детекцию.
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => EcoPackagingScreen(initialImage: File(file.path)),
+          ),
+        );
+        if (!mounted) return;
+        _isScanning = false;
+        captureModeController.isScanning = false;
+        _startDocumentDetectionStream();
+        return;
+      }
+
       if (isMultiPageLimited || isMultiPageUnlimited) {
         final documentImage = await _autoCropDocumentXFile(file);
         if (!mounted) return;
@@ -1978,6 +1996,19 @@ class _CameraScreenState extends State<CameraScreen>
         galleryImage,
         autoDetectOnOpen: captureModeController.captureMode == 'Автоматически',
       );
+      return;
+    }
+
+    if (_isEcoFeature(_selectedFeature)) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              EcoPackagingScreen(initialImage: File(galleryImage.path)),
+        ),
+      );
+      if (!mounted) return;
+      _startDocumentDetectionStream();
       return;
     }
 
@@ -2327,6 +2358,10 @@ class _CameraScreenState extends State<CameraScreen>
     return featureName == 'Удалить водяной знак';
   }
 
+  bool _isEcoFeature(String featureName) {
+    return featureName == 'Эко упаковка';
+  }
+
   bool _isDocumentSheetFeature(String featureName) {
     return featureName == 'Документ' || featureName == '+10 страниц';
   }
@@ -2335,7 +2370,8 @@ class _CameraScreenState extends State<CameraScreen>
     return feature['isDocument'] == true ||
         _isRestorePhotoFeature(feature['name'] as String? ?? '') ||
         _isRemoveSpotsFeature(feature['name'] as String? ?? '') ||
-        _isRemoveWatermarkFeature(feature['name'] as String? ?? '');
+        _isRemoveWatermarkFeature(feature['name'] as String? ?? '') ||
+        _isEcoFeature(feature['name'] as String? ?? '');
   }
 
   bool _canUseFeature(String featureName) {
@@ -2375,7 +2411,7 @@ class _CameraScreenState extends State<CameraScreen>
       return true;
     }
 
-    if (icon == Icons.vpn_key_outlined) {
+    if (icon == Icons.lock_outline) {
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -2383,14 +2419,6 @@ class _CameraScreenState extends State<CameraScreen>
             onSaved: () => widget.onScanCompleted?.call(''),
           ),
         ),
-      ).then(_afterToolReturn);
-      return true;
-    }
-
-    if (icon == Icons.eco) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const EcoPackagingScreen()),
       ).then(_afterToolReturn);
       return true;
     }
@@ -2914,6 +2942,26 @@ class _CameraScreenState extends State<CameraScreen>
         setCaptureModeManual: _setCaptureModeManual,
         onBack: () => Navigator.pop(context),
         onSettings: _openSettings,
+      ),
+      // Эко-упаковка — фото-режим авто-сканирования (как «Восстановить»),
+      // но снимок уходит в эко-анализ. Переиспользуем тот же вью с зелёным
+      // оверлеем и эко-заголовком.
+      'Эко упаковка': () => RestorePhotoCameraView(
+        cameraController: _cameraController,
+        captureModeController: captureModeController,
+        isDocumentDetected: _isDocumentDetected,
+        isScanning: _isScanning,
+        photoQuad: _photoQuad,
+        previewAspect: _previewAspect,
+        takePicture: _takePicture,
+        pickImageFromGallery: _pickImageFromGallery,
+        setCaptureModeAuto: _setCaptureModeAutoInline,
+        setCaptureModeManual: _setCaptureModeManual,
+        onBack: () => Navigator.pop(context),
+        onSettings: _openSettings,
+        featureTitle: AppLocalizations.of(context).ecoTitle,
+        featureSubtitle: AppLocalizations.of(context).ecoCameraHint,
+        overlayKind: CaptureStatusOverlayKind.eco,
       ),
       'Убрать пятна': () => RemoveSpotsCameraView(
         cameraController: _cameraController,

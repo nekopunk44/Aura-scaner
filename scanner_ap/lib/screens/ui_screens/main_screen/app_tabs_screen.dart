@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../all_actions_screen.dart';
@@ -343,7 +344,7 @@ class _ImportFab extends StatelessWidget {
   }
 }
 
-class _NavItem extends StatelessWidget {
+class _NavItem extends StatefulWidget {
   final IconData icon;
   final IconData activeIcon;
   final String label;
@@ -363,9 +364,83 @@ class _NavItem extends StatelessWidget {
   });
 
   @override
+  State<_NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<_NavItem>
+    with SingleTickerProviderStateMixin {
+  // Активная иконка «оживает» — лёгкий пульс каждые [_interval].
+  static const _interval = Duration(seconds: 3);
+
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
+  late final Animation<double> _rotation;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 1.22).chain(CurveTween(curve: Curves.easeOut)),
+        weight: 35,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.22, end: 1.0).chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 65,
+      ),
+    ]).animate(_controller);
+    _rotation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 0.12), weight: 25),
+      TweenSequenceItem(tween: Tween(begin: 0.12, end: -0.12), weight: 50),
+      TweenSequenceItem(
+        tween: Tween(begin: -0.12, end: 0.0).chain(CurveTween(curve: Curves.easeOut)),
+        weight: 25,
+      ),
+    ]).animate(_controller);
+    if (widget.isSelected) _startPulsing();
+  }
+
+  void _startPulsing() {
+    _timer?.cancel();
+    _controller.forward(from: 0); // первый пульс сразу при выборе
+    _timer = Timer.periodic(_interval, (_) {
+      if (mounted && widget.isSelected) _controller.forward(from: 0);
+    });
+  }
+
+  void _stopPulsing() {
+    _timer?.cancel();
+    _timer = null;
+    _controller.value = 0; // возврат в обычный вид (scale 1.0, без наклона)
+  }
+
+  @override
+  void didUpdateWidget(covariant _NavItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isSelected && !oldWidget.isSelected) {
+      _startPulsing();
+    } else if (!widget.isSelected && oldWidget.isSelected) {
+      _stopPulsing();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final isSelected = widget.isSelected;
     return InkWell(
-      onTap: onTap,
+      onTap: widget.onTap,
       borderRadius: BorderRadius.circular(28),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -376,11 +451,21 @@ class _NavItem extends StatelessWidget {
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
               transitionBuilder: (child, animation) => ScaleTransition(scale: animation, child: child),
-              child: Icon(
-                isSelected ? activeIcon : icon,
+              child: AnimatedBuilder(
                 key: ValueKey(isSelected),
-                size: 24,
-                color: isSelected ? selectedColor : unselectedColor,
+                animation: _controller,
+                builder: (context, child) => Transform.rotate(
+                  angle: isSelected ? _rotation.value : 0,
+                  child: Transform.scale(
+                    scale: isSelected ? _scale.value : 1.0,
+                    child: child,
+                  ),
+                ),
+                child: Icon(
+                  isSelected ? widget.activeIcon : widget.icon,
+                  size: 24,
+                  color: isSelected ? widget.selectedColor : widget.unselectedColor,
+                ),
               ),
             ),
             const SizedBox(height: 4),
@@ -389,9 +474,9 @@ class _NavItem extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                color: isSelected ? selectedColor : unselectedColor,
+                color: isSelected ? widget.selectedColor : widget.unselectedColor,
               ),
-              child: Text(label),
+              child: Text(widget.label),
             ),
           ],
         ),

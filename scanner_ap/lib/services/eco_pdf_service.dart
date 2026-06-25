@@ -1,14 +1,17 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/eco_report.dart';
+import 'document_registry.dart';
 
-/// Собирает премиальный PDF-отчёт эко-сканера и отдаёт его в системный «Поделиться».
+/// Собирает премиальный PDF-отчёт эко-сканера, сохраняет его в документы
+/// приложения и регистрирует на главном экране (как обычный документ).
 class EcoPdfService {
   static const _green = PdfColor.fromInt(0xFF16A34A);
   static const _amber = PdfColor.fromInt(0xFFD97706);
@@ -16,13 +19,29 @@ class EcoPdfService {
   static const _ink = PdfColor.fromInt(0xFF1A1A2E);
   static const _muted = PdfColor.fromInt(0xFF6B7A99);
 
-  Future<void> shareReport(
+  /// Сохраняет отчёт в PDF в каталог документов и добавляет на главный экран.
+  /// Возвращает имя сохранённого файла (для подтверждения пользователю).
+  Future<String> saveToHome(
     EcoReport report,
     AppLocalizations l10n, {
     File? sourceImage,
   }) async {
     final bytes = await buildPdf(report, l10n, sourceImage: sourceImage);
-    await Printing.sharePdf(bytes: bytes, filename: 'eco_report.pdf');
+    final dir = await getApplicationDocumentsDirectory();
+    final name = _reportName(l10n, report);
+    final path = '${dir.path}/$name.pdf';
+    await File(path).writeAsBytes(bytes);
+
+    await DocumentRegistry().load();
+    await DocumentRegistry().add(DocEntry(localPath: path, name: name));
+    return name;
+  }
+
+  String _reportName(AppLocalizations l10n, EcoReport report) {
+    final d = report.createdAt;
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${l10n.ecoReportFileName} '
+        '${two(d.day)}.${two(d.month)}.${d.year} ${two(d.hour)}-${two(d.minute)}';
   }
 
   Future<Uint8List> buildPdf(
@@ -48,26 +67,30 @@ class EcoPdfService {
         margin: const pw.EdgeInsets.all(32),
         theme: pw.ThemeData.withFont(base: font, bold: bold),
         build: (context) => [
-          // Шапка: заголовок + эко-балл.
+          // Шапка: заголовок + эко-балл (выровнены по центру по вертикали).
           pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
             children: [
               pw.Expanded(
                 child: pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Text(l10n.ecoPdfTitle,
-                        style: pw.TextStyle(font: bold, fontSize: 20, color: _ink)),
-                    if (report.verdict.isNotEmpty) ...[
-                      pw.SizedBox(height: 4),
-                      pw.Text(report.verdict,
-                          style: pw.TextStyle(fontSize: 12, color: _muted)),
-                    ],
+                        style: pw.TextStyle(font: bold, fontSize: 19, color: _ink)),
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      report.verdict.isNotEmpty
+                          ? report.verdict
+                          : l10n.ecoScoreLabel,
+                      style: pw.TextStyle(fontSize: 12, color: _muted),
+                    ),
                   ],
                 ),
               ),
+              pw.SizedBox(width: 14),
               pw.Container(
-                padding: const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                width: 64,
+                padding: const pw.EdgeInsets.symmetric(vertical: 10),
                 decoration: pw.BoxDecoration(
                   color: scoreColor(report.clampedScore),
                   borderRadius: pw.BorderRadius.circular(12),
@@ -86,10 +109,7 @@ class EcoPdfService {
               ),
             ],
           ),
-          pw.SizedBox(height: 6),
-          pw.Text(l10n.ecoScoreLabel,
-              style: pw.TextStyle(fontSize: 10, color: _muted)),
-          pw.Divider(color: PdfColors.grey300, height: 24),
+          pw.Divider(color: PdfColors.grey300, height: 28),
 
           if (photo != null) ...[
             pw.Center(

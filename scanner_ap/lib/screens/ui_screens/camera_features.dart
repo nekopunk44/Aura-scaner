@@ -85,10 +85,10 @@ final List<Map<String, dynamic>> cameraFeatures = [
     'isDocument': false
   },
   {
-    'name': 'Ключевые моменты',
-    'label': 'Моменты',
-    'icon': Icons.vpn_key_outlined,
-    'description': 'Выделение ключевых моментов в тексте',
+    'name': 'Добавить пароль',
+    'label': 'Пароль',
+    'icon': Icons.lock_outline,
+    'description': 'Пароль на любой файл',
     'isDocument': false
   },
   {

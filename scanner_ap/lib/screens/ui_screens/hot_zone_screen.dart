@@ -1,11 +1,23 @@
 import 'dart:io';
-import 'dart:ui' as ui;
-import 'package:flutter/material.dart';
+import 'dart:math' as math;
+
 import 'package:camera/camera.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_tesseract_ocr/flutter_tesseract_ocr.dart';
+import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import '../../l10n/app_localizations.dart';
 
+/// «Горячая зона»: наводишь камеру, тапаешь по подписи/тексту/визитке —
+/// распознаётся область вокруг тапа и из неё собирается карточка контакта.
+///
+/// OCR — Tesseract `rus+eng` (кириллица + латиница). Координаты тапа
+/// переводятся в пиксели снимка через cover-преобразование, а сам снимок
+/// доворачивается по EXIF (`bakeOrientation`), чтобы вырез совпадал с местом
+/// тапа независимо от ориентации сенсора.
 class HotZoneScreen extends StatefulWidget {
   const HotZoneScreen({super.key});
 
@@ -13,10 +25,19 @@ class HotZoneScreen extends StatefulWidget {
   State<HotZoneScreen> createState() => _HotZoneScreenState();
 }
 
+enum _CamState { loading, ready, denied, error }
+
 class _HotZoneScreenState extends State<HotZoneScreen> {
+  // Доля кадра, попадающая в «горячую зону» вокруг тапа (широкая и низкая —
+  // под строку текста / подпись).
+  static const double _fracW = 0.72;
+  static const double _fracH = 0.24;
+  static const _accent = Color(0xFF2CA5E0);
+
   CameraController? _camCtrl;
-  bool _cameraReady = false;
+  _CamState _state = _CamState.loading;
   bool _processing = false;
+  Offset? _tapPos;
   _ContactCard? _card;
 
   @override
@@ -32,60 +53,101 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
   }
 
   Future<void> _initCamera() async {
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) return;
-    final ctrl = CameraController(cameras.first, ResolutionPreset.high, enableAudio: false);
-    await ctrl.initialize();
-    if (!mounted) return;
-    _camCtrl = ctrl;
-    setState(() => _cameraReady = true);
+    if (mounted) setState(() => _state = _CamState.loading);
+    try {
+      final status = await Permission.camera.request();
+      if (!status.isGranted) {
+        if (mounted) setState(() => _state = _CamState.denied);
+        return;
+      }
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        if (mounted) setState(() => _state = _CamState.error);
+        return;
+      }
+      final ctrl = CameraController(
+        cameras.first,
+        ResolutionPreset.high,
+        enableAudio: false,
+      );
+      await ctrl.initialize();
+      if (!mounted) {
+        await ctrl.dispose();
+        return;
+      }
+      setState(() {
+        _camCtrl = ctrl;
+        _state = _CamState.ready;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _state = _CamState.error);
+    }
   }
 
-  Future<void> _captureAndAnalyze(TapDownDetails details, BoxConstraints constraints) async {
-    if (_processing || _camCtrl == null || !_cameraReady) return;
-    setState(() { _processing = true; _card = null; });
+  Future<void> _captureAndAnalyze(
+      TapDownDetails details, BoxConstraints constraints) async {
+    if (_processing || _camCtrl == null || _state != _CamState.ready) return;
     final l10n = AppLocalizations.of(context);
+    setState(() {
+      _processing = true;
+      _card = null;
+      _tapPos = details.localPosition;
+    });
 
+    String? tmpPath;
     try {
       final xFile = await _camCtrl!.takePicture();
-      final imageBytes = await File(xFile.path).readAsBytes();
-      final codec = await ui.instantiateImageCodec(imageBytes);
-      final frame = await codec.getNextFrame();
-      final fullImage = frame.image;
+      final bytes = await File(xFile.path).readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) throw Exception('decode failed');
+      // Доворачиваем по EXIF — снимок становится «как превью» (портрет).
+      final up = img.bakeOrientation(decoded);
+      final uW = up.width.toDouble();
+      final uH = up.height.toDouble();
 
-      final tapX = details.localPosition.dx / constraints.maxWidth;
-      final tapY = details.localPosition.dy / constraints.maxHeight;
+      // Cover-преобразование: бокс превью → пиксели снимка (то же, как на экране).
+      final bW = constraints.maxWidth;
+      final bH = constraints.maxHeight;
+      final s = math.max(bW / uW, bH / uH);
+      final dx = (bW - uW * s) / 2;
+      final dy = (bH - uH * s) / 2;
+      final imgX = (details.localPosition.dx - dx) / s;
+      final imgY = (details.localPosition.dy - dy) / s;
 
-      final cropW = (fullImage.width * 0.5).round();
-      final cropH = (fullImage.height * 0.4).round();
-      final cropX = ((fullImage.width * tapX) - cropW / 2).clamp(0, fullImage.width - cropW).round();
-      final cropY = ((fullImage.height * tapY) - cropH / 2).clamp(0, fullImage.height - cropH).round();
+      final cropW = (uW * _fracW).round();
+      final cropH = (uH * _fracH).round();
+      final cropX = (imgX - cropW / 2).round().clamp(0, up.width - cropW);
+      final cropY = (imgY - cropH / 2).round().clamp(0, up.height - cropH);
 
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-      canvas.drawImageRect(
-        fullImage,
-        Rect.fromLTWH(cropX.toDouble(), cropY.toDouble(), cropW.toDouble(), cropH.toDouble()),
-        Rect.fromLTWH(0, 0, cropW.toDouble(), cropH.toDouble()),
-        Paint(),
-      );
-      final picture = recorder.endRecording();
-      final cropped = await picture.toImage(cropW, cropH);
-      final cropBytes = (await cropped.toByteData(format: ui.ImageByteFormat.png))!;
+      var crop = img.copyCrop(up,
+          x: cropX, y: cropY, width: cropW, height: cropH);
+      // Мелкий вырез → апскейл для Tesseract (точность растёт).
+      if (crop.width < 1000) {
+        crop = img.copyResize(crop, width: 1000);
+      }
 
       final dir = await getApplicationDocumentsDirectory();
-      final tmpPath = '${dir.path}/hotzone_crop_${DateTime.now().millisecondsSinceEpoch}.png';
-      await File(tmpPath).writeAsBytes(cropBytes.buffer.asUint8List());
+      tmpPath =
+          '${dir.path}/hotzone_crop_${DateTime.now().millisecondsSinceEpoch}.png';
+      await File(tmpPath).writeAsBytes(img.encodePng(crop));
 
-      final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
-      final inputImage = InputImage.fromFilePath(tmpPath);
-      final result = await recognizer.processImage(inputImage);
-      await recognizer.close();
+      final text = await FlutterTesseractOcr.extractText(
+        tmpPath,
+        language: 'rus+eng',
+      );
 
-      try { await File(tmpPath).delete(); } catch (_) {}
-
-      final card = _parseContact(result.text);
-      if (mounted) setState(() { _card = card; _processing = false; });
+      if (!mounted) return;
+      if (text.trim().isEmpty) {
+        setState(() => _processing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.hotZoneNoText)),
+        );
+        return;
+      }
+      setState(() {
+        _card = _parseContact(text);
+        _processing = false;
+      });
     } catch (e) {
       if (mounted) {
         setState(() => _processing = false);
@@ -93,13 +155,23 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
           SnackBar(content: Text('${l10n.commonError}: $e')),
         );
       }
+    } finally {
+      if (tmpPath != null) {
+        try {
+          await File(tmpPath).delete();
+        } catch (_) {}
+      }
     }
   }
 
   _ContactCard _parseContact(String rawText) {
-    final lines = rawText.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+    final lines = rawText
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
 
-    final phoneRe = RegExp(r'[\+\(]?[\d\s\-\(\)]{7,}');
+    final phoneRe = RegExp(r'[\+\(]?[\d][\d\s\-\(\)]{6,}');
     final emailRe = RegExp(r'[\w\.\-]+@[\w\.\-]+\.\w{2,}');
     final urlRe = RegExp(r'(https?://|www\.)\S+');
 
@@ -116,7 +188,9 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
         phone = phoneRe.firstMatch(line)!.group(0)?.trim();
       } else if (url == null && urlRe.hasMatch(line)) {
         url = urlRe.firstMatch(line)!.group(0);
-      } else if (name == null && line.length > 2 && line.length < 50 &&
+      } else if (name == null &&
+          line.length > 2 &&
+          line.length < 50 &&
           !line.contains(RegExp(r'\d{3}'))) {
         name = line;
       } else if (line.length < 80) {
@@ -134,6 +208,22 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
     );
   }
 
+  Future<void> _launch(Uri uri) async {
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
+  void _launchPhone(String phone) =>
+      _launch(Uri.parse('tel:${phone.replaceAll(RegExp(r'[^\d+]'), '')}'));
+
+  void _launchEmail(String email) => _launch(Uri.parse('mailto:$email'));
+
+  void _launchUrl(String url) {
+    final normalized = url.startsWith('http') ? url : 'https://$url';
+    _launch(Uri.parse(normalized));
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -144,84 +234,163 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
       backgroundColor: Colors.black,
       appBar: AppBar(
         title: Text(l10n.hotZoneTitle,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w600)),
         backgroundColor: Colors.black,
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
       ),
-      body: !_cameraReady
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF2CA5E0)))
-          : LayoutBuilder(builder: (ctx, constraints) {
-              return Stack(
-                children: [
-                  GestureDetector(
-                    onTapDown: (d) => _captureAndAnalyze(d, constraints),
-                    child: SizedBox.expand(
-                      child: CameraPreview(_camCtrl!),
-                    ),
-                  ),
-
-                  if (!_processing && _card == null)
-                    Positioned(
-                      bottom: 120,
-                      left: 0, right: 0,
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.touch_app, color: Colors.white70, size: 18),
-                              const SizedBox(width: 8),
-                              Text(l10n.hotZoneTapHint,
-                                  style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  if (_processing)
-                    Positioned.fill(
-                      child: Container(
-                        color: Colors.black54,
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const CircularProgressIndicator(color: Color(0xFF2CA5E0)),
-                              const SizedBox(height: 16),
-                              Text(l10n.hotZoneProcessing,
-                                  style: const TextStyle(color: Colors.white, fontSize: 14)),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  if (_card != null)
-                    Positioned(
-                      left: 16, right: 16, bottom: 24,
-                      child: _buildContactCard(_card!, isDark, textColor, l10n),
-                    ),
-                ],
-              );
-            }),
+      body: switch (_state) {
+        _CamState.loading => const Center(
+            child: CircularProgressIndicator(color: _accent),
+          ),
+        _CamState.denied => _message(
+            l10n,
+            Icons.no_photography_outlined,
+            l10n.hotZonePermission,
+            actionLabel: l10n.hotZoneOpenSettings,
+            onAction: () => openAppSettings(),
+          ),
+        _CamState.error => _message(
+            l10n,
+            Icons.error_outline,
+            l10n.hotZoneCameraError,
+            actionLabel: l10n.actionRetry,
+            onAction: _initCamera,
+          ),
+        _CamState.ready => _buildCamera(l10n, isDark, textColor),
+      },
     );
   }
 
-  Widget _buildContactCard(_ContactCard card, bool isDark, Color textColor, AppLocalizations l10n) {
+  Widget _buildCamera(AppLocalizations l10n, bool isDark, Color textColor) {
+    return LayoutBuilder(builder: (ctx, constraints) {
+      final ctrl = _camCtrl!;
+      var scale = (constraints.maxWidth / constraints.maxHeight) *
+          ctrl.value.aspectRatio;
+      if (scale < 1) scale = 1 / scale;
+
+      return Stack(
+        children: [
+          // Превью «cover» во весь экран (то же преобразование в мэппинге тапа).
+          Positioned.fill(
+            child: ClipRect(
+              child: Transform.scale(
+                scale: scale,
+                alignment: Alignment.center,
+                child: Center(child: CameraPreview(ctrl)),
+              ),
+            ),
+          ),
+
+          // Слой захвата тапов.
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (d) => _captureAndAnalyze(d, constraints),
+            ),
+          ),
+
+          // Рамка «горячей зоны» в месте тапа — видно, что именно снято.
+          if (_tapPos != null) _buildTapBox(constraints),
+
+          // Подсказка.
+          if (!_processing && _card == null)
+            Positioned(
+              bottom: 120,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.touch_app,
+                          color: Colors.white70, size: 18),
+                      const SizedBox(width: 8),
+                      Text(l10n.hotZoneTapHint,
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          if (_processing)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black54,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(color: _accent),
+                      const SizedBox(height: 16),
+                      Text(l10n.hotZoneProcessing,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 14)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          if (_card != null)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 24,
+              child: _buildContactCard(_card!, isDark, textColor, l10n),
+            ),
+        ],
+      );
+    });
+  }
+
+  Widget _buildTapBox(BoxConstraints constraints) {
+    final w = constraints.maxWidth * _fracW;
+    final h = constraints.maxHeight * _fracH;
+    final left = (_tapPos!.dx - w / 2).clamp(0.0, constraints.maxWidth - w);
+    final top = (_tapPos!.dy - h / 2).clamp(0.0, constraints.maxHeight - h);
+    return Positioned(
+      left: left,
+      top: top,
+      width: w,
+      height: h,
+      child: IgnorePointer(
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+                color: _processing ? Colors.amber : _accent, width: 2.5),
+            borderRadius: BorderRadius.circular(12),
+            color: Colors.white.withValues(alpha: 0.06),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContactCard(_ContactCard card, bool isDark, Color textColor,
+      AppLocalizations l10n) {
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
 
     return Container(
       decoration: BoxDecoration(
         color: cardBg,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 20, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 20,
+              offset: const Offset(0, 4))
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -239,7 +408,8 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
             child: Row(
               children: [
                 Container(
-                  width: 44, height: 44,
+                  width: 44,
+                  height: 44,
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.2),
                     shape: BoxShape.circle,
@@ -252,41 +422,56 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(card.name ?? l10n.hotZoneContact,
-                          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700),
                           overflow: TextOverflow.ellipsis),
                       if (card.extras.isNotEmpty)
                         Text(card.extras.first,
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12),
+                            style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.75),
+                                fontSize: 12),
                             overflow: TextOverflow.ellipsis),
                     ],
                   ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, color: Colors.white70, size: 20),
-                  onPressed: () => setState(() => _card = null),
+                  onPressed: () => setState(() {
+                    _card = null;
+                    _tapPos = null;
+                  }),
                 ),
               ],
             ),
           ),
-
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
             child: Column(
               children: [
                 if (card.phone != null)
-                  _cardRow(Icons.phone, card.phone!, isDark),
+                  _cardRow(Icons.phone, card.phone!, isDark,
+                      onTap: () => _launchPhone(card.phone!)),
                 if (card.email != null)
-                  _cardRow(Icons.email_outlined, card.email!, isDark),
+                  _cardRow(Icons.email_outlined, card.email!, isDark,
+                      onTap: () => _launchEmail(card.email!)),
                 if (card.url != null)
-                  _cardRow(Icons.link, card.url!, isDark),
-                if (card.phone == null && card.email == null && card.url == null && card.rawText.isNotEmpty)
-                  _cardRow(Icons.text_fields, card.rawText.length > 120
-                      ? '${card.rawText.substring(0, 120)}…'
-                      : card.rawText, isDark),
+                  _cardRow(Icons.link, card.url!, isDark,
+                      onTap: () => _launchUrl(card.url!)),
+                if (card.phone == null &&
+                    card.email == null &&
+                    card.url == null &&
+                    card.rawText.isNotEmpty)
+                  _cardRow(
+                      Icons.text_fields,
+                      card.rawText.length > 120
+                          ? '${card.rawText.substring(0, 120)}…'
+                          : card.rawText,
+                      isDark),
               ],
             ),
           ),
-
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: SizedBox(
@@ -294,11 +479,15 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.refresh, size: 18),
                 label: Text(l10n.hotZoneScanAgain),
-                onPressed: () => setState(() => _card = null),
+                onPressed: () => setState(() {
+                  _card = null;
+                  _tapPos = null;
+                }),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF2CA5E0),
-                  side: const BorderSide(color: Color(0xFF2CA5E0)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  foregroundColor: _accent,
+                  side: const BorderSide(color: _accent),
+                  shape:
+                      RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.symmetric(vertical: 11),
                 ),
               ),
@@ -309,13 +498,14 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
     );
   }
 
-  Widget _cardRow(IconData icon, String text, bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+  Widget _cardRow(IconData icon, String text, bool isDark,
+      {VoidCallback? onTap}) {
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: const Color(0xFF2CA5E0)),
+          Icon(icon, size: 18, color: _accent),
           const SizedBox(width: 10),
           Expanded(
             child: Text(text,
@@ -325,7 +515,54 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
                   height: 1.4,
                 )),
           ),
+          if (onTap != null)
+            const Icon(Icons.open_in_new, size: 15, color: _accent),
         ],
+      ),
+    );
+    if (onTap == null) return row;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: row,
+    );
+  }
+
+  Widget _message(
+    AppLocalizations l10n,
+    IconData icon,
+    String text, {
+    required String actionLabel,
+    required VoidCallback onAction,
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 56, color: _accent),
+            const SizedBox(height: 16),
+            Text(text,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 15, height: 1.4)),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: onAction,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _accent,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text(actionLabel),
+            ),
+          ],
+        ),
       ),
     );
   }

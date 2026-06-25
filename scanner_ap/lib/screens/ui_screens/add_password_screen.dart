@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -29,11 +30,10 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
     super.dispose();
   }
 
+  static const _imageExts = {'.jpg', '.jpeg', '.png', '.webp'};
+
   Future<void> _pickPdf() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf'],
-    );
+    final result = await FilePicker.platform.pickFiles(type: FileType.any);
     if (result != null && result.files.first.path != null) {
       setState(() => _selectedFile = File(result.files.first.path!));
     }
@@ -45,11 +45,16 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
       _snack(l10n.pwdSelectPdf);
       return;
     }
-    if (_passwordCtrl.text.isEmpty) {
+    final password = _passwordCtrl.text;
+    if (password.isEmpty) {
       _snack(l10n.validatePasswordRequired);
       return;
     }
-    if (_passwordCtrl.text != _confirmCtrl.text) {
+    if (password.length < 4) {
+      _snack(l10n.pwdMinLength);
+      return;
+    }
+    if (password != _confirmCtrl.text) {
       _snack(l10n.pwdMismatch);
       return;
     }
@@ -58,19 +63,53 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
 
     try {
       final bytes = await _selectedFile!.readAsBytes();
-      final doc = spdf.PdfDocument(inputBytes: bytes);
+      final ext = p.extension(_selectedFile!.path).toLowerCase();
+      final baseName = p.basenameWithoutExtension(_selectedFile!.path);
 
-      doc.security.ownerPassword = _passwordCtrl.text;
-      doc.security.userPassword = _passwordCtrl.text;
-      doc.security.algorithm = spdf.PdfEncryptionAlgorithm.aesx256Bit;
+      List<int> outBytes;
+      String outExt;
 
-      final saved = await doc.save();
-      doc.dispose();
+      if (ext == '.pdf') {
+        // Уже защищённый/битый PDF не откроется без пароля — понятное сообщение.
+        spdf.PdfDocument doc;
+        try {
+          doc = spdf.PdfDocument(inputBytes: bytes);
+        } catch (_) {
+          if (mounted) {
+            setState(() => _isProcessing = false);
+            _snack(l10n.pwdAlreadyProtected, error: true);
+          }
+          return;
+        }
+        _applyPdfSecurity(doc, password);
+        outBytes = await doc.save();
+        doc.dispose();
+        outExt = 'pdf';
+      } else if (_imageExts.contains(ext)) {
+        // Фото заворачиваем в PDF (страница в натуральный размер) и шифруем.
+        final doc = spdf.PdfDocument();
+        doc.pageSettings.margins.all = 0;
+        final bitmap = spdf.PdfBitmap(bytes);
+        final w = bitmap.width.toDouble();
+        final h = bitmap.height.toDouble();
+        doc.pageSettings.size = Size(w, h);
+        final page = doc.pages.add();
+        page.graphics.drawImage(bitmap, Rect.fromLTWH(0, 0, w, h));
+        _applyPdfSecurity(doc, password);
+        outBytes = await doc.save();
+        doc.dispose();
+        outExt = 'pdf';
+      } else {
+        // Любой другой файл → ZIP с AES-паролем (открывается архиваторами).
+        final archive = Archive()
+          ..add(ArchiveFile(p.basename(_selectedFile!.path), bytes.length, bytes));
+        outBytes = ZipEncoder(password: password).encodeBytes(archive);
+        outExt = 'zip';
+      }
 
       final dir = await getApplicationDocumentsDirectory();
-      final baseName = p.basenameWithoutExtension(_selectedFile!.path);
-      final outPath = '${dir.path}/${baseName}_protected.pdf';
-      await File(outPath).writeAsBytes(saved);
+      final outPath = '${dir.path}/${baseName}_protected.$outExt';
+      await File(outPath).writeAsBytes(outBytes);
 
       widget.onSaved?.call();
       if (mounted) {
@@ -82,6 +121,12 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
+  }
+
+  void _applyPdfSecurity(spdf.PdfDocument doc, String password) {
+    doc.security.ownerPassword = password;
+    doc.security.userPassword = password;
+    doc.security.algorithm = spdf.PdfEncryptionAlgorithm.aesx256Bit;
   }
 
   void _snack(String msg, {bool success = false, bool error = false}) {
@@ -122,7 +167,7 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(l10n.importPdfDocument, style: TextStyle(fontSize: 13, color: subColor, fontWeight: FontWeight.w600)),
+                Text(l10n.pwdSourceLabel, style: TextStyle(fontSize: 13, color: subColor, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 10),
                 GestureDetector(
                   onTap: _pickPdf,
@@ -160,6 +205,9 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 10),
+                Text(l10n.pwdOutputHint,
+                    style: TextStyle(fontSize: 11.5, color: subColor, height: 1.3)),
               ],
             ),
           ),

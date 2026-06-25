@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'camera.dart';
 import 'ui_helpers.dart';
@@ -19,6 +18,7 @@ import 'restore_photo_screen.dart';
 import 'highlight_screen.dart';
 import 'document_ai_screen.dart';
 import 'eco/eco_packaging_screen.dart';
+import 'geo_stamp_editor_screen.dart';
 import 'package:pdf/pdf.dart' hide PdfDocument;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdfrx/pdfrx.dart';
@@ -54,13 +54,12 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     Icons.camera_alt_outlined,
     Icons.tune,
     Icons.ios_share_outlined,
-    Icons.file_download_outlined,
     Icons.auto_awesome_outlined,
   ];
 
   // Метки табов резолвятся в build через l10n (AI — бренд, не переводится).
   List<String> _categoryLabels(AppLocalizations l10n) =>
-      [l10n.tabScan, l10n.tabEdit, l10n.tabShare, l10n.tabImport, 'AI'];
+      [l10n.tabScan, l10n.tabEdit, l10n.tabShare, 'AI'];
 
   late final TabController _tabCtrl;
 
@@ -381,7 +380,6 @@ class _AllActionsScreenState extends State<AllActionsScreen>
                 _buildScanTab(),
                 _buildEditTab(),
                 _buildShareTab(),
-                _buildImportTab(),
                 _buildAiTab(),
               ],
             ),
@@ -703,32 +701,6 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     );
   }
 
-  Widget _buildImportTab() {
-    final l10n = AppLocalizations.of(context);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-      children: [
-        _wideTile(
-          l10n.featImportDocs,
-          Icons.file_download,
-          subtitle: l10n.featImportDocsSub,
-          iconColor: const Color(0xFFE67E22),
-          onTap: () => _showImportOptions(context),
-        ),
-        const SizedBox(height: 12),
-        _singleRow(
-          _tile(
-            l10n.featImportImages,
-            Icons.image_outlined,
-            subtitle: l10n.featImportImagesSub,
-            iconColor: Colors.blueAccent,
-            onTap: () => _importImage(context),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildAiTab() {
     final l10n = AppLocalizations.of(context);
     return ListView(
@@ -793,99 +765,6 @@ class _AllActionsScreenState extends State<AllActionsScreen>
   // Действия (без изменений)
   // ------------------------------------------------------------------
 
-  void _showImportOptions(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text(l10n.importVerbTitle,
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-            ),
-            ListTile(
-              leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
-              title: Text(l10n.importPdfDocument),
-              onTap: () {
-                Navigator.pop(context);
-                _pickAndSaveFile(context, extensions: ['pdf']);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.description, color: Colors.blue),
-              title: const Text('Word / TXT'),
-              onTap: () {
-                Navigator.pop(context);
-                _pickAndSaveFile(context, extensions: ['docx', 'doc', 'txt']);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.folder, color: Colors.orange),
-              title: Text(l10n.importAnyFile),
-              onTap: () {
-                Navigator.pop(context);
-                _pickAndSaveFile(context, extensions: null);
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _pickAndSaveFile(
-    BuildContext context, {
-    required List<String>? extensions,
-  }) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final l10n = AppLocalizations.of(context);
-    final result = await FilePicker.platform.pickFiles(
-      type: extensions != null ? FileType.custom : FileType.any,
-      allowedExtensions: extensions,
-      allowMultiple: false,
-    );
-    if (result == null || result.files.first.path == null) return;
-
-    final srcPath = result.files.first.path!;
-    final fileName = p.basename(srcPath);
-
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final destPath = '${dir.path}/$fileName';
-      if (srcPath != destPath) {
-        await File(srcPath).copy(destPath);
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      final paths = prefs.getStringList(_documentKey) ?? [];
-      if (!paths.contains(destPath)) {
-        paths.add(destPath);
-        await prefs.setStringList(_documentKey, paths);
-      }
-      await DocumentRegistry().add(DocEntry(
-        localPath: destPath,
-        remoteId: null,
-        name: p.basenameWithoutExtension(fileName),
-      ));
-
-      widget.onDocumentImported?.call();
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.snackImported(fileName))),
-      );
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('${l10n.snackImportError}: $e')),
-      );
-    }
-  }
-
   Future<void> _cropAndRotate(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     final l10n = AppLocalizations.of(context);
@@ -929,70 +808,21 @@ class _AllActionsScreenState extends State<AllActionsScreen>
   }
 
   Future<void> _addTimestamp(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final l10n = AppLocalizations.of(context);
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
+    if (picked == null || !context.mounted) return;
 
-    final bytes = await File(picked.path).readAsBytes();
-    final codec = await ui.instantiateImageCodec(bytes);
-    final frame = await codec.getNextFrame();
-    final srcImage = frame.image;
-
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(
-      recorder,
-      Rect.fromLTWH(0, 0, srcImage.width.toDouble(), srcImage.height.toDouble()),
+    // Открываем интерактивный редактор метки (перетаскивание, размер, стиль,
+    // цвет, геолокация). Сохранение/регистрация документа — внутри редактора.
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GeoStampEditorScreen(
+          imagePath: picked.path,
+          onSaved: widget.onDocumentImported,
+        ),
+      ),
     );
-    canvas.drawImage(srcImage, Offset.zero, Paint());
-
-    final now = DateTime.now();
-    final stamp =
-        '${now.day.toString().padLeft(2, '0')}.${now.month.toString().padLeft(2, '0')}.${now.year}'
-        '  ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-    final fontSize = (srcImage.width * 0.04).clamp(14.0, 48.0);
-
-    final pb = ui.ParagraphBuilder(ui.ParagraphStyle(
-      fontSize: fontSize,
-      textDirection: TextDirection.ltr,
-    ))
-      ..pushStyle(ui.TextStyle(
-        color: const Color(0xFFFFFFFF),
-        fontSize: fontSize,
-        background: Paint()..color = const Color(0xAA000000),
-      ))
-      ..addText('  $stamp  ');
-    final paragraph = pb.build()
-      ..layout(ui.ParagraphConstraints(width: srcImage.width.toDouble()));
-    canvas.drawParagraph(
-      paragraph,
-      Offset(10, srcImage.height - paragraph.height - 10),
-    );
-
-    final picture = recorder.endRecording();
-    final result = await picture.toImage(srcImage.width, srcImage.height);
-    final byteData = await result.toByteData(format: ui.ImageByteFormat.png);
-    if (byteData == null) return;
-
-    final dir = await getApplicationDocumentsDirectory();
-    final fileName = 'timestamped_${DateTime.now().millisecondsSinceEpoch}.png';
-    final destPath = '${dir.path}/$fileName';
-    await File(destPath).writeAsBytes(byteData.buffer.asUint8List());
-
-    final prefs = await SharedPreferences.getInstance();
-    final paths = prefs.getStringList(_documentKey) ?? [];
-    if (!paths.contains(destPath)) {
-      paths.add(destPath);
-      await prefs.setStringList(_documentKey, paths);
-    }
-    await DocumentRegistry().add(DocEntry(
-      localPath: destPath,
-      remoteId: null,
-      name: p.basenameWithoutExtension(fileName),
-    ));
-    widget.onDocumentImported?.call();
-    messenger.showSnackBar(SnackBar(content: Text(l10n.snackSavedWithStamp(fileName))));
   }
 
   Future<void> _convertToPdf(BuildContext context) async {
@@ -1165,41 +995,4 @@ class _AllActionsScreenState extends State<AllActionsScreen>
     await Share.shareXFiles([XFile(path)], subject: p.basename(path));
   }
 
-  Future<void> _importImage(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final l10n = AppLocalizations.of(context);
-    final picker = ImagePicker();
-    final file = await picker.pickImage(source: ImageSource.gallery);
-    if (file == null) return;
-
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final fileName = p.basename(file.path);
-      final destPath = '${dir.path}/$fileName';
-      if (file.path != destPath) {
-        await File(file.path).copy(destPath);
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      final paths = prefs.getStringList(_documentKey) ?? [];
-      if (!paths.contains(destPath)) {
-        paths.add(destPath);
-        await prefs.setStringList(_documentKey, paths);
-      }
-      await DocumentRegistry().add(DocEntry(
-        localPath: destPath,
-        remoteId: null,
-        name: p.basenameWithoutExtension(fileName),
-      ));
-
-      widget.onDocumentImported?.call();
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.snackImageImported(fileName))),
-      );
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('${l10n.snackImportError}: $e')),
-      );
-    }
-  }
 }

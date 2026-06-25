@@ -11,6 +11,7 @@ enum CaptureStatusOverlayKind {
   restorePhoto,
   removeSpots,
   removeWatermark,
+  eco,
 }
 
 class _StatusOverlayLayout {
@@ -165,6 +166,13 @@ class CaptureModeController {
           maxWidth: 272,
           icon: Icons.auto_fix_off_outlined,
         );
+      case CaptureStatusOverlayKind.eco:
+        return const _StatusOverlayLayout(
+          alignment: Alignment.topCenter,
+          padding: EdgeInsets.fromLTRB(24, 78, 24, 0),
+          maxWidth: 272,
+          icon: Icons.eco_outlined,
+        );
     }
   }
 
@@ -183,6 +191,8 @@ class CaptureModeController {
         return 'Убрать пятна';
       case CaptureStatusOverlayKind.removeWatermark:
         return 'Без водзнака';
+      case CaptureStatusOverlayKind.eco:
+        return 'Эко-сканер';
     }
   }
 
