@@ -108,7 +108,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
               _Item(Icons.store, 'Google Play / App Store',
                   'Платежи за Premium-подписку обрабатываются через Google Play Billing (Android) и Apple StoreKit (iOS). Мы не храним данные банковских карт.'),
               _Item(Icons.login, 'OAuth-авторизация',
-                  'При входе через ВКонтакте или Google мы получаем только базовый профиль (имя, email, ID). Пароли сторонних сервисов нам недоступны.'),
+                  'При входе через Telegram или Google мы получаем только базовый профиль (имя, email, ID). Пароли сторонних сервисов нам недоступны.'),
             ],
           ),
           _Section(
@@ -167,13 +167,13 @@ class PrivacyPolicyScreen extends StatelessWidget {
             subColor: subColor,
             headingColor: headingColor,
             content: 'По вопросам, связанным с конфиденциальностью, обращайтесь:\n\n'
-                '📧 oleghyt4@gmail.com\n\n'
+                '📧 momentumx010@gmail.com\n\n'
                 'Мы постараемся ответить в течение 5 рабочих дней.',
           ),
           const SizedBox(height: 8),
           Center(
             child: Text(
-              'Последнее обновление: 20 мая 2025 г.',
+              'Последнее обновление: 27 июня 2026 г.',
               style: TextStyle(fontSize: 11, color: subColor),
             ),
           ),

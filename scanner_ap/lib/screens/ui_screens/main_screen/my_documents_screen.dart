@@ -893,7 +893,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor =
-        isDark ? const Color(0xFF0f1923) : const Color(0xFFF5F9FF);
+        isDark ? const Color(0xFF0f1923) : const Color(0xFFE8EFF9);
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final subtextColor =
         isDark ? Colors.white38 : const Color(0xFFAAB4C8);

@@ -2,11 +2,13 @@ import { Router } from 'express';
 import { register, login, changePassword, refreshAccessToken } from '../controllers/auth.controller';
 import { socialLogin, googleCallback, exchangeOAuthCode } from '../controllers/social.auth.controller';
 import {
+  avatarUpload,
   getProfile,
   listSessions,
   logout,
   logoutOtherSessions,
   revokeSession,
+  updateAvatar,
   updateProfile,
 } from '../controllers/profile.controller';
 import { telegramLoginPage, telegramCallback, telegramExchange } from '../controllers/telegram.controller';
@@ -38,6 +40,7 @@ router.get('/vk/login', vkLoginPage);
 // Профиль и logout — требуют авторизации
 router.get('/profile', authMiddleware, getProfile);
 router.patch('/profile', authMiddleware, updateProfile);
+router.patch('/profile/avatar', authMiddleware, avatarUpload.single('avatar'), updateAvatar);
 router.get('/sessions', authMiddleware, listSessions);
 router.delete('/sessions/:sessionId', authMiddleware, revokeSession);
 router.post('/logout-others', authMiddleware, logoutOtherSessions);

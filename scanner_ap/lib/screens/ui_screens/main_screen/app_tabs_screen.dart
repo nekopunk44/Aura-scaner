@@ -268,7 +268,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
     final navBg = isDark ? const Color(0xFF141E2B) : Colors.white;
     final scaffoldBg = isDark
         ? const Color(0xFF0F1923)
-        : const Color(0xFFF2F6FC);
+        : const Color(0xFFE8EFF9);
 
     return Stack(
       clipBehavior: Clip.none,

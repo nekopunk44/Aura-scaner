@@ -1,4 +1,8 @@
+import fs from 'fs';
+import path from 'path';
+
 import { Response } from 'express';
+import multer from 'multer';
 
 import { AuthRequest } from '../middleware/auth.middleware';
 import { RefreshToken } from '../models/RefreshToken';
@@ -6,6 +10,29 @@ import { User } from '../models/User';
 import { logger } from '../utils/logger';
 import { isPremiumActive } from '../utils/premium';
 import { blacklistToken } from '../utils/tokenBlacklist';
+
+const avatarStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const dir = path.join(__dirname, '../../uploads/avatars');
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, _file, cb) => {
+    cb(null, `${(req as AuthRequest).userId}_${Date.now()}.jpg`);
+  },
+});
+
+export const avatarUpload = multer({
+  storage: avatarStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Только изображения'));
+    }
+  },
+});
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -240,6 +267,44 @@ export async function logoutOtherSessions(
   } catch (err) {
     logger.error('[logoutOtherSessions]', { err });
     res.status(500).json({ message: 'Ошибка при завершении остальных сессий' });
+  }
+}
+
+export async function updateAvatar(
+  req: AuthRequest,
+  res: Response,
+): Promise<void> {
+  try {
+    if (!req.file) {
+      res.status(400).json({ message: 'Файл не передан' });
+      return;
+    }
+    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      { avatarUrl },
+      { new: true },
+    ).select(
+      '_id email name createdAt isPremium premiumActivatedAt premiumExpiresAt authProvider avatarUrl googleSub appleSub vkUserId telegramId instagramUserId',
+    );
+    if (!user) {
+      res.status(404).json({ message: 'Пользователь не найден' });
+      return;
+    }
+    res.json({
+      id: user._id,
+      email: user.email,
+      name: user.name,
+      provider: providerForUser(user),
+      avatarUrl: user.avatarUrl ?? null,
+      createdAt: user.createdAt,
+      isPremium: isPremiumActive(user),
+      premiumActivatedAt: user.premiumActivatedAt ?? null,
+      premiumExpiresAt: user.premiumExpiresAt ?? null,
+    });
+  } catch (err) {
+    logger.error('[updateAvatar]', { err });
+    res.status(500).json({ message: 'Ошибка при обновлении аватара' });
   }
 }
 

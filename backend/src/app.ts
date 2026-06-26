@@ -3,6 +3,7 @@
 import { initSentry } from './utils/sentry';
 initSentry();
 
+import path from 'path';
 import express from 'express';
 import * as Sentry from '@sentry/node';
 import cors from 'cors';
@@ -89,6 +90,9 @@ app.use(morgan('combined', { stream: { write: (msg) => logger.http(msg.trim()) }
 
 // JSON body с лимитом 10 MB чтобы нельзя было положить сервер гигантским payload
 app.use(express.json({ limit: '10mb' }));
+
+// Аватары и другие загруженные файлы
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 // Rate limiting для auth-эндпоинтов (защита от брутфорса)
 const authLimiter = rateLimit({

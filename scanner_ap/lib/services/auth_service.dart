@@ -236,6 +236,24 @@ class AuthService {
     }
   }
 
+  Future<AuthUser> updateAvatar(String imagePath) async {
+    try {
+      final formData = FormData.fromMap({
+        'avatar': await MultipartFile.fromFile(
+          imagePath,
+          filename: 'avatar.jpg',
+        ),
+      });
+      final response = await _api.dio.patch(
+        '/auth/profile/avatar',
+        data: formData,
+      );
+      return AuthUser.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
   Future<void> saveTokens(
     String token,
     String? refreshToken, {

@@ -1,9 +1,11 @@
 // ignore_for_file: use_build_context_synchronously
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../config/server_config.dart';
@@ -185,83 +187,45 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Future<void> _editProfile() async {
-    final l10n = AppLocalizations.of(context);
+    if (_user == null) return;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final nameCtrl = TextEditingController(text: _user?.name ?? '');
-    final emailCtrl = TextEditingController(text: _user?.email ?? '');
+    final l10n = AppLocalizations.of(context);
 
-    final confirmed = await showDialog<bool>(
+    // Вычисляем полный URL аватара здесь, до открытия листа,
+    // чтобы контекст был корректным.
+    final raw = _user!.avatarUrl?.trim();
+    String? resolvedUrl;
+    if (raw != null && raw.isNotEmpty) {
+      final uri = Uri.tryParse(raw);
+      if (uri != null && uri.hasScheme) {
+        resolvedUrl = raw;
+      } else {
+        final base = Uri.tryParse(ServerConfig().baseUrl);
+        resolvedUrl = base?.resolve(raw).toString() ?? raw;
+      }
+    }
+
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => _ThemedDialog(
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      enableDrag: true,
+      builder: (_) => _EditProfileSheet(
+        user: _user!,
+        initials: _initials,
+        resolvedAvatarUrl: resolvedUrl,
         isDark: isDark,
-        title: l10n.profileEditTitle,
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ThemedTextField(
-              controller: nameCtrl,
-              hint: l10n.fieldName,
-              isDark: isDark,
-              autofocus: true,
-            ),
-            const SizedBox(height: 12),
-            _ThemedTextField(
-              controller: emailCtrl,
-              hint: l10n.fieldEmail,
-              isDark: isDark,
-            ),
-          ],
-        ),
-        actions: [
-          _DialogButton(
-            label: l10n.actionCancel,
-            onTap: () => Navigator.pop(ctx, false),
-            isDark: isDark,
-          ),
-          _DialogButton(
-            label: l10n.actionSave,
-            onTap: () => Navigator.pop(ctx, true),
-            isDark: isDark,
-            primary: true,
-          ),
-        ],
+        l10n: l10n,
+        onSaved: (updated) {
+          if (mounted) {
+            setState(() => _user = updated);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(l10n.profileSaved)),
+            );
+          }
+        },
       ),
     );
-    if (confirmed != true || !mounted) return;
-
-    final newName = nameCtrl.text.trim();
-    final newEmail = emailCtrl.text.trim();
-    final nameChanged = newName.isNotEmpty && newName != _user?.name;
-    final emailChanged = newEmail.isNotEmpty && newEmail != _user?.email;
-
-    if (!nameChanged && !emailChanged) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.profileNothingChanged)));
-      return;
-    }
-
-    try {
-      final updated = await AuthService().updateProfile(
-        name: nameChanged ? newName : null,
-        email: emailChanged ? newEmail : null,
-      );
-      if (mounted) {
-        setState(() => _user = updated);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l10n.profileSaved)));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(friendlyError(e)),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 
   /// Каскадное появление блоков: каждый следующий стартует чуть позже,
@@ -653,7 +617,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     return Scaffold(
       backgroundColor: isDark
           ? const Color(0xFF0F1923)
-          : const Color(0xFFF2F6FC),
+          : const Color(0xFFE8EFF9),
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(64),
         child: AnimatedBuilder(
@@ -758,9 +722,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                     const Color(0xFF0D1F30),
                   ]
                 : [
-                    const Color(0xFFF2F6FC),
-                    const Color(0xFFEEF4FF),
-                    Colors.white,
+                    const Color(0xFFE4ECF8),
+                    const Color(0xFFE8EFF9),
+                    const Color(0xFFEDF4FF),
                   ],
           ),
         ),
@@ -1149,7 +1113,7 @@ class _ProfileHeaderCard extends StatelessWidget {
       return const [Color(0xFF37AEE2), Color(0xFF1E7BD8)];
     }
     if (_isGoogle) {
-      return const [Color(0xFF4285F4), Color(0xFF34A853), Color(0xFFEA4335)];
+      return const [Color(0xFF4285F4), Color(0xFF1565C0)];
     }
     return const [Color(0xFF2CA5E0), Color(0xFF1565C0)];
   }
@@ -1716,6 +1680,461 @@ class _DialogButton extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
       child: Text(label),
+    );
+  }
+}
+
+// ─── Edit-profile bottom sheet ────────────────────────────────────────────────
+
+class _EditProfileSheet extends StatefulWidget {
+  final AuthUser user;
+  final String initials;
+  final String? resolvedAvatarUrl;
+  final bool isDark;
+  final AppLocalizations l10n;
+  final void Function(AuthUser) onSaved;
+
+  const _EditProfileSheet({
+    required this.user,
+    required this.initials,
+    required this.resolvedAvatarUrl,
+    required this.isDark,
+    required this.l10n,
+    required this.onSaved,
+  });
+
+  @override
+  State<_EditProfileSheet> createState() => _EditProfileSheetState();
+}
+
+class _EditProfileSheetState extends State<_EditProfileSheet> {
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _emailCtrl;
+  File? _newAvatarFile;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: widget.user.name);
+    _emailCtrl = TextEditingController(text: widget.user.email);
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickAvatar() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+    if (picked != null && mounted) {
+      setState(() => _newAvatarFile = File(picked.path));
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() => _loading = true);
+    try {
+      AuthUser updated = widget.user;
+
+      if (_newAvatarFile != null) {
+        updated = await AuthService().updateAvatar(_newAvatarFile!.path);
+      }
+
+      final newName = _nameCtrl.text.trim();
+      final newEmail = _emailCtrl.text.trim();
+      final nameChanged = newName.isNotEmpty && newName != updated.name;
+      final emailChanged = newEmail.isNotEmpty && newEmail != updated.email;
+
+      if (nameChanged || emailChanged) {
+        updated = await AuthService().updateProfile(
+          name: nameChanged ? newName : null,
+          email: emailChanged ? newEmail : null,
+        );
+      }
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        widget.onSaved(updated);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(friendlyError(e)),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = widget.isDark;
+    final bg = isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F9FF);
+    final titleColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final handleColor = isDark
+        ? Colors.white.withValues(alpha: 0.18)
+        : const Color(0xFFCDD9EE);
+    final divColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : const Color(0xFFD8E4F4);
+    final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+    final provider = (widget.user.provider ?? '').toLowerCase();
+    final isGoogle = provider.contains('google');
+    final isTelegram = provider.contains('telegram');
+    final screenH = MediaQuery.of(context).size.height;
+
+    ImageProvider? avatarImg;
+    if (_newAvatarFile != null) {
+      avatarImg = FileImage(_newAvatarFile!);
+    } else if (widget.resolvedAvatarUrl != null) {
+      avatarImg = NetworkImage(widget.resolvedAvatarUrl!);
+    }
+
+    return Container(
+      height: screenH * 0.82,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 32,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Handle
+          Padding(
+            padding: const EdgeInsets.only(top: 10, bottom: 4),
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: handleColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 6, 8, 0),
+            child: Row(
+              children: [
+                Text(
+                  widget.l10n.profileEditTitle,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: titleColor,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: isDark ? Colors.white54 : const Color(0xFF8A94A6),
+                  ),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: divColor),
+
+          // Scrollable content
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                28,
+                24,
+                MediaQuery.of(context).viewInsets.bottom + 24,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Avatar picker
+                  Center(
+                    child: GestureDetector(
+                      onTap: _pickAvatar,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            width: 88,
+                            height: 88,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(0xFF2CA5E0).withValues(alpha: 0.4),
+                                width: 2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF2CA5E0).withValues(alpha: 0.15),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: ClipOval(
+                              child: avatarImg != null
+                                  ? Image(
+                                      image: avatarImg,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => _InitialsFallback(
+                                        initials: widget.initials,
+                                        isDark: isDark,
+                                      ),
+                                    )
+                                  : _InitialsFallback(
+                                      initials: widget.initials,
+                                      isDark: isDark,
+                                    ),
+                            ),
+                          ),
+                          Positioned(
+                            right: 0,
+                            bottom: 0,
+                            child: Container(
+                              width: 30,
+                              height: 30,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2CA5E0),
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.22),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.camera_alt_outlined,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Text(
+                      'Сменить фото',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: const Color(0xFF2CA5E0),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+
+                  // Name
+                  _ThemedTextField(
+                    controller: _nameCtrl,
+                    hint: widget.l10n.fieldName,
+                    isDark: isDark,
+                    autofocus: false,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Email
+                  _ThemedTextField(
+                    controller: _emailCtrl,
+                    hint: widget.l10n.fieldEmail,
+                    isDark: isDark,
+                  ),
+                  const SizedBox(height: 28),
+
+                  // Connected accounts
+                  Text(
+                    'Подключённые аккаунты',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: subColor,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _AccountBadge(
+                          icon: FontAwesomeIcons.google,
+                          label: 'Google',
+                          accentColor: const Color(0xFFEA4335),
+                          connected: isGoogle,
+                          isDark: isDark,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _AccountBadge(
+                          icon: FontAwesomeIcons.telegram,
+                          label: 'Telegram',
+                          accentColor: const Color(0xFF2AABEE),
+                          connected: isTelegram,
+                          isDark: isDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Save button
+                  SizedBox(
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _loading ? null : _save,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2CA5E0),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: _loading
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Text(
+                              widget.l10n.actionSave,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InitialsFallback extends StatelessWidget {
+  final String initials;
+  final bool isDark;
+  const _InitialsFallback({required this.initials, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFF2CA5E0).withValues(alpha: isDark ? 0.30 : 0.18),
+      alignment: Alignment.center,
+      child: initials.isEmpty
+          ? Icon(
+              Icons.person_outline_rounded,
+              color: const Color(0xFF2CA5E0),
+              size: 36,
+            )
+          : Text(
+              initials,
+              style: const TextStyle(
+                color: Color(0xFF2CA5E0),
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+    );
+  }
+}
+
+class _AccountBadge extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color accentColor;
+  final bool connected;
+  final bool isDark;
+
+  const _AccountBadge({
+    required this.icon,
+    required this.label,
+    required this.accentColor,
+    required this.connected,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cardBg = connected
+        ? accentColor.withValues(alpha: isDark ? 0.14 : 0.08)
+        : (isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.white.withValues(alpha: 0.8));
+    final borderColor = connected
+        ? accentColor.withValues(alpha: 0.38)
+        : (isDark
+            ? Colors.white.withValues(alpha: 0.10)
+            : const Color(0xFFDDE3ED));
+    final iconColor =
+        connected ? accentColor : (isDark ? Colors.white30 : const Color(0xFFBBC4D4));
+    final textColor = connected
+        ? (isDark ? Colors.white : const Color(0xFF1A1A2E))
+        : (isDark ? Colors.white38 : const Color(0xFFAAB4C8));
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderColor, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FaIcon(icon, size: 13, color: iconColor),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: textColor,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Icon(
+            connected ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+            size: 14,
+            color: connected
+                ? const Color(0xFF26C060)
+                : (isDark
+                    ? Colors.white.withValues(alpha: 0.20)
+                    : const Color(0xFFCDD9EE)),
+          ),
+        ],
+      ),
     );
   }
 }

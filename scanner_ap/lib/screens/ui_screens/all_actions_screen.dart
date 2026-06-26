@@ -282,7 +282,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
+    final bg = isDark ? const Color(0xFF0F1923) : const Color(0xFFE8EFF9);
     final tabBg = isDark ? const Color(0xFF141E2B) : Colors.white;
     final tabActive = const Color(0xFF2CA5E0);
     final tabInactive = isDark ? Colors.white54 : const Color(0xFF8A94A6);
