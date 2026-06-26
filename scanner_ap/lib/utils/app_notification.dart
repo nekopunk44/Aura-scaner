@@ -69,8 +69,10 @@ class _NotificationToastState extends State<_NotificationToast>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack));
 
-    _fade = Tween<double>(begin: 0, end: 1)
-        .animate(CurvedAnimation(parent: _ctrl, curve: const Interval(0, 0.5)));
+    _fade = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: const Interval(0, 0.5)));
 
     _ctrl.forward();
 
@@ -93,15 +95,24 @@ class _NotificationToastState extends State<_NotificationToast>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final (icon, accent) = switch (widget.type) {
-      NotificationType.error   => (Icons.error_outline_rounded,   const Color(0xFFFF5C5C)),
-      NotificationType.success => (Icons.check_circle_outline_rounded, const Color(0xFF4CAF50)),
-      NotificationType.info    => (Icons.info_outline_rounded,    const Color(0xFF2CA5E0)),
+      NotificationType.error => (
+        Icons.error_outline_rounded,
+        const Color(0xFFFF5C5C),
+      ),
+      NotificationType.success => (
+        Icons.check_circle_outline_rounded,
+        const Color(0xFF2CA5E0),
+      ),
+      NotificationType.info => (
+        Icons.info_outline_rounded,
+        const Color(0xFF2CA5E0),
+      ),
     };
 
-    final bg = isDark ? const Color(0xFF1E2D3D) : Colors.white;
+    final bg = isDark ? const Color(0xFF132638) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final shadow = isDark
-        ? Colors.black.withValues(alpha: 0.4)
+        ? Colors.black.withValues(alpha: 0.34)
         : Colors.black.withValues(alpha: 0.12);
 
     return SafeArea(
@@ -122,18 +133,21 @@ class _NotificationToastState extends State<_NotificationToast>
                       color: bg,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: accent.withValues(alpha: 0.35),
+                        color: accent.withValues(alpha: isDark ? 0.58 : 0.34),
                         width: 1,
                       ),
                       boxShadow: [
                         BoxShadow(
                           color: shadow,
-                          blurRadius: 20,
-                          offset: const Offset(0, 6),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
                         ),
                       ],
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
                     child: Row(
                       children: [
                         Container(
@@ -151,16 +165,18 @@ class _NotificationToastState extends State<_NotificationToast>
                             widget.message,
                             style: TextStyle(
                               color: textColor,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              height: 1.4,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              height: 1.32,
                             ),
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Icon(Icons.close_rounded,
-                            size: 18,
-                            color: textColor.withValues(alpha: 0.35)),
+                        Icon(
+                          Icons.close_rounded,
+                          size: 20,
+                          color: textColor.withValues(alpha: 0.48),
+                        ),
                       ],
                     ),
                   ),

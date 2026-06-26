@@ -16,20 +16,42 @@ class SignatureScreen extends StatefulWidget {
 }
 
 class _SignatureScreenState extends State<SignatureScreen> {
-  static const List<double> _widths = [2, 3, 5, 8];
+  static const Color _accent = Color(0xFF2CA5E0);
+  static const Color _doneColor = Color(0xFF34A853);
+
   static const List<Color> _colors = [
     Color(0xFF101820),
-    Color(0xFF2CA5E0),
-    Color(0xFF34A853),
+    _accent,
+    _doneColor,
     Color(0xFFE67E22),
     Color(0xFFE74C3C),
   ];
 
   double _strokeWidth = 3;
   Color _penColor = const Color(0xFF101820);
-  _SignatureControlPanel _activePanel = _SignatureControlPanel.width;
+  _SignatureControlPanel? _activePanel = _SignatureControlPanel.width;
 
   late SignatureController _controller = _makeController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.sigHint),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 2200),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 214),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      );
+    });
+  }
 
   SignatureController _makeController({List<Point>? points}) {
     final controller = SignatureController(
@@ -75,123 +97,404 @@ class _SignatureScreenState extends State<SignatureScreen> {
     return _controller.toPngBytes();
   }
 
-  bool _isRussian(BuildContext context) {
-    return Localizations.localeOf(context).languageCode == 'ru';
-  }
-
-  String _colorTitle(BuildContext context) {
-    return _isRussian(context) ? 'Цвет пера' : 'Pen color';
+  String _widthToolLabel(BuildContext context) {
+    return Localizations.localeOf(context).languageCode == 'ru'
+        ? 'Толщина'
+        : 'Width';
   }
 
   Widget _buildControlPanel(
     BuildContext context, {
     required AppLocalizations l10n,
-    required Color cardBg,
-    required Color textColor,
+    required Color accent,
     required Color subColor,
-    required Color chipBg,
+    required bool isDark,
+    required bool canUndo,
+  }) {
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: ColoredBox(
+          color: const Color(
+            0xFF101820,
+          ).withValues(alpha: isDark ? 0.78 : 0.74),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedSize(
+                duration: const Duration(milliseconds: 340),
+                curve: Curves.easeInOutCubic,
+                alignment: Alignment.bottomCenter,
+                child: _activePanel == null
+                    ? const SizedBox.shrink(key: ValueKey('closed'))
+                    : _buildActivePanel(
+                        context,
+                        key: const ValueKey('open-panel'),
+                        accent: accent,
+                        isDark: isDark,
+                      ),
+              ),
+              _buildToolBar(
+                l10n: l10n,
+                accent: accent,
+                subColor: subColor,
+                canUndo: canUndo,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActivePanel(
+    BuildContext context, {
+    required Key key,
     required Color accent,
     required bool isDark,
   }) {
     final overlayColor = isDark
-        ? const Color(0xFF172436).withValues(alpha: 0.78)
-        : Colors.white.withValues(alpha: 0.84);
+        ? const Color(0xFF0F1923).withValues(alpha: 0.72)
+        : const Color(0xFF101820).withValues(alpha: 0.78);
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.08)
-        : const Color(0xFFDCE5F0).withValues(alpha: 0.9);
+        : Colors.white.withValues(alpha: 0.08);
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
+    return ClipRect(
+      key: key,
       child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 82),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
           decoration: BoxDecoration(
             color: overlayColor,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: borderColor),
+            border: Border(
+              top: BorderSide(color: borderColor),
+              bottom: BorderSide(color: borderColor),
+            ),
+          ),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeOutCubic,
+            transitionBuilder: (child, animation) {
+              return FadeTransition(opacity: animation, child: child);
+            },
+            child: _activePanel == _SignatureControlPanel.width
+                ? _buildWidthPanel(key: const ValueKey('width'), accent: accent)
+                : _buildColorPanel(
+                    key: const ValueKey('color'),
+                    accent: accent,
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWidthPanel({required Key key, required Color accent}) {
+    final value = _strokeWidth.clamp(1.0, 10.0).toDouble();
+    return Row(
+      key: key,
+      children: [
+        Container(
+          width: 52,
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFDDE6EF)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.05),
-                blurRadius: 18,
-                offset: const Offset(0, 10),
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: _FilterTabChip(
-                      title: l10n.sigPenWidth,
-                      selected: _activePanel == _SignatureControlPanel.width,
-                      accent: accent,
-                      chipBg: chipBg,
-                      textColor: textColor,
-                      onTap: () {
-                        setState(() => _activePanel = _SignatureControlPanel.width);
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _FilterTabChip(
-                      title: _colorTitle(context),
-                      selected: _activePanel == _SignatureControlPanel.color,
-                      accent: accent,
-                      chipBg: chipBg,
-                      textColor: textColor,
-                      onTap: () {
-                        setState(() => _activePanel = _SignatureControlPanel.color);
-                      },
-                    ),
-                  ),
-                ],
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              width: 26,
+              height: value,
+              decoration: BoxDecoration(
+                color: _penColor,
+                borderRadius: BorderRadius.circular(value / 2),
               ),
-              const SizedBox(height: 14),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                child: _activePanel == _SignatureControlPanel.width
-                    ? Row(
-                        key: const ValueKey('width-panel'),
-                        children: [
-                          for (final width in _widths) ...[
-                            Expanded(
-                              child: _StrokeChip(
-                                width: width,
-                                selected: _strokeWidth == width,
-                                accent: accent,
-                                chipBg: chipBg,
-                                textColor: textColor,
-                                strokeColor: _penColor,
-                                onTap: () => _setStrokeWidth(width),
-                              ),
-                            ),
-                            if (width != _widths.last) const SizedBox(width: 8),
-                          ],
-                        ],
-                      )
-                : Align(
-                    key: const ValueKey('color-panel'),
-                    alignment: Alignment.center,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 4,
+              activeTrackColor: accent,
+              inactiveTrackColor: Colors.white.withValues(alpha: 0.18),
+              thumbColor: accent,
+              overlayColor: accent.withValues(alpha: 0.12),
+              thumbShape: const RoundSliderThumbShape(
+                enabledThumbRadius: 9,
+                elevation: 0,
+                pressedElevation: 1,
+              ),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
+              trackShape: const RoundedRectSliderTrackShape(),
+              tickMarkShape: SliderTickMarkShape.noTickMark,
+            ),
+            child: Slider(
+              value: value,
+              min: 1,
+              max: 10,
+              label: '${value.toStringAsFixed(1)} px',
+              onChanged: _setStrokeWidth,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildColorPanel({required Key key, required Color accent}) {
+    return Center(
+      key: key,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (final color in _colors) ...[
+              _ColorChip(
+                color: color,
+                selected: _penColor == color,
+                accent: accent,
+                onTap: () => _setPenColor(color),
+              ),
+              if (color != _colors.last) const SizedBox(width: 14),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToolBar({
+    required AppLocalizations l10n,
+    required Color accent,
+    required Color subColor,
+    required bool canUndo,
+  }) {
+    final isCompact = MediaQuery.of(context).size.width < 360;
+    final tileWidth = isCompact ? 76.0 : 86.0;
+    final iconSize = isCompact ? 19.0 : 21.0;
+    final fontSize = isCompact ? 10.0 : 11.0;
+    final widthLabel = _widthToolLabel(context);
+
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          color: const Color(0xFF101820).withValues(alpha: 0.72),
+          padding: const EdgeInsets.fromLTRB(0, 4, 0, 4),
+          child: SizedBox(
+            height: isCompact ? 92 : 98,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  clipBehavior: Clip.none,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minWidth: constraints.maxWidth - 20,
+                    ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        for (final color in _colors) ...[
-                          _ColorChip(
-                            color: color,
-                            selected: _penColor == color,
+                        SizedBox(
+                          width: tileWidth,
+                          child: _toolButton(
+                            icon: Icons.refresh_rounded,
+                            label: l10n.clearSelection,
+                            active: canUndo,
+                            enabled: canUndo,
                             accent: accent,
-                            onTap: () => _setPenColor(color),
+                            activeColor: const Color(0xFFE74C3C),
+                            disabledColor: subColor,
+                            tileWidth: tileWidth,
+                            iconSize: iconSize,
+                            fontSize: fontSize,
+                            isCompact: isCompact,
+                            onTap: _controller.clear,
                           ),
-                          if (color != _colors.last) const SizedBox(width: 12),
-                        ],
+                        ),
+                        SizedBox(
+                          width: tileWidth,
+                          child: _toolButton(
+                            icon: Icons.line_weight_rounded,
+                            label: widthLabel,
+                            active:
+                                _activePanel == _SignatureControlPanel.width,
+                            accent: accent,
+                            tileWidth: tileWidth,
+                            iconSize: iconSize,
+                            fontSize: fontSize,
+                            isCompact: isCompact,
+                            onTap: () =>
+                                _togglePanel(_SignatureControlPanel.width),
+                          ),
+                        ),
+                        SizedBox(
+                          width: tileWidth,
+                          child: _toolButton(
+                            icon: Icons.palette_outlined,
+                            label: l10n.geoStampColor,
+                            active:
+                                _activePanel == _SignatureControlPanel.color,
+                            accent: accent,
+                            tileWidth: tileWidth,
+                            iconSize: iconSize,
+                            fontSize: fontSize,
+                            isCompact: isCompact,
+                            onTap: () =>
+                                _togglePanel(_SignatureControlPanel.color),
+                          ),
+                        ),
+                        SizedBox(
+                          width: tileWidth,
+                          child: _toolButton(
+                            icon: Icons.check_rounded,
+                            label: l10n.actionDone,
+                            active: canUndo,
+                            enabled: canUndo,
+                            accent: accent,
+                            activeColor: _doneColor,
+                            disabledColor: subColor,
+                            tileWidth: tileWidth,
+                            iconSize: iconSize,
+                            fontSize: fontSize,
+                            isCompact: isCompact,
+                            onTap: () async {
+                              final navigator = Navigator.of(context);
+                              final bytes = await _export();
+                              if (bytes == null) return;
+                              if (!mounted) return;
+                              navigator.pop(bytes);
+                            },
+                          ),
+                        ),
                       ],
                     ),
                   ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _togglePanel(_SignatureControlPanel panel) {
+    setState(() {
+      _activePanel = _activePanel == panel ? null : panel;
+    });
+  }
+
+  Widget _toolButton({
+    required IconData icon,
+    required String label,
+    required bool active,
+    required Color accent,
+    Color? activeColor,
+    Color? disabledColor,
+    bool enabled = true,
+    required double tileWidth,
+    required double iconSize,
+    required double fontSize,
+    required bool isCompact,
+    required VoidCallback onTap,
+  }) {
+    final selectedColor = activeColor ?? accent;
+    final mutedColor = disabledColor ?? Colors.white54;
+    final effectiveActive = enabled && active;
+    final contentColor = enabled
+        ? effectiveActive
+              ? Colors.white
+              : Colors.white.withValues(alpha: 0.7)
+        : mutedColor.withValues(alpha: 0.55);
+
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: tileWidth,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: isCompact ? 3 : 4),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+                width: isCompact ? 40 : 46,
+                height: isCompact ? 40 : 46,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: enabled
+                      ? effectiveActive
+                            ? selectedColor
+                            : Colors.white.withValues(alpha: 0.14)
+                      : Colors.white.withValues(alpha: 0.08),
+                  boxShadow: effectiveActive
+                      ? [
+                          BoxShadow(
+                            color: selectedColor.withValues(alpha: 0.50),
+                            blurRadius: 14,
+                            spreadRadius: 1,
+                          ),
+                        ]
+                      : null,
+                ),
+                child: TweenAnimationBuilder<Color?>(
+                  tween: ColorTween(end: contentColor),
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, color, _) {
+                    return Icon(
+                      icon,
+                      color: color ?? contentColor,
+                      size: iconSize,
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    style: TextStyle(
+                      fontSize: fontSize,
+                      height: 1.15,
+                      color: contentColor,
+                      fontWeight: effectiveActive
+                          ? FontWeight.w700
+                          : FontWeight.w500,
+                    ),
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      textAlign: TextAlign.center,
+                      softWrap: false,
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
@@ -204,16 +507,15 @@ class _SignatureScreenState extends State<SignatureScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final scaffoldBg = isDark ? const Color(0xFF0B1420) : const Color(0xFFF5F8FC);
-    final cardBg = isDark ? const Color(0xFF162233) : Colors.white;
+    final scaffoldBg = isDark
+        ? const Color(0xFF0B1420)
+        : const Color(0xFFF5F8FC);
     final appBarBg = isDark ? const Color(0xFF101A29) : const Color(0xFFF5F8FC);
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
-    final chipBg = isDark ? const Color(0xFF223247) : const Color(0xFFEAF1F8);
-    const accent = Color(0xFF2CA5E0);
+    const accent = _accent;
 
     final canUndo = _controller.points.isNotEmpty;
-    final isEmpty = _controller.isEmpty;
 
     return Scaffold(
       backgroundColor: scaffoldBg,
@@ -238,194 +540,79 @@ class _SignatureScreenState extends State<SignatureScreen> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: Column(
-            children: [
-              Expanded(
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      top: 14,
-                      left: 10,
-                      right: 10,
-                      bottom: 6,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? const Color(0xFF0F1925).withValues(alpha: 0.35)
-                              : const Color(0xFFD8E4F0).withValues(alpha: 0.65),
-                          borderRadius: BorderRadius.circular(28),
-                        ),
-                      ),
-                    ),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFFEFC),
-                        borderRadius: BorderRadius.circular(28),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(
-                              alpha: isDark ? 0.34 : 0.08,
-                            ),
-                            blurRadius: 28,
-                            offset: const Offset(0, 16),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(28),
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: IgnorePointer(
-                                child: CustomPaint(
-                                  painter: const _PaperGuidePainter(
-                                    lineColor: Color(0xFFE8EEF5),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            if (isEmpty)
-                              Positioned.fill(
-                                child: IgnorePointer(
-                                  child: Center(
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 14,
-                                        vertical: 8,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withValues(alpha: 0.96),
-                                        borderRadius: BorderRadius.circular(999),
-                                        border: Border.all(
-                                          color: const Color(0xFFDDE6EF),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        l10n.sigHint,
-                                        style: const TextStyle(
-                                          color: Color(0xFF6B7A99),
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            Signature(
-                              controller: _controller,
-                              backgroundColor: Colors.transparent,
-                            ),
-                            Positioned(
-                              left: 28,
-                              right: 28,
-                              bottom: 178,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    l10n.sigAddTitle,
-                                    style: const TextStyle(
-                                      color: Color(0xFF9AA8B8),
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    height: 2,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFD7E1EB),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 12,
-                      right: 12,
-                      bottom: 12,
-                      child: _buildControlPanel(
-                        context,
-                        l10n: l10n,
-                        cardBg: cardBg,
-                        textColor: textColor,
-                        subColor: subColor,
-                        chipBg: chipBg,
-                        accent: accent,
-                        isDark: isDark,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
+      body: Column(
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+              child: Stack(
                 children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: canUndo ? _controller.clear : null,
-                      icon: const Icon(Icons.refresh, size: 18),
-                      label: Text(l10n.clearSelection),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: canUndo ? const Color(0xFFE74C3C) : subColor,
-                        side: BorderSide(
-                          color: canUndo
-                              ? const Color(0xFFE74C3C)
-                              : subColor.withValues(alpha: 0.3),
-                        ),
-                        backgroundColor: cardBg,
-                        padding: const EdgeInsets.symmetric(vertical: 15),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
+                  Positioned.fill(
+                    top: 10,
+                    left: 6,
+                    right: 6,
+                    bottom: 0,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF132133).withValues(alpha: 0.34)
+                            : const Color(0xFFE6EEF7).withValues(alpha: 0.72),
+                        borderRadius: BorderRadius.circular(26),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: Builder(
-                      builder: (btnContext) {
-                        return ElevatedButton.icon(
-                          onPressed: canUndo
-                              ? () async {
-                                  final bytes = await _export();
-                                  if (bytes == null) return;
-                                  if (!btnContext.mounted) return;
-                                  Navigator.pop(btnContext, bytes);
-                                }
-                              : null,
-                          icon: const Icon(Icons.check, size: 18),
-                          label: Text(l10n.actionDone),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: accent,
-                            disabledBackgroundColor:
-                                accent.withValues(alpha: 0.35),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(vertical: 15),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFEFA),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: const Color(0xFFE4ECF5),
+                        width: 1.2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(
+                            alpha: isDark ? 0.24 : 0.06,
+                          ),
+                          blurRadius: 22,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: CustomPaint(
+                                painter: const _PaperGuidePainter(
+                                  lineColor: Color(0xFFF0F4FA),
+                                ),
+                              ),
                             ),
                           ),
-                        );
-                      },
+                          Signature(
+                            controller: _controller,
+                            backgroundColor: Colors.transparent,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
+          _buildControlPanel(
+            context,
+            l10n: l10n,
+            accent: accent,
+            subColor: subColor,
+            isDark: isDark,
+            canUndo: canUndo,
+          ),
+        ],
       ),
     );
   }
@@ -442,163 +629,16 @@ class _PaperGuidePainter extends CustomPainter {
       ..color = lineColor
       ..strokeWidth = 1;
 
-    const topInset = 54.0;
-    const step = 42.0;
-    for (double y = topInset; y < size.height - 96; y += step) {
-      canvas.drawLine(
-        Offset(24, y),
-        Offset(size.width - 24, y),
-        paint,
-      );
+    const topInset = 62.0;
+    const step = 48.0;
+    for (double y = topInset; y < size.height - 56; y += step) {
+      canvas.drawLine(Offset(28, y), Offset(size.width - 28, y), paint);
     }
   }
 
   @override
   bool shouldRepaint(covariant _PaperGuidePainter oldDelegate) {
     return oldDelegate.lineColor != lineColor;
-  }
-}
-
-class _StrokeChip extends StatelessWidget {
-  final double width;
-  final bool selected;
-  final Color accent;
-  final Color chipBg;
-  final Color textColor;
-  final Color strokeColor;
-  final VoidCallback onTap;
-
-  const _StrokeChip({
-    required this.width,
-    required this.selected,
-    required this.accent,
-    required this.chipBg,
-    required this.textColor,
-    required this.strokeColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final sampleBg = selected
-        ? accent.withValues(alpha: 0.12)
-        : textColor.withValues(alpha: 0.08);
-    final sampleBorder = selected
-        ? accent.withValues(alpha: 0.22)
-        : textColor.withValues(alpha: 0.08);
-
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
-        decoration: BoxDecoration(
-          color: selected ? accent.withValues(alpha: 0.14) : chipBg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected
-                ? accent
-                : Colors.transparent,
-            width: selected ? 1.6 : 1,
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '${width.toStringAsFixed(0)} px',
-              style: TextStyle(
-                color: selected ? accent : textColor,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              height: 22,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: sampleBg,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: sampleBorder,
-                ),
-              ),
-              child: Center(
-                child: Container(
-                  height: width,
-                  width: 28,
-                  decoration: BoxDecoration(
-                    color: strokeColor,
-                    borderRadius: BorderRadius.circular(width / 2),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FilterTabChip extends StatelessWidget {
-  final String title;
-  final bool selected;
-  final Color accent;
-  final Color chipBg;
-  final Color textColor;
-  final VoidCallback onTap;
-
-  const _FilterTabChip({
-    required this.title,
-    required this.selected,
-    required this.accent,
-    required this.chipBg,
-    required this.textColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: selected ? accent.withValues(alpha: 0.12) : chipBg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? accent : Colors.transparent,
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              selected ? Icons.tune_rounded : Icons.chevron_right_rounded,
-              size: 16,
-              color: selected ? accent : textColor.withValues(alpha: 0.7),
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: selected ? accent : textColor,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 
@@ -617,6 +657,11 @@ class _ColorChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final checkColor =
+        ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+        ? Colors.white
+        : const Color(0xFF101820);
+
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -633,16 +678,9 @@ class _ColorChip extends StatelessWidget {
           ),
         ),
         child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           child: selected
-              ? const Icon(
-                  Icons.check_rounded,
-                  color: Colors.white,
-                  size: 16,
-                )
+              ? Icon(Icons.check_rounded, color: checkColor, size: 16)
               : null,
         ),
       ),

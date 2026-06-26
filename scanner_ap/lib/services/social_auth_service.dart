@@ -1,13 +1,11 @@
-import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../config/server_config.dart';
 import '../screens/auth/oauth_webview_screen.dart';
 import 'api_service.dart';
 import 'auth_service.dart';
-import 'deep_link_service.dart';
 
 class SocialAuthService {
   final _authService = AuthService();
@@ -29,8 +27,6 @@ class SocialAuthService {
   }
 
   /// Извлекает одноразовый OAuth code из deep link и валидирует ошибки.
-  /// Бросает строковое исключение, если параметр `code` отсутствует или
-  /// если присутствует `error`.
   static String extractOAuthCode(Uri resultUri) {
     final params = resultUri.queryParameters;
     final error = params['error'];
@@ -53,9 +49,7 @@ class SocialAuthService {
     final data = response.data as Map<String, dynamic>?;
     if (data == null) throw 'Пустой ответ от сервера.';
     final token = data['token'] as String?;
-    if (token == null || token.isEmpty) {
-      throw 'Сервер не вернул токен.';
-    }
+    if (token == null || token.isEmpty) throw 'Сервер не вернул токен.';
     final refreshToken = data['refreshToken'] as String?;
     await _authService.saveTokens(
       token,
@@ -68,27 +62,48 @@ class SocialAuthService {
     return AuthUser.fromJson(userJson);
   }
 
-  Future<AuthUser> loginWithGoogle() async {
+  // ── Google ──────────────────────────────────────────────────────────────
+
+  Future<AuthUser> loginWithGoogle(BuildContext context) async {
     final uri = buildGoogleAuthUri();
-
-    final deepLinkFuture = DeepLinkService().waitForLink();
-
-    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched) throw 'Не удалось открыть браузер для авторизации Google.';
-
-    final Uri resultUri;
-    try {
-      resultUri = await deepLinkFuture;
-    } on TimeoutException {
-      throw 'Время ожидания авторизации истекло. Попробуйте ещё раз.';
-    }
-
+    final resultUri = await showOAuthBottomSheet(
+      context,
+      url: uri.toString(),
+      title: 'Войти через Google',
+      providerIcon: const FaIcon(
+        FontAwesomeIcons.google,
+        color: Color(0xFFEA4335),
+        size: 20,
+      ),
+    );
+    if (resultUri == null) throw 'Вход через Google отменён.';
     final code = extractOAuthCode(resultUri);
     return _exchangeCodeForTokens(code);
   }
 
+  // ── Telegram ─────────────────────────────────────────────────────────────
+
   static String buildTelegramLoginUrl(String baseUrl) =>
       '$baseUrl/auth/telegram/login';
+
+  Future<AuthUser> loginWithTelegram(BuildContext context) async {
+    final loginUrl = buildTelegramLoginUrl(ServerConfig().baseUrl);
+    final resultUri = await showOAuthBottomSheet(
+      context,
+      url: loginUrl,
+      title: 'Войти через Telegram',
+      providerIcon: const FaIcon(
+        FontAwesomeIcons.telegram,
+        color: Color(0xFF26A5E4),
+        size: 20,
+      ),
+    );
+    if (resultUri == null) throw 'Авторизация Telegram отменена.';
+    final code = extractOAuthCode(resultUri);
+    return _exchangeCodeForTokens(code);
+  }
+
+  // ── Apple ────────────────────────────────────────────────────────────────
 
   static bool get isAppleSignInSupported => Platform.isIOS || Platform.isMacOS;
 
@@ -124,7 +139,8 @@ class SocialAuthService {
 
     final givenName = credential.givenName ?? '';
     final familyName = credential.familyName ?? '';
-    final fullName = [givenName, familyName].where((s) => s.isNotEmpty).join(' ');
+    final fullName =
+        [givenName, familyName].where((s) => s.isNotEmpty).join(' ');
 
     return _authService.loginWithSocial(
       provider: 'apple',
@@ -139,24 +155,4 @@ class SocialAuthService {
       },
     );
   }
-
-  Future<AuthUser> loginWithTelegram(BuildContext context) async {
-    final loginUrl = buildTelegramLoginUrl(ServerConfig().baseUrl);
-
-    final resultUri = await Navigator.of(context).push<Uri>(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => OAuthWebViewScreen(
-          url: loginUrl,
-          title: 'Вход через Telegram',
-        ),
-      ),
-    );
-
-    if (resultUri == null) throw 'Авторизация Telegram отменена.';
-
-    final code = extractOAuthCode(resultUri);
-    return _exchangeCodeForTokens(code);
-  }
-
 }

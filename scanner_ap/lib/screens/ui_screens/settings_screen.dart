@@ -1,6 +1,9 @@
 // ignore_for_file: use_build_context_synchronously
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../config/server_config.dart';
@@ -26,7 +29,8 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStateMixin {
+class _SettingsScreenState extends State<SettingsScreen>
+    with TickerProviderStateMixin {
   String _serverUrl = '';
   String _version = '';
   AuthUser? _user;
@@ -133,19 +137,37 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-              child: Text(l10n.settingsLanguage,
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: textColor)),
+              child: Text(
+                l10n.settingsLanguage,
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: textColor,
+                ),
+              ),
             ),
             for (final (code, label) in options)
               InkWell(
                 onTap: () => Navigator.pop(ctx, code ?? '__system__'),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 14,
+                  ),
                   child: Row(
                     children: [
-                      Expanded(child: Text(label, style: TextStyle(color: textColor, fontSize: 15))),
+                      Expanded(
+                        child: Text(
+                          label,
+                          style: TextStyle(color: textColor, fontSize: 15),
+                        ),
+                      ),
                       if (code == current)
-                        const Icon(Icons.check, color: Color(0xFF2CA5E0), size: 20),
+                        const Icon(
+                          Icons.check,
+                          color: Color(0xFF2CA5E0),
+                          size: 20,
+                        ),
                     ],
                   ),
                 ),
@@ -156,7 +178,9 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
       ),
     );
     if (selected == null || !mounted) return;
-    await LocaleNotifier().setLocale(selected == '__system__' ? null : Locale(selected));
+    await LocaleNotifier().setLocale(
+      selected == '__system__' ? null : Locale(selected),
+    );
     if (mounted) setState(() {});
   }
 
@@ -174,14 +198,32 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _ThemedTextField(controller: nameCtrl, hint: l10n.fieldName, isDark: isDark, autofocus: true),
+            _ThemedTextField(
+              controller: nameCtrl,
+              hint: l10n.fieldName,
+              isDark: isDark,
+              autofocus: true,
+            ),
             const SizedBox(height: 12),
-            _ThemedTextField(controller: emailCtrl, hint: l10n.fieldEmail, isDark: isDark),
+            _ThemedTextField(
+              controller: emailCtrl,
+              hint: l10n.fieldEmail,
+              isDark: isDark,
+            ),
           ],
         ),
         actions: [
-          _DialogButton(label: l10n.actionCancel, onTap: () => Navigator.pop(ctx, false), isDark: isDark),
-          _DialogButton(label: l10n.actionSave, onTap: () => Navigator.pop(ctx, true), isDark: isDark, primary: true),
+          _DialogButton(
+            label: l10n.actionCancel,
+            onTap: () => Navigator.pop(ctx, false),
+            isDark: isDark,
+          ),
+          _DialogButton(
+            label: l10n.actionSave,
+            onTap: () => Navigator.pop(ctx, true),
+            isDark: isDark,
+            primary: true,
+          ),
         ],
       ),
     );
@@ -193,9 +235,9 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
     final emailChanged = newEmail.isNotEmpty && newEmail != _user?.email;
 
     if (!nameChanged && !emailChanged) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.profileNothingChanged)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.profileNothingChanged)));
       return;
     }
 
@@ -206,14 +248,17 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
       );
       if (mounted) {
         setState(() => _user = updated);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.profileSaved)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.profileSaved)));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(friendlyError(e)),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -245,7 +290,10 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
   String get _initials {
     final name = _user?.name.trim() ?? '';
     if (name.isEmpty) return '';
-    final parts = name.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    final parts = name
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
     final first = parts.first.characters.first;
     final second = parts.length > 1 ? parts[1].characters.first : '';
     return (first + second).toUpperCase();
@@ -267,8 +315,17 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
           autofocus: true,
         ),
         actions: [
-          _DialogButton(label: l10n.actionCancel, onTap: () => Navigator.pop(ctx), isDark: isDark),
-          _DialogButton(label: l10n.actionSave, onTap: () => Navigator.pop(ctx, controller.text.trim()), isDark: isDark, primary: true),
+          _DialogButton(
+            label: l10n.actionCancel,
+            onTap: () => Navigator.pop(ctx),
+            isDark: isDark,
+          ),
+          _DialogButton(
+            label: l10n.actionSave,
+            onTap: () => Navigator.pop(ctx, controller.text.trim()),
+            isDark: isDark,
+            primary: true,
+          ),
         ],
       ),
     );
@@ -279,7 +336,9 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
       if (mounted) setState(() => _serverUrl = ServerConfig().baseUrl);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(e))));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(friendlyError(e))));
       }
     }
   }
@@ -296,31 +355,61 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
         final subColor = isDark ? Colors.white38 : Colors.grey.shade500;
         return Dialog(
           backgroundColor: bg,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-                child: Text(l10n.settingsPresetsTitle,
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: textColor)),
-              ),
-              ...presets.entries.map((e) => InkWell(
-                onTap: () => Navigator.pop(ctx, e.value.isEmpty ? null : e.value),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  child: Row(children: [
-                    Expanded(child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(e.key, style: TextStyle(fontWeight: FontWeight.w600, color: textColor)),
-                        if (e.value.isNotEmpty)
-                          Text(e.value, style: TextStyle(fontSize: 12, color: subColor)),
-                      ],
-                    )),
-                  ]),
+                child: Text(
+                  l10n.settingsPresetsTitle,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: textColor,
+                  ),
                 ),
-              )),
+              ),
+              ...presets.entries.map(
+                (e) => InkWell(
+                  onTap: () =>
+                      Navigator.pop(ctx, e.value.isEmpty ? null : e.value),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                e.key,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: textColor,
+                                ),
+                              ),
+                              if (e.value.isNotEmpty)
+                                Text(
+                                  e.value,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: subColor,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 8),
             ],
           ),
@@ -356,9 +445,15 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
                 isDark: isDark,
                 obscure: obscureCurrent,
                 suffix: IconButton(
-                  icon: Icon(obscureCurrent ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                      size: 20, color: isDark ? Colors.white38 : Colors.grey.shade400),
-                  onPressed: () => setDialogState(() => obscureCurrent = !obscureCurrent),
+                  icon: Icon(
+                    obscureCurrent
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    size: 20,
+                    color: isDark ? Colors.white38 : Colors.grey.shade400,
+                  ),
+                  onPressed: () =>
+                      setDialogState(() => obscureCurrent = !obscureCurrent),
                 ),
               ),
               const SizedBox(height: 12),
@@ -368,16 +463,31 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
                 isDark: isDark,
                 obscure: obscureNew,
                 suffix: IconButton(
-                  icon: Icon(obscureNew ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                      size: 20, color: isDark ? Colors.white38 : Colors.grey.shade400),
-                  onPressed: () => setDialogState(() => obscureNew = !obscureNew),
+                  icon: Icon(
+                    obscureNew
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    size: 20,
+                    color: isDark ? Colors.white38 : Colors.grey.shade400,
+                  ),
+                  onPressed: () =>
+                      setDialogState(() => obscureNew = !obscureNew),
                 ),
               ),
             ],
           ),
           actions: [
-            _DialogButton(label: l10n.actionCancel, onTap: () => Navigator.pop(ctx, false), isDark: isDark),
-            _DialogButton(label: l10n.actionSave, onTap: () => Navigator.pop(ctx, true), isDark: isDark, primary: true),
+            _DialogButton(
+              label: l10n.actionCancel,
+              onTap: () => Navigator.pop(ctx, false),
+              isDark: isDark,
+            ),
+            _DialogButton(
+              label: l10n.actionSave,
+              onTap: () => Navigator.pop(ctx, true),
+              isDark: isDark,
+              primary: true,
+            ),
           ],
         ),
       ),
@@ -389,29 +499,35 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
     final newPass = newCtrl.text;
 
     if (current.isEmpty || newPass.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.settingsFillBothFields)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.settingsFillBothFields)));
       return;
     }
     if (newPass.length < 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.settingsNewPasswordMin)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.settingsNewPasswordMin)));
       return;
     }
 
     try {
-      await AuthService().changePassword(currentPassword: current, newPassword: newPass);
+      await AuthService().changePassword(
+        currentPassword: current,
+        newPassword: newPass,
+      );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.settingsPasswordChanged)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.settingsPasswordChanged)));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(friendlyError(e)),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -428,7 +544,9 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
         final subColor = isDark ? Colors.white60 : const Color(0xFF6B7A99);
         return Dialog(
           backgroundColor: bg,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
             child: Column(
@@ -441,12 +559,20 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
                     color: Colors.red.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.logout_rounded, color: Colors.red, size: 28),
+                  child: const Icon(
+                    Icons.logout_rounded,
+                    color: Colors.red,
+                    size: 28,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(
                   l10n.settingsLogoutConfirmTitle,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: textColor),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: textColor,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -461,14 +587,23 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
                       child: OutlinedButton(
                         onPressed: () => Navigator.pop(ctx, false),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: isDark ? Colors.white70 : const Color(0xFF6B7A99),
+                          foregroundColor: isDark
+                              ? Colors.white70
+                              : const Color(0xFF6B7A99),
                           side: BorderSide(
-                            color: isDark ? Colors.white24 : const Color(0xFFDDE3ED),
+                            color: isDark
+                                ? Colors.white24
+                                : const Color(0xFFDDE3ED),
                           ),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           padding: const EdgeInsets.symmetric(vertical: 13),
                         ),
-                        child: Text(l10n.actionCancel, style: const TextStyle(fontWeight: FontWeight.w500)),
+                        child: Text(
+                          l10n.actionCancel,
+                          style: const TextStyle(fontWeight: FontWeight.w500),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -479,10 +614,15 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
                           backgroundColor: Colors.red,
                           foregroundColor: Colors.white,
                           elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           padding: const EdgeInsets.symmetric(vertical: 13),
                         ),
-                        child: Text(l10n.actionLogout, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        child: Text(
+                          l10n.actionLogout,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ),
                   ],
@@ -511,7 +651,9 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
     final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC),
+      backgroundColor: isDark
+          ? const Color(0xFF0F1923)
+          : const Color(0xFFF2F6FC),
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(64),
         child: AnimatedBuilder(
@@ -527,7 +669,9 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF2CA5E0).withValues(alpha: 0.04 + glow * 0.08),
+                    color: const Color(
+                      0xFF2CA5E0,
+                    ).withValues(alpha: 0.04 + glow * 0.08),
                     blurRadius: 10 + glow * 8,
                     offset: const Offset(0, 3),
                   ),
@@ -556,7 +700,9 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
                             gradient: LinearGradient(
                               colors: [
                                 Colors.transparent,
-                                const Color(0xFF2CA5E0).withValues(alpha: 0.15 + glow * 0.25),
+                                const Color(
+                                  0xFF2CA5E0,
+                                ).withValues(alpha: 0.15 + glow * 0.25),
                                 Colors.transparent,
                               ],
                             ),
@@ -581,7 +727,11 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
                             borderRadius: BorderRadius.circular(20),
                             child: Padding(
                               padding: const EdgeInsets.all(10),
-                              child: Icon(Icons.arrow_back_ios_new, size: 20, color: iconColor),
+                              child: Icon(
+                                Icons.arrow_back_ios_new,
+                                size: 20,
+                                color: iconColor,
+                              ),
                             ),
                           ),
                         ),
@@ -602,261 +752,269 @@ class _SettingsScreenState extends State<SettingsScreen> with TickerProviderStat
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: isDark
-                ? [const Color(0xFF0F1923), const Color(0xFF141E2B), const Color(0xFF0D1F30)]
-                : [const Color(0xFFF2F6FC), const Color(0xFFEEF4FF), Colors.white],
+                ? [
+                    const Color(0xFF0F1923),
+                    const Color(0xFF141E2B),
+                    const Color(0xFF0D1F30),
+                  ]
+                : [
+                    const Color(0xFFF2F6FC),
+                    const Color(0xFFEEF4FF),
+                    Colors.white,
+                  ],
           ),
         ),
         child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          // Шапка-профиль: аватар с инициалами, имя, email и статус подписки.
-          // Пока профиль не загрузился (или нет сети) — фолбэк с брендом.
-          _staggered(0, Container(
-            margin: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF2CA5E0), Color(0xFF1565C0)],
+          padding: EdgeInsets.zero,
+          children: [
+            // Шапка-профиль: аватар с инициалами, имя, email и статус подписки.
+            // Пока профиль не загрузился (или нет сети) — фолбэк с брендом.
+            _staggered(
+              0,
+              _ProfileHeaderCard(
+                user: _user,
+                initials: _initials,
+                l10n: l10n,
+                isPremium: PremiumService().isPremium,
+                onEdit: _user == null ? null : _editProfile,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF2CA5E0).withValues(alpha: 0.25),
-                  blurRadius: 20,
-                  offset: const Offset(0, 6),
-                ),
-              ],
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Colors.white.withValues(alpha: 0.32),
-                        Colors.white.withValues(alpha: 0.12),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  // ── Безопасность ──────────────────────────────────────────
+                  _staggered(
+                    1,
+                    _Section(
+                      title: l10n.secSectionSecurity,
+                      isDark: isDark,
+                      children: [
+                        _SettingsTile(
+                          icon: Icons.fingerprint,
+                          iconColor: const Color(0xFF26C060),
+                          title: l10n.secBiometricTitle,
+                          subtitle: _biometricAvailable
+                              ? l10n.secBiometricSubtitle
+                              : l10n.secBiometricUnavailable,
+                          isDark: isDark,
+                          trailing: Switch.adaptive(
+                            value: _biometricEnabled,
+                            activeThumbColor: const Color(0xFF2CA5E0),
+                            onChanged: _biometricAvailable
+                                ? _toggleBiometric
+                                : null,
+                          ),
+                        ),
+                        _SettingsTile(
+                          icon: Icons.lock_outline,
+                          iconColor: Colors.blue,
+                          title: l10n.settingsChangePasswordTile,
+                          onTap: _changePassword,
+                          isDark: isDark,
+                        ),
+                        _SettingsTile(
+                          icon: Icons.devices_outlined,
+                          iconColor: const Color(0xFF2CA5E0),
+                          title:
+                              Localizations.localeOf(context).languageCode ==
+                                  'ru'
+                              ? 'Активные сессии'
+                              : 'Active sessions',
+                          subtitle:
+                              Localizations.localeOf(context).languageCode ==
+                                  'ru'
+                              ? 'Управление вошедшими устройствами'
+                              : 'Manage signed-in devices',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const SessionManagementScreen(),
+                            ),
+                          ),
+                          isDark: isDark,
+                        ),
                       ],
                     ),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1.5),
                   ),
-                  child: _initials.isEmpty
-                      ? const Icon(Icons.document_scanner, color: Colors.white, size: 26)
-                      : Text(_initials,
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(_user?.name ?? l10n.appName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 2),
-                      Text(_user?.email ?? l10n.splashTagline,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 13)),
-                      const SizedBox(height: 7),
-                      _PlanChip(isPremium: PremiumService().isPremium),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // Кнопка редактирования профиля (имя/email).
-                Material(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: _user == null ? null : _editProfile,
-                    child: const Padding(
-                      padding: EdgeInsets.all(9),
-                      child: Icon(Icons.edit_outlined, color: Colors.white, size: 18),
+                  const SizedBox(height: 12),
+
+                  // ── Приложение ────────────────────────────────────────────
+                  _staggered(
+                    2,
+                    _Section(
+                      title: l10n.secSectionApp,
+                      isDark: isDark,
+                      children: [
+                        _SettingsTile(
+                          icon: isDark ? Icons.dark_mode : Icons.light_mode,
+                          iconColor: Colors.indigo,
+                          title: l10n.settingsTheme,
+                          subtitle: isDark
+                              ? l10n.settingsThemeDark
+                              : l10n.settingsThemeLight,
+                          isDark: isDark,
+                          trailing: Switch.adaptive(
+                            value: isDark,
+                            activeThumbColor: const Color(0xFF2CA5E0),
+                            onChanged: (_) => ThemeNotifier().toggle(),
+                          ),
+                        ),
+                        _SettingsTile(
+                          icon: Icons.language,
+                          iconColor: Colors.teal,
+                          title: l10n.settingsLanguage,
+                          subtitle: _languageName(l10n),
+                          onTap: _showLanguageDialog,
+                          isDark: isDark,
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              ],
-            ),
-          )),
+                  const SizedBox(height: 12),
 
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: [
-          // ── Безопасность ──────────────────────────────────────────
-          _staggered(1, _Section(title: l10n.secSectionSecurity, isDark: isDark, children: [
-            _SettingsTile(
-              icon: Icons.fingerprint,
-              iconColor: const Color(0xFF26C060),
-              title: l10n.secBiometricTitle,
-              subtitle: _biometricAvailable
-                  ? l10n.secBiometricSubtitle
-                  : l10n.secBiometricUnavailable,
-              isDark: isDark,
-              trailing: Switch.adaptive(
-                value: _biometricEnabled,
-                activeThumbColor: const Color(0xFF2CA5E0),
-                onChanged: _biometricAvailable ? _toggleBiometric : null,
-              ),
-            ),
-            _SettingsTile(
-              icon: Icons.lock_outline,
-              iconColor: Colors.blue,
-              title: l10n.settingsChangePasswordTile,
-              onTap: _changePassword,
-              isDark: isDark,
-            ),
-            _SettingsTile(
-              icon: Icons.devices_outlined,
-              iconColor: const Color(0xFF2CA5E0),
-              title: Localizations.localeOf(context).languageCode == 'ru'
-                  ? 'Активные сессии'
-                  : 'Active sessions',
-              subtitle: Localizations.localeOf(context).languageCode == 'ru'
-                  ? 'Управление вошедшими устройствами'
-                  : 'Manage signed-in devices',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const SessionManagementScreen(),
-                ),
-              ),
-              isDark: isDark,
-            ),
-          ])),
-          const SizedBox(height: 12),
+                  // ── Сервисы ───────────────────────────────────────────────
+                  _staggered(
+                    3,
+                    _Section(
+                      title: l10n.settingsSectionServices,
+                      isDark: isDark,
+                      children: [
+                        _SettingsTile(
+                          icon: Icons.workspace_premium,
+                          iconColor: Colors.amber,
+                          title: 'Premium',
+                          subtitle: l10n.settingsPremiumSubtitle,
+                          badge: const _ProBadge(),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const PremiumScreen(),
+                            ),
+                          ),
+                          isDark: isDark,
+                        ),
+                        _SettingsTile(
+                          icon: Icons.cloud_outlined,
+                          iconColor: Colors.blue,
+                          title: l10n.settingsCloud,
+                          subtitle: l10n.settingsCloudSubtitle,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const RemoteDocumentsScreen(),
+                            ),
+                          ),
+                          isDark: isDark,
+                        ),
+                        _SettingsTile(
+                          icon: Icons.draw_outlined,
+                          iconColor: Colors.teal,
+                          title: l10n.featSignature,
+                          subtitle: l10n.featSignatureSub,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const signature.HomeScreen(),
+                            ),
+                          ),
+                          isDark: isDark,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
 
-          // ── Приложение ────────────────────────────────────────────
-          _staggered(2, _Section(title: l10n.secSectionApp, isDark: isDark, children: [
-            _SettingsTile(
-              icon: isDark ? Icons.dark_mode : Icons.light_mode,
-              iconColor: Colors.indigo,
-              title: l10n.settingsTheme,
-              subtitle: isDark ? l10n.settingsThemeDark : l10n.settingsThemeLight,
-              isDark: isDark,
-              trailing: Switch.adaptive(
-                value: isDark,
-                activeThumbColor: const Color(0xFF2CA5E0),
-                onChanged: (_) => ThemeNotifier().toggle(),
-              ),
-            ),
-            _SettingsTile(
-              icon: Icons.language,
-              iconColor: Colors.teal,
-              title: l10n.settingsLanguage,
-              subtitle: _languageName(l10n),
-              onTap: _showLanguageDialog,
-              isDark: isDark,
-            ),
-          ])),
-          const SizedBox(height: 12),
+                  // Выбор сервера — инструмент разработки: в релизной сборке скрыт.
+                  if (kDebugMode) ...[
+                    _staggered(
+                      4,
+                      _Section(
+                        title: l10n.settingsSectionConnectionDebug,
+                        isDark: isDark,
+                        children: [
+                          _SettingsTile(
+                            icon: Icons.dns_outlined,
+                            iconColor: Colors.blue,
+                            title: l10n.settingsServerAddress,
+                            subtitle: _serverUrl.isEmpty
+                                ? l10n.settingsNotSet
+                                : _serverUrl,
+                            onTap: _editServerUrl,
+                            isDark: isDark,
+                          ),
+                          _SettingsTile(
+                            icon: Icons.tune_outlined,
+                            iconColor: Colors.indigo,
+                            title: l10n.settingsPresets,
+                            subtitle: l10n.settingsPresetsSubtitle,
+                            onTap: _showPresetsDialog,
+                            isDark: isDark,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
 
-          // ── Сервисы ───────────────────────────────────────────────
-          _staggered(3, _Section(title: l10n.settingsSectionServices, isDark: isDark, children: [
-            _SettingsTile(
-              icon: Icons.workspace_premium,
-              iconColor: Colors.amber,
-              title: 'Premium',
-              subtitle: l10n.settingsPremiumSubtitle,
-              badge: const _ProBadge(),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen())),
-              isDark: isDark,
-            ),
-            _SettingsTile(
-              icon: Icons.cloud_outlined,
-              iconColor: Colors.blue,
-              title: l10n.settingsCloud,
-              subtitle: l10n.settingsCloudSubtitle,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RemoteDocumentsScreen())),
-              isDark: isDark,
-            ),
-            _SettingsTile(
-              icon: Icons.draw_outlined,
-              iconColor: Colors.teal,
-              title: l10n.featSignature,
-              subtitle: l10n.featSignatureSub,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const signature.HomeScreen()),
-              ),
-              isDark: isDark,
-            ),
-          ])),
-          const SizedBox(height: 12),
+                  // ── О приложении ──────────────────────────────────────────
+                  _staggered(
+                    5,
+                    _Section(
+                      title: l10n.settingsSectionAbout,
+                      isDark: isDark,
+                      children: [
+                        _SettingsTile(
+                          icon: Icons.shield_outlined,
+                          iconColor: Colors.teal,
+                          title: l10n.settingsPrivacyPolicy,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const PrivacyPolicyScreen(),
+                            ),
+                          ),
+                          isDark: isDark,
+                        ),
+                        _SettingsTile(
+                          icon: Icons.info_outline,
+                          iconColor: Colors.blueGrey,
+                          title: l10n.settingsVersion,
+                          subtitle: _version.isEmpty ? '—' : _version,
+                          isDark: isDark,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
 
-          // Выбор сервера — инструмент разработки: в релизной сборке скрыт.
-          if (kDebugMode) ...[
-            _staggered(4, _Section(title: l10n.settingsSectionConnectionDebug, isDark: isDark, children: [
-              _SettingsTile(
-                icon: Icons.dns_outlined,
-                iconColor: Colors.blue,
-                title: l10n.settingsServerAddress,
-                subtitle: _serverUrl.isEmpty ? l10n.settingsNotSet : _serverUrl,
-                onTap: _editServerUrl,
-                isDark: isDark,
+                  // ── Выход (отдельной карточкой, акцент красным) ────────────
+                  _staggered(
+                    6,
+                    _Section(
+                      title: l10n.settingsSectionAccount,
+                      isDark: isDark,
+                      children: [
+                        _SettingsTile(
+                          icon: Icons.logout,
+                          iconColor: Colors.red,
+                          title: l10n.settingsLogout,
+                          titleColor: Colors.red,
+                          onTap: _logout,
+                          isDark: isDark,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
               ),
-              _SettingsTile(
-                icon: Icons.tune_outlined,
-                iconColor: Colors.indigo,
-                title: l10n.settingsPresets,
-                subtitle: l10n.settingsPresetsSubtitle,
-                onTap: _showPresetsDialog,
-                isDark: isDark,
-              ),
-            ])),
-            const SizedBox(height: 12),
+            ),
           ],
-
-          // ── О приложении ──────────────────────────────────────────
-          _staggered(5, _Section(title: l10n.settingsSectionAbout, isDark: isDark, children: [
-            _SettingsTile(
-              icon: Icons.shield_outlined,
-              iconColor: Colors.teal,
-              title: l10n.settingsPrivacyPolicy,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen())),
-              isDark: isDark,
-            ),
-            _SettingsTile(
-              icon: Icons.info_outline,
-              iconColor: Colors.blueGrey,
-              title: l10n.settingsVersion,
-              subtitle: _version.isEmpty ? '—' : _version,
-              isDark: isDark,
-            ),
-          ])),
-          const SizedBox(height: 12),
-
-          // ── Выход (отдельной карточкой, акцент красным) ────────────
-          _staggered(6, _Section(title: l10n.settingsSectionAccount, isDark: isDark, children: [
-            _SettingsTile(
-              icon: Icons.logout,
-              iconColor: Colors.red,
-              title: l10n.settingsLogout,
-              titleColor: Colors.red,
-              onTap: _logout,
-              isDark: isDark,
-            ),
-          ])),
-          const SizedBox(height: 20),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
-    ),
-  );
+    );
   }
 }
 
@@ -864,12 +1022,18 @@ class _Section extends StatelessWidget {
   final String title;
   final List<Widget> children;
   final bool isDark;
-  const _Section({required this.title, required this.children, required this.isDark});
+  const _Section({
+    required this.title,
+    required this.children,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
     final headerColor = isDark ? Colors.white38 : Colors.grey.shade500;
-    final dividerColor = isDark ? Colors.white.withValues(alpha: 0.07) : Colors.grey.shade100;
+    final dividerColor = isDark
+        ? Colors.white.withValues(alpha: 0.07)
+        : Colors.grey.shade100;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -878,8 +1042,12 @@ class _Section extends StatelessWidget {
           padding: const EdgeInsets.only(left: 4, bottom: 8),
           child: AnimatedDefaultTextStyle(
             duration: const Duration(milliseconds: 380),
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                color: headerColor, letterSpacing: 0.8),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: headerColor,
+              letterSpacing: 0.8,
+            ),
             child: Text(title.toUpperCase()),
           ),
         ),
@@ -889,18 +1057,30 @@ class _Section extends StatelessWidget {
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1E2A3A) : Colors.white,
             borderRadius: BorderRadius.circular(14),
-            boxShadow: isDark ? null : [
-              BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 2)),
-            ],
+            boxShadow: isDark
+                ? null
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
           ),
           child: Column(
-            children: children.asMap().entries.map((e) => Column(
-              children: [
-                e.value,
-                if (e.key < children.length - 1)
-                  Divider(height: 1, indent: 56, color: dividerColor),
-              ],
-            )).toList(),
+            children: children
+                .asMap()
+                .entries
+                .map(
+                  (e) => Column(
+                    children: [
+                      e.value,
+                      if (e.key < children.length - 1)
+                        Divider(height: 1, indent: 56, color: dividerColor),
+                    ],
+                  ),
+                )
+                .toList(),
           ),
         ),
       ],
@@ -908,7 +1088,309 @@ class _Section extends StatelessWidget {
   }
 }
 
-/// Чип статуса подписки в шапке-профиле.
+/// Карточка профиля с фоном из аватара и бейджем социального провайдера.
+class _ProfileHeaderCard extends StatelessWidget {
+  final AuthUser? user;
+  final String initials;
+  final AppLocalizations l10n;
+  final bool isPremium;
+  final VoidCallback? onEdit;
+
+  const _ProfileHeaderCard({
+    required this.user,
+    required this.initials,
+    required this.l10n,
+    required this.isPremium,
+    required this.onEdit,
+  });
+
+  String get _provider => (user?.provider ?? '').toLowerCase();
+
+  String? get _imageUrl {
+    final raw = user?.avatarUrl?.trim();
+    if (raw == null || raw.isEmpty) return null;
+
+    final uri = Uri.tryParse(raw);
+    if (uri != null && uri.hasScheme) return raw;
+
+    final base = Uri.tryParse(ServerConfig().baseUrl);
+    if (base == null) return raw;
+    return base.resolve(raw).toString();
+  }
+
+  bool get _isTelegram {
+    final email = user?.email.toLowerCase() ?? '';
+    final imageUrl = _imageUrl?.toLowerCase() ?? '';
+    return _provider.contains('telegram') ||
+        email.contains('@telegram.placeholder') ||
+        imageUrl.contains('telegram');
+  }
+
+  bool get _isGoogle {
+    final imageUrl = _imageUrl?.toLowerCase() ?? '';
+    return _provider.contains('google') ||
+        imageUrl.contains('googleusercontent');
+  }
+
+  IconData? get _providerIcon {
+    if (_isTelegram) return FontAwesomeIcons.telegram;
+    if (_isGoogle) return FontAwesomeIcons.google;
+    return null;
+  }
+
+  Color get _providerAccent {
+    if (_isTelegram) return const Color(0xFF2AABEE);
+    if (_isGoogle) return const Color(0xFF4285F4);
+    return const Color(0xFF2CA5E0);
+  }
+
+  List<Color> get _fallbackColors {
+    if (_isTelegram) {
+      return const [Color(0xFF37AEE2), Color(0xFF1E7BD8)];
+    }
+    if (_isGoogle) {
+      return const [Color(0xFF4285F4), Color(0xFF34A853), Color(0xFFEA4335)];
+    }
+    return const [Color(0xFF2CA5E0), Color(0xFF1565C0)];
+  }
+
+  Widget _fallbackBackground() {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: _fallbackColors,
+        ),
+      ),
+    );
+  }
+
+  Widget _photoBackground(String imageUrl) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Transform.scale(
+          scale: 1.18,
+          child: ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Image.network(
+              imageUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _fallbackBackground(),
+            ),
+          ),
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                _fallbackColors.first.withValues(alpha: 0.76),
+                _fallbackColors.last.withValues(alpha: 0.66),
+              ],
+            ),
+          ),
+        ),
+        ColoredBox(color: Colors.white.withValues(alpha: 0.10)),
+      ],
+    );
+  }
+
+  Widget _avatarFallback() {
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: 0.36),
+            Colors.white.withValues(alpha: 0.14),
+          ],
+        ),
+      ),
+      child: initials.isEmpty
+          ? const Icon(Icons.document_scanner, color: Colors.white, size: 26)
+          : Text(
+              initials,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+    );
+  }
+
+  Widget _avatar() {
+    final imageUrl = _imageUrl;
+    final providerIcon = _providerIcon;
+
+    return SizedBox(
+      width: 62,
+      height: 62,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.50),
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.16),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: ClipOval(
+                child: imageUrl == null
+                    ? _avatarFallback()
+                    : Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _avatarFallback(),
+                      ),
+              ),
+            ),
+          ),
+          if (providerIcon != null)
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: Container(
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: FaIcon(providerIcon, color: _providerAccent, size: 14),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = _imageUrl;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: _providerAccent.withValues(alpha: 0.28),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: imageUrl == null
+                  ? _fallbackBackground()
+                  : _photoBackground(imageUrl),
+            ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.10),
+                      Colors.black.withValues(alpha: 0.10),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+              child: Row(
+                children: [
+                  _avatar(),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          user?.name ?? l10n.appName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          user?.email ?? l10n.splashTagline,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.76),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _PlanChip(isPremium: isPremium),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Material(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: onEdit,
+                      child: const Padding(
+                        padding: EdgeInsets.all(9),
+                        child: Icon(
+                          Icons.edit_outlined,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _PlanChip extends StatelessWidget {
   final bool isPremium;
   const _PlanChip({required this.isPremium});
@@ -919,7 +1401,9 @@ class _PlanChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
         gradient: isPremium
-            ? const LinearGradient(colors: [Color(0xFFFFC107), Color(0xFFFF8F00)])
+            ? const LinearGradient(
+                colors: [Color(0xFFFFC107), Color(0xFFFF8F00)],
+              )
             : null,
         color: isPremium ? null : Colors.white.withValues(alpha: 0.18),
         borderRadius: BorderRadius.circular(999),
@@ -960,7 +1444,9 @@ class _ProBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFFFFC107), Color(0xFFFF8F00)]),
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFC107), Color(0xFFFF8F00)],
+        ),
         borderRadius: BorderRadius.circular(999),
         boxShadow: [
           BoxShadow(
@@ -1016,7 +1502,8 @@ class _SettingsTileState extends State<_SettingsTile> {
   @override
   Widget build(BuildContext context) {
     final isDark = widget.isDark;
-    final textColor = widget.titleColor ?? (isDark ? Colors.white : const Color(0xFF1A1A2E));
+    final textColor =
+        widget.titleColor ?? (isDark ? Colors.white : const Color(0xFF1A1A2E));
     final subColor = isDark ? Colors.white38 : Colors.grey.shade500;
     final chevronColor = isDark ? Colors.white24 : Colors.grey.shade400;
 
@@ -1040,11 +1527,21 @@ class _SettingsTileState extends State<_SettingsTile> {
         ),
         child: Icon(widget.icon, color: widget.iconColor, size: 20),
       ),
-      title: Text(widget.title,
-          style: TextStyle(fontWeight: FontWeight.w500, fontSize: 15, color: textColor)),
+      title: Text(
+        widget.title,
+        style: TextStyle(
+          fontWeight: FontWeight.w500,
+          fontSize: 15,
+          color: textColor,
+        ),
+      ),
       subtitle: widget.subtitle != null
-          ? Text(widget.subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: subColor))
+          ? Text(
+              widget.subtitle!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: subColor),
+            )
           : null,
       trailing: trailingItems.isNotEmpty
           ? Row(mainAxisSize: MainAxisSize.min, children: trailingItems)
@@ -1075,7 +1572,12 @@ class _ThemedDialog extends StatelessWidget {
   final String title;
   final Widget content;
   final List<Widget> actions;
-  const _ThemedDialog({required this.isDark, required this.title, required this.content, required this.actions});
+  const _ThemedDialog({
+    required this.isDark,
+    required this.title,
+    required this.content,
+    required this.actions,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1090,16 +1592,27 @@ class _ThemedDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: textColor)),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: textColor,
+              ),
+            ),
             const SizedBox(height: 16),
             content,
             const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
-              children: actions.map((a) => Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: a,
-              )).toList(),
+              children: actions
+                  .map(
+                    (a) => Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: a,
+                    ),
+                  )
+                  .toList(),
             ),
           ],
         ),
@@ -1116,14 +1629,22 @@ class _ThemedTextField extends StatelessWidget {
   final bool autofocus;
   final Widget? suffix;
   const _ThemedTextField({
-    required this.controller, required this.hint, required this.isDark,
-    this.obscure = false, this.autofocus = false, this.suffix,
+    required this.controller,
+    required this.hint,
+    required this.isDark,
+    this.obscure = false,
+    this.autofocus = false,
+    this.suffix,
   });
 
   @override
   Widget build(BuildContext context) {
-    final fill = isDark ? Colors.white.withValues(alpha: 0.07) : const Color(0xFFF2F6FC);
-    final border = isDark ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFE8EDF5);
+    final fill = isDark
+        ? Colors.white.withValues(alpha: 0.07)
+        : const Color(0xFFF2F6FC);
+    final border = isDark
+        ? Colors.white.withValues(alpha: 0.12)
+        : const Color(0xFFE8EDF5);
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final hintColor = isDark ? Colors.white38 : Colors.grey.shade400;
     return TextField(
@@ -1137,10 +1658,22 @@ class _ThemedTextField extends StatelessWidget {
         suffixIcon: suffix,
         filled: true,
         fillColor: fill,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: border)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: border)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF2CA5E0), width: 1.5)),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 12,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFF2CA5E0), width: 1.5),
+        ),
       ),
     );
   }
@@ -1151,7 +1684,12 @@ class _DialogButton extends StatelessWidget {
   final VoidCallback onTap;
   final bool isDark;
   final bool primary;
-  const _DialogButton({required this.label, required this.onTap, required this.isDark, this.primary = false});
+  const _DialogButton({
+    required this.label,
+    required this.onTap,
+    required this.isDark,
+    this.primary = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1163,7 +1701,9 @@ class _DialogButton extends StatelessWidget {
           backgroundColor: bg,
           foregroundColor: Colors.white,
           elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         ),
         child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),

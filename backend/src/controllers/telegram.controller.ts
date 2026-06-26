@@ -23,7 +23,7 @@ function buildTelegramName(data: TelegramData): string {
 }
 
 export async function telegramExchange(req: Request, res: Response): Promise<void> {
-  const { id, hash, auth_date, first_name, last_name, username } =
+  const { id, hash, auth_date, first_name, last_name, username, photo_url } =
     req.body as Partial<TelegramData>;
 
   if (!id || !hash || !auth_date) {
@@ -42,6 +42,7 @@ export async function telegramExchange(req: Request, res: Response): Promise<voi
     ...(first_name && { first_name }),
     ...(last_name && { last_name }),
     ...(username && { username }),
+    ...(photo_url && { photo_url }),
   };
 
   if (!verifyTelegramAuthData(data, env.telegramBotToken)) {
@@ -56,6 +57,7 @@ export async function telegramExchange(req: Request, res: Response): Promise<voi
       provider: 'telegram',
       providerUserId: data.id,
       emailVerified: false,
+      avatarUrl: data.photo_url,
       sessionContext: { userAgent: req.get('user-agent') ?? undefined },
     });
     logger.info(`[telegramExchange] Success: tg_id=${data.id}`);
@@ -180,7 +182,8 @@ export async function telegramCallback(req: Request, res: Response): Promise<voi
       auth_date:  String(d.auth_date),
       first_name: d.first_name,
       last_name:  d.last_name,
-      username:   d.username
+      username:   d.username,
+      photo_url:  d.photo_url
     })
   })
   .then(function(r){return r.json().then(function(j){return {ok:r.ok,data:j};});})
@@ -236,6 +239,7 @@ export async function telegramCallback(req: Request, res: Response): Promise<voi
       provider: 'telegram',
       providerUserId: id,
       emailVerified: false,
+      avatarUrl: photo_url,
       sessionContext: { userAgent: req.get('user-agent') ?? undefined },
     });
   } catch (err) {

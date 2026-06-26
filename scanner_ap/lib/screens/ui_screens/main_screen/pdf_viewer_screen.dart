@@ -76,9 +76,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       pageOverlaysBuilder: _buildPageOverlays,
       loadingBannerBuilder: (context, bytesDownloaded, totalBytes) =>
           const Center(
-            child: CircularProgressIndicator(
-              color: Color(0xFF2CA5E0),
-            ),
+            child: CircularProgressIndicator(color: Color(0xFF2CA5E0)),
           ),
     );
     _pdfViewerLayer = PdfViewer.file(
@@ -96,8 +94,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     return selected?.type == EditingMode.signature;
   }
 
-  String _newAnnotationId() =>
-      DateTime.now().microsecondsSinceEpoch.toString();
+  String _newAnnotationId() => DateTime.now().microsecondsSinceEpoch.toString();
 
   PdfAnnotation? _findAnnotation(String? id) {
     if (id == null) return null;
@@ -144,12 +141,6 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         : 'Tap the document to place the signature';
   }
 
-  String _signatureCreateFirst(BuildContext context) {
-    return Localizations.localeOf(context).languageCode == 'ru'
-        ? 'Сначала создайте подпись'
-        : 'Create a signature first';
-  }
-
   String _signatureSelectedLabel(BuildContext context) {
     return Localizations.localeOf(context).languageCode == 'ru'
         ? 'Подпись'
@@ -194,7 +185,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.copy_outlined, color: Color(0xFF2CA5E0)),
+              leading: const Icon(
+                Icons.copy_outlined,
+                color: Color(0xFF2CA5E0),
+              ),
               title: Text(
                 Localizations.localeOf(context).languageCode == 'ru'
                     ? 'Сохранить как копию'
@@ -208,10 +202,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.undo, color: Color(0xFF2CA5E0)),
-              title: Text(
-                l10n.pdfUndoLast,
-                style: TextStyle(color: textColor),
-              ),
+              title: Text(l10n.pdfUndoLast, style: TextStyle(color: textColor)),
               onTap: () {
                 Navigator.pop(ctx);
                 _undoLastAction();
@@ -219,7 +210,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             ),
             if (_rotation != 0)
               ListTile(
-                leading: const Icon(Icons.screen_rotation_alt, color: Color(0xFF2CA5E0)),
+                leading: const Icon(
+                  Icons.screen_rotation_alt,
+                  color: Color(0xFF2CA5E0),
+                ),
                 title: Text(
                   Localizations.localeOf(context).languageCode == 'ru'
                       ? 'Сбросить поворот'
@@ -264,7 +258,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
   Future<Uint8List> _buildAnnotatedPdfBytes() async {
     final boundary =
-        _captureKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+        _captureKey.currentContext?.findRenderObject()
+            as RenderRepaintBoundary?;
     if (boundary == null) {
       throw StateError('Capture area is unavailable');
     }
@@ -321,7 +316,11 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context).snackSaved(p.basename(outPath)))),
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).snackSaved(p.basename(outPath)),
+          ),
+        ),
       );
       Navigator.pop(context, outPath);
     } catch (e) {
@@ -340,7 +339,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     if (_annotations.isNotEmpty) {
       setState(() {
         _annotations.removeLast();
-        if (_annotations.every((annotation) => annotation.id != _selectedAnnotationId)) {
+        if (_annotations.every(
+          (annotation) => annotation.id != _selectedAnnotationId,
+        )) {
           _selectedAnnotationId = null;
         }
       });
@@ -444,9 +445,6 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       final ready = await _ensureSignatureReady();
       if (!mounted) return;
       if (!ready) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_signatureCreateFirst(context))),
-        );
         return;
       }
 
@@ -488,17 +486,15 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     final pageRect = _pdfController.layout.pageLayouts[page.pageNumber - 1];
     final pageScale = pageRect.width / page.width;
     const targetWidth = 160.0;
-    final aspectRatio =
-        originalSize.width == 0 ? 2.8 : originalSize.width / originalSize.height;
+    final aspectRatio = originalSize.width == 0
+        ? 2.8
+        : originalSize.width / originalSize.height;
     final widthOnScreen = targetWidth.clamp(110.0, pageRect.width * 0.48);
     final width = widthOnScreen / pageScale;
     final height = width / aspectRatio;
     final pageSize = Size(page.width, page.height);
     final position = _clampSignaturePositionOnPage(
-      position: Offset(
-        hit.offset.x - width / 2,
-        hit.offset.y - height / 2,
-      ),
+      position: Offset(hit.offset.x - width / 2, hit.offset.y - height / 2),
       boxSize: Size(width, height),
       pageSize: pageSize,
     );
@@ -544,7 +540,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       return;
     }
 
-    final pageRect = _pdfController.layout.pageLayouts[annotation!.pageNumber! - 1];
+    final pageRect =
+        _pdfController.layout.pageLayouts[annotation!.pageNumber! - 1];
     final scaleX = pageRect.width / annotation.pageSize!.width;
     final scaleY = pageRect.height / annotation.pageSize!.height;
     final nextPosition = _clampSignaturePositionOnPage(
@@ -555,7 +552,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       boxSize: annotation.boxSize!,
       pageSize: annotation.pageSize!,
     );
-    _updateAnnotation(id, (current) => current.copyWith(position: nextPosition));
+    _updateAnnotation(
+      id,
+      (current) => current.copyWith(position: nextPosition),
+    );
   }
 
   void _resizeSignature(String id, Offset delta) {
@@ -569,13 +569,17 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     }
 
     final pageSize = annotation!.pageSize!;
-    final pageRect = _pdfController.layout.pageLayouts[annotation.pageNumber! - 1];
+    final pageRect =
+        _pdfController.layout.pageLayouts[annotation.pageNumber! - 1];
     final scaleX = pageRect.width / pageSize.width;
     final boxSize = annotation.boxSize!;
     final aspectRatio = boxSize.width / boxSize.height;
     final maxWidth = (pageSize.width * 0.75).clamp(90.0, pageSize.width);
     final nextWidth = (boxSize.width + delta.dx / scaleX).clamp(90.0, maxWidth);
-    final nextHeight = (nextWidth / aspectRatio).clamp(34.0, pageSize.height * 0.5);
+    final nextHeight = (nextWidth / aspectRatio).clamp(
+      34.0,
+      pageSize.height * 0.5,
+    );
     final nextSize = Size(nextWidth, nextHeight);
     final nextPosition = _clampSignaturePositionOnPage(
       position: annotation.position!,
@@ -629,7 +633,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     final rect = _selectedSignatureRectInViewer();
     final point = event.localPosition;
 
-    if (!(rect?.contains(point) ?? false) && !(handleRect?.contains(point) ?? false)) {
+    if (!(rect?.contains(point) ?? false) &&
+        !(handleRect?.contains(point) ?? false)) {
       if (_selectedAnnotationId != null) {
         setState(() => _selectedAnnotationId = null);
         _refreshPdfOverlays();
@@ -715,7 +720,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                 boxShadow: isSelected
                     ? [
                         BoxShadow(
-                          color: const Color(0xFF2CA5E0).withValues(alpha: 0.18),
+                          color: const Color(
+                            0xFF2CA5E0,
+                          ).withValues(alpha: 0.18),
                           blurRadius: 16,
                           spreadRadius: 2,
                         ),
@@ -734,7 +741,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                 left: 6,
                 top: -16,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFF2CA5E0),
                     borderRadius: BorderRadius.circular(999),
@@ -792,12 +802,17 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     }
   }
 
-  List<Widget> _buildPageOverlays(BuildContext context, Rect pageRect, PdfPage page) {
+  List<Widget> _buildPageOverlays(
+    BuildContext context,
+    Rect pageRect,
+    PdfPage page,
+  ) {
     final pageAnnotations = _annotations
         .where((annotation) => annotation.pageNumber == page.pageNumber)
         .toList();
     final currentAnnotation = _currentAnnotation;
-    final currentForPage = currentAnnotation != null &&
+    final currentForPage =
+        currentAnnotation != null &&
             currentAnnotation.pageNumber == page.pageNumber
         ? currentAnnotation
         : null;
@@ -816,7 +831,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       ),
       ...pageAnnotations
           .where((annotation) => annotation.type == EditingMode.signature)
-          .map((annotation) => _buildPageSignatureAnnotation(annotation, pageRect, page)),
+          .map(
+            (annotation) =>
+                _buildPageSignatureAnnotation(annotation, pageRect, page),
+          ),
     ];
   }
 
@@ -842,10 +860,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             onPressed: () async {
               final file = File(widget.filePath);
               if (await file.exists()) {
-                await Share.shareXFiles(
-                  [XFile(widget.filePath)],
-                  subject: widget.fileName,
-                );
+                await Share.shareXFiles([
+                  XFile(widget.filePath),
+                ], subject: widget.fileName);
               }
             },
           ),
@@ -898,13 +915,18 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                 top: 12,
                 child: IgnorePointer(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFF2CA5E0).withValues(alpha: 0.96),
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF2CA5E0).withValues(alpha: 0.22),
+                          color: const Color(
+                            0xFF2CA5E0,
+                          ).withValues(alpha: 0.22),
                           blurRadius: 20,
                         ),
                       ],
@@ -932,7 +954,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                 ),
               ),
             ..._annotations.map(_buildAnnotation),
-            if (_currentAnnotation != null) _buildAnnotation(_currentAnnotation!),
+            if (_currentAnnotation != null)
+              _buildAnnotation(_currentAnnotation!),
           ],
         ),
       ),
@@ -1095,12 +1118,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   }
 }
 
-enum EditingMode {
-  none,
-  pen,
-  highlight,
-  signature,
-}
+enum EditingMode { none, pen, highlight, signature }
 
 class PdfAnnotation {
   final String id;

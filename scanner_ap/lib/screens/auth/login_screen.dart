@@ -10,6 +10,7 @@ import '../../utils/app_notification.dart';
 import '../../utils/error_messages.dart';
 import '../../widgets/aura_logo.dart';
 import '../ui_screens/main_screen/app_tabs_screen.dart';
+import '../ui_screens/onboarding_screen.dart';
 import '../ui_screens/splash_screen.dart';
 import 'register_screen.dart';
 
@@ -81,7 +82,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _onGoogleTap() => _socialLogin(_socialAuth.loginWithGoogle);
+  void _onGoogleTap() => _socialLogin(() => _socialAuth.loginWithGoogle(context));
 
   void _onAppleTap() => _socialLogin(_socialAuth.loginWithApple);
 
@@ -443,6 +444,33 @@ class _LoginScreenState extends State<LoginScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
+
+                  // ── DEV: preview onboarding ──────────────────────────
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const OnboardingScreen(),
+                        ),
+                      ),
+                      icon: Icon(
+                        Icons.remove_red_eye_outlined,
+                        size: 15,
+                        color: subtextColor,
+                      ),
+                      label: Text(
+                        'Preview Onboarding',
+                        style: TextStyle(fontSize: 12, color: subtextColor),
+                      ),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                 ],
               ),
             ),

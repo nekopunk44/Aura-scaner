@@ -43,6 +43,18 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
   final List<String> _filteredDocumentPaths = [];
   bool _isSearching = false;
 
+  // Ключ строки поиска — чтобы плавающий «+» мог пристыковаться в неё.
+  final GlobalKey _searchBarKey = GlobalKey();
+
+  /// Глобальная рамка строки поиска (для докинга FAB). null — если не в layout.
+  Rect? searchBarRect() {
+    final ctx = _searchBarKey.currentContext;
+    if (ctx == null) return null;
+    final box = ctx.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
   Timer? _searchDebounce;
 
   @override
@@ -916,6 +928,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
+                  key: _searchBarKey,
                   decoration: BoxDecoration(
                     color: searchFill,
                     borderRadius: BorderRadius.circular(14),

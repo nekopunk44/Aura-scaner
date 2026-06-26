@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../capture_modes.dart';
@@ -18,9 +19,11 @@ class MultiPageDocumentView extends StatelessWidget {
     required this.onBack,
     required this.onSettings,
     required this.maxPages,
-    required this.currentBatchPageCount,  
-    required this.onFinishBatch,       
-    required this.onClearBatch,         
+    required this.currentBatchPageCount,
+    required this.onFinishBatch,
+    required this.onClearBatch,
+    this.photoQuad,
+    this.previewAspect,
   });
 
   // ------------------ Контроллеры и Состояние ------------------
@@ -30,6 +33,10 @@ class MultiPageDocumentView extends StatelessWidget {
   final bool isScanning;
   final int maxPages;
   final int currentBatchPageCount; // 0-maxPages
+
+  // Живой контур листа (4 нормализованных угла) + соотношение сторон превью.
+  final ValueListenable<List<Offset>?>? photoQuad;
+  final double? previewAspect;
 
   // ------------------ Функции ------------------
   final Future<void> Function() takePicture;
@@ -154,6 +161,43 @@ class MultiPageDocumentView extends StatelessWidget {
     );
   }
 
+  // Живой контур листа (или фиксированная рамка-фолбэк, пока контур не найден).
+  Widget _buildDetectionOverlay(double cameraHeightLimit, Size size) {
+    final ql = photoQuad;
+    final aspect = previewAspect;
+    if (ql == null || aspect == null) {
+      return _fixedFrame(cameraHeightLimit, size);
+    }
+    return Positioned.fill(
+      child: ValueListenableBuilder<List<Offset>?>(
+        valueListenable: ql,
+        builder: (context, quad, _) {
+          if (quad == null || quad.length != 4) {
+            return _fixedFrame(cameraHeightLimit, size);
+          }
+          return CustomPaint(
+            painter: _DocQuadPainter(
+              quad: quad,
+              contentAspect: aspect,
+              active: isDocumentDetected,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _fixedFrame(double cameraHeightLimit, Size size) {
+    return Align(
+      alignment: const Alignment(0, -0.75),
+      child: SizedBox(
+        height: cameraHeightLimit,
+        width: size.width,
+        child: _buildDocumentFrameOverlay(cameraHeightLimit),
+      ),
+    );
+  }
+
   Widget _buildBottomBar(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     const bool isDocumentMode = true;
@@ -242,15 +286,7 @@ class MultiPageDocumentView extends StatelessWidget {
       color: Colors.transparent,
       child: Stack(
         children: [
-          if (isAutoMode)
-            Align(
-              alignment: const Alignment(0, -0.75),
-              child: SizedBox(
-                height: cameraHeightLimit,
-                width: size.width,
-                child: _buildDocumentFrameOverlay(cameraHeightLimit),
-              ),
-            ),
+          if (isAutoMode) _buildDetectionOverlay(cameraHeightLimit, size),
 
           Align(
             alignment: const Alignment(0, -0.05),
@@ -284,4 +320,70 @@ class MultiPageDocumentView extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Рисует живой контур листа поверх превью (cover-маппинг по previewAspect):
+/// затемнение вне контура, сам контур и угловые точки. Зелёный — когда лист
+/// стабильно распознан (вот-вот автоснимок), синий — пока ловится.
+class _DocQuadPainter extends CustomPainter {
+  final List<Offset> quad; // tl, tr, br, bl (нормализованные 0..1)
+  final double contentAspect; // портретное w/h превью
+  final bool active;
+
+  const _DocQuadPainter({
+    required this.quad,
+    required this.contentAspect,
+    required this.active,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double boxAspect = size.width / size.height;
+    double dispW, dispH;
+    if (boxAspect > contentAspect) {
+      dispW = size.width;
+      dispH = size.width / contentAspect;
+    } else {
+      dispH = size.height;
+      dispW = size.height * contentAspect;
+    }
+    final double dx = (size.width - dispW) / 2;
+    final double dy = (size.height - dispH) / 2;
+    Offset mapPoint(Offset n) => Offset(dx + n.dx * dispW, dy + n.dy * dispH);
+
+    final points = quad.map(mapPoint).toList(growable: false);
+    final path = Path()..addPolygon(points, true);
+
+    final outside = Path.combine(
+      PathOperation.difference,
+      Path()..addRect(Offset.zero & size),
+      path,
+    );
+    canvas.drawPath(
+      outside,
+      Paint()..color = Colors.black.withValues(alpha: 0.35),
+    );
+
+    final Color color =
+        active ? const Color(0xFF22C55E) : const Color(0xFF2CA5E0);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..strokeJoin = StrokeJoin.round
+        ..color = color,
+    );
+
+    final dot = Paint()..color = color;
+    for (final p in points) {
+      canvas.drawCircle(p, 6, dot);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DocQuadPainter old) =>
+      old.active != active ||
+      old.contentAspect != contentAspect ||
+      !identical(old.quad, quad);
 }

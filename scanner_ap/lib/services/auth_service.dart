@@ -7,18 +7,47 @@ class AuthUser {
   final String id;
   final String email;
   final String name;
+  final String? provider;
+  final String? avatarUrl;
 
   const AuthUser({
     required this.id,
     required this.email,
     required this.name,
+    this.provider,
+    this.avatarUrl,
   });
 
+  static String? _readString(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+      if (value is num) return value.toString();
+    }
+    return null;
+  }
+
   factory AuthUser.fromJson(Map<String, dynamic> json) => AuthUser(
-        id: json['id'] as String,
-        email: json['email'] as String,
-        name: json['name'] as String,
-      );
+    id: _readString(json, const ['id', '_id', 'userId']) ?? '',
+    email: _readString(json, const ['email']) ?? '',
+    name: _readString(json, const ['name', 'displayName', 'username']) ?? '',
+    provider: _readString(json, const [
+      'provider',
+      'authProvider',
+      'socialProvider',
+    ]),
+    avatarUrl: _readString(json, const [
+      'avatarUrl',
+      'avatar_url',
+      'photoUrl',
+      'photo_url',
+      'picture',
+      'image',
+      'photo',
+    ]),
+  );
 }
 
 class UserSession {
@@ -57,7 +86,8 @@ class UserSession {
   factory UserSession.fromJson(Map<String, dynamic> json) {
     final startedAt = _readDate(json, 'startedAt') ?? DateTime.now();
     return UserSession(
-      id: _readString(json, 'id') ??
+      id:
+          _readString(json, 'id') ??
           'legacy-session-${startedAt.millisecondsSinceEpoch}',
       startedAt: startedAt,
       lastUsedAt: _readDate(json, 'lastUsedAt') ?? startedAt,
@@ -77,11 +107,10 @@ class AuthService {
     required String password,
   }) async {
     try {
-      final response = await _api.dio.post('/auth/register', data: {
-        'name': name,
-        'email': email,
-        'password': password,
-      });
+      final response = await _api.dio.post(
+        '/auth/register',
+        data: {'name': name, 'email': email, 'password': password},
+      );
       await _saveTokens(response.data as Map<String, dynamic>);
       return AuthUser.fromJson(response.data['user'] as Map<String, dynamic>);
     } on DioException catch (e) {
@@ -94,10 +123,10 @@ class AuthService {
     required String password,
   }) async {
     try {
-      final response = await _api.dio.post('/auth/login', data: {
-        'email': email,
-        'password': password,
-      });
+      final response = await _api.dio.post(
+        '/auth/login',
+        data: {'email': email, 'password': password},
+      );
       await _saveTokens(response.data as Map<String, dynamic>);
       return AuthUser.fromJson(response.data['user'] as Map<String, dynamic>);
     } on DioException catch (e) {
@@ -113,13 +142,16 @@ class AuthService {
     Map<String, dynamic>? extra,
   }) async {
     try {
-      final response = await _api.dio.post('/auth/social', data: {
-        'provider': provider,
-        'token': token,
-        if (email != null) 'email': email,
-        if (name != null) 'name': name,
-        if (extra != null) ...extra,
-      });
+      final response = await _api.dio.post(
+        '/auth/social',
+        data: {
+          'provider': provider,
+          'token': token,
+          if (email != null) 'email': email,
+          if (name != null) 'name': name,
+          if (extra != null) ...extra,
+        },
+      );
       await _saveTokens(response.data as Map<String, dynamic>);
       return AuthUser.fromJson(response.data['user'] as Map<String, dynamic>);
     } on DioException catch (e) {
@@ -142,10 +174,10 @@ class AuthService {
     required String newPassword,
   }) async {
     try {
-      await _api.dio.post('/auth/change-password', data: {
-        'currentPassword': currentPassword,
-        'newPassword': newPassword,
-      });
+      await _api.dio.post(
+        '/auth/change-password',
+        data: {'currentPassword': currentPassword, 'newPassword': newPassword},
+      );
     } on DioException catch (e) {
       throw _parseError(e);
     }
@@ -191,10 +223,13 @@ class AuthService {
 
   Future<AuthUser> updateProfile({String? name, String? email}) async {
     try {
-      final response = await _api.dio.patch('/auth/profile', data: {
-        if (name != null) 'name': name,
-        if (email != null) 'email': email,
-      });
+      final response = await _api.dio.patch(
+        '/auth/profile',
+        data: {
+          if (name != null) 'name': name,
+          if (email != null) 'email': email,
+        },
+      );
       return AuthUser.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw _parseError(e);

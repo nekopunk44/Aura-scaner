@@ -35,6 +35,7 @@ interface SocialIdentity {
   email: string;
   emailVerified: boolean;
   name: string;
+  avatarUrl?: string;
 }
 
 export async function createOAuthCode(params: {
@@ -81,12 +82,24 @@ async function findOrCreateSocialUser(identity: SocialIdentity): Promise<IUser> 
 
   let user = await User.findOne({ [identityField]: identity.providerUserId });
   if (user) {
+    let changed = false;
     if (
       identity.emailVerified &&
       user.email.endsWith('.placeholder') &&
       user.email !== identity.email
     ) {
       user.email = identity.email;
+      changed = true;
+    }
+    if (identity.avatarUrl && user.avatarUrl !== identity.avatarUrl) {
+      user.avatarUrl = identity.avatarUrl;
+      changed = true;
+    }
+    if (user.authProvider !== identity.provider) {
+      user.authProvider = identity.provider;
+      changed = true;
+    }
+    if (changed) {
       await user.save();
     }
     return user;
@@ -100,6 +113,10 @@ async function findOrCreateSocialUser(identity: SocialIdentity): Promise<IUser> 
         throw new Error(`Provider ${identity.provider} already linked to another identity`);
       }
       user.set(identityField, identity.providerUserId);
+      user.authProvider = identity.provider;
+      if (identity.avatarUrl) {
+        user.avatarUrl = identity.avatarUrl;
+      }
       await user.save();
       return user;
     }
@@ -111,6 +128,8 @@ async function findOrCreateSocialUser(identity: SocialIdentity): Promise<IUser> 
     name: identity.name,
     password: randomPassword,
     [identityField]: identity.providerUserId,
+    authProvider: identity.provider,
+    ...(identity.avatarUrl && { avatarUrl: identity.avatarUrl }),
   });
 }
 
@@ -131,6 +150,7 @@ export async function loginOrCreateUserAndIssueCode(params: {
   provider?: SocialProvider;
   providerUserId?: string;
   emailVerified?: boolean;
+  avatarUrl?: string;
   sessionContext?: SessionContext;
 }): Promise<string> {
   const user =
@@ -141,6 +161,7 @@ export async function loginOrCreateUserAndIssueCode(params: {
           email: params.email,
           emailVerified: params.emailVerified ?? false,
           name: params.name,
+          avatarUrl: params.avatarUrl,
         })
       : await (async () => {
           let existing = await User.findOne({ email: params.email });
@@ -184,15 +205,27 @@ export async function exchangeOAuthCode(req: Request, res: Response): Promise<vo
     return;
   }
 
+  const user = await User.findById(record.userId).select(
+    '_id email name authProvider avatarUrl',
+  );
+
   res.json({
     token: record.token,
     refreshToken: record.refreshToken,
     sessionId: record.sessionId,
-    user: {
-      id: String(record.userId),
-      email: record.email,
-      name: record.name,
-    },
+    user: user
+      ? {
+          id: user._id,
+          email: user.email,
+          name: user.name,
+          provider: user.authProvider ?? null,
+          avatarUrl: user.avatarUrl ?? null,
+        }
+      : {
+          id: String(record.userId),
+          email: record.email,
+          name: record.name,
+        },
   });
 }
 
@@ -260,7 +293,13 @@ function exchangeGoogleCode(
 
 function verifyGoogleToken(
   idToken: string,
-): Promise<{ sub: string; email: string; name: string; emailVerified: boolean }> {
+): Promise<{
+  sub: string;
+  email: string;
+  name: string;
+  emailVerified: boolean;
+  picture?: string;
+}> {
   return new Promise((resolve, reject) => {
     const url = `https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
     https
@@ -284,6 +323,7 @@ function verifyGoogleToken(
               name: payload.name ?? payload.email.split('@')[0],
               emailVerified:
                 payload.email_verified === 'true' || payload.email_verified === '1',
+              picture: payload.picture,
             });
           } catch {
             reject(new Error('Failed to parse Google tokeninfo response'));
@@ -323,6 +363,7 @@ export async function googleCallback(req: Request, res: Response): Promise<void>
       provider: 'google',
       providerUserId: googlePayload.sub,
       emailVerified: true,
+      avatarUrl: googlePayload.picture,
       sessionContext: getRequestSessionContext(req),
     });
 
@@ -477,6 +518,7 @@ export async function socialLogin(req: Request, res: Response): Promise<void> {
     first_name: tgFirstName,
     last_name: tgLastName,
     username: tgUsername,
+    photo_url: tgPhotoUrl,
   } = req.body as {
     provider?: string;
     token?: string;
@@ -487,6 +529,7 @@ export async function socialLogin(req: Request, res: Response): Promise<void> {
     first_name?: string;
     last_name?: string;
     username?: string;
+    photo_url?: string;
   };
 
   if (!provider) {
@@ -525,6 +568,7 @@ export async function socialLogin(req: Request, res: Response): Promise<void> {
         email: googlePayload.email.toLowerCase().trim(),
         emailVerified: true,
         name: bodyName ?? googlePayload.name,
+        avatarUrl: googlePayload.picture,
       };
     } else if (provider === 'apple') {
       const applePayload = await verifyAppleToken(token!);
@@ -565,6 +609,7 @@ export async function socialLogin(req: Request, res: Response): Promise<void> {
         ...(tgFirstName && { first_name: tgFirstName }),
         ...(tgLastName && { last_name: tgLastName }),
         ...(tgUsername && { username: tgUsername }),
+        ...(tgPhotoUrl && { photo_url: tgPhotoUrl }),
       };
 
       if (!verifyTelegramAuthData(tgData, env.telegramBotToken)) {
@@ -579,6 +624,7 @@ export async function socialLogin(req: Request, res: Response): Promise<void> {
         email: `tg_${tgId}@telegram.placeholder`,
         emailVerified: false,
         name: bodyName ?? (fullName || (tgUsername ?? String(tgId))),
+        avatarUrl: tgPhotoUrl,
       };
     } else {
       const igProfile = await exchangeInstagramCode(token!, buildInstagramRedirectUri());
@@ -606,7 +652,13 @@ export async function socialLogin(req: Request, res: Response): Promise<void> {
       token: accessToken,
       refreshToken,
       sessionId,
-      user: { id: user._id, email: user.email, name: user.name },
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        provider: user.authProvider ?? null,
+        avatarUrl: user.avatarUrl ?? null,
+      },
     });
   } catch (err) {
     logger.error('[socialLogin] DB error:', { err });

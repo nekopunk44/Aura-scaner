@@ -37,6 +37,7 @@ import 'passport/passport_camera.dart';
 import 'id_card/id_card_camera.dart';
 import 'documents/documents_camera.dart';
 import 'documents/documents_photo_preview.dart';
+import 'documents/save_options_document.dart';
 import 'translate/translate_camera.dart';
 import '+10 ten page/plus_ten_page_camera.dart';
 import 'importDocument/document_importer.dart';
@@ -158,6 +159,12 @@ class _CameraScreenState extends State<CameraScreen>
 
   bool _isDocumentDetected = false;
   bool _isScanning = false;
+  // Стабилизация детекции документа: считаем подряд кадры с найденным/потерянным
+  // контуром, чтобы не реагировать на дрожь и не снимать раньше времени.
+  int _quadFoundFrames = 0;
+  int _quadLostFrames = 0;
+  static const int _kQuadStable = 4; // подряд кадров с контуром → «найден»
+  static const int _kQuadLost = 3; // подряд кадров без контура → «потерян»
   // После первого кадра в многошаговом документном потоке ждём, пока
   // документ уберут из кадра, прежде чем авто-снимать следующую сторону
   // или страницу. Это защищает от мгновенного повторного снимка.
@@ -431,6 +438,8 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
 
+    _quadFoundFrames = 0;
+    _quadLostFrames = 0;
     captureModeController.startDetectionStream(
       isDocumentMode: isDocumentMode,
       onDetectionChanged: (detected) {
@@ -507,10 +516,24 @@ class _CameraScreenState extends State<CameraScreen>
         // без ложных автоснимков эвристики на фактурном фоне (ковёр/стол).
         detected = quadFound;
       } else if (_isDocumentSheetFeature(featureName)) {
-        // Документ: квадрат ИЛИ эвристика. Геометрия ловит лист где угодно в
-        // кадре (эвристика требовала совпадения с фиксированной рамкой).
-        detected =
-            quadFound || _detectDocumentContour(image, featureName: featureName);
+        // Документ: только реальный четырёхугольник (без ложной эвристики на
+        // фактурном фоне/экране) + стабилизация по кадрам и гистерезис — лист
+        // считается «найден» лишь после нескольких устойчивых кадров, а теряется
+        // тоже не мгновенно. Это убирает дрожь и ранние/ложные автоснимки.
+        if (quadFound) {
+          _quadFoundFrames++;
+          _quadLostFrames = 0;
+        } else {
+          _quadLostFrames++;
+          _quadFoundFrames = 0;
+        }
+        if (_quadFoundFrames >= _kQuadStable) {
+          detected = true;
+        } else if (_quadLostFrames >= _kQuadLost) {
+          detected = false;
+        } else {
+          detected = _isDocumentDetected; // держим текущее (гистерезис)
+        }
       } else {
         detected = _detectDocumentContour(image, featureName: featureName);
       }
@@ -1175,30 +1198,21 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
 
+    // «Готово» ведёт сразу к выбору формата (минуя превью и экран правки).
+    // Страницы уже авто-обрезаны при захвате → editStates не нужны (null =
+    // берём файлы как есть). На успешном сохранении success-экран сам сносит
+    // стек камеры; на отмене — возвращаемся сюда, батч сохраняется.
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => MultiPageDocumentPreviewScreen(
-          imageFiles: _multiPageBatch,
-          onRetakeAll: () {
-            Navigator.popUntil(context, (route) => route.isFirst);
-            _resetMultiPageState();
-            if (_selectedFeature != 'Перевод') {
-              _startDocumentDetectionStream();
-            }
-          },
-          onSaveBatch: (editedPaths) {
-            Navigator.popUntil(context, (route) => route.isFirst);
-            widget.onScanCompleted?.call(editedPaths.first);
-            _resetMultiPageState();
-            if (_selectedFeature != 'Перевод') {
-              _startDocumentDetectionStream();
-            }
-          },
+        builder: (_) => SaveOptionsScreen(
+          sourceFilePaths: _multiPageBatch.map((f) => f.path).toList(),
+          editStates: null,
         ),
       ),
     );
 
+    if (!mounted) return;
     if (_selectedFeature != 'Перевод') {
       _startDocumentDetectionStream();
     }
@@ -2900,6 +2914,8 @@ class _CameraScreenState extends State<CameraScreen>
         currentBatchPageCount: _currentBatchPageCount,
         onFinishBatch: _onFinishBatch,
         onClearBatch: _onClearBatch,
+        photoQuad: _photoQuad,
+        previewAspect: _previewAspect,
       ),
       '+10 страниц': () => UnlimitedDocumentView(
         cameraController: _cameraController,

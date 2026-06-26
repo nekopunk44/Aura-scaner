@@ -9,6 +9,23 @@ import { blacklistToken } from '../utils/tokenBlacklist';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function providerForUser(user: {
+  authProvider?: string | null;
+  googleSub?: string | null;
+  appleSub?: string | null;
+  vkUserId?: string | null;
+  telegramId?: string | null;
+  instagramUserId?: string | null;
+}): string | null {
+  if (user.authProvider) return user.authProvider;
+  if (user.telegramId) return 'telegram';
+  if (user.googleSub) return 'google';
+  if (user.appleSub) return 'apple';
+  if (user.vkUserId) return 'vk';
+  if (user.instagramUserId) return 'instagram';
+  return null;
+}
+
 function normalizeSessionId(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
@@ -56,7 +73,7 @@ export async function getProfile(
 ): Promise<void> {
   try {
     const user = await User.findById(req.userId).select(
-      '_id email name createdAt isPremium premiumActivatedAt premiumExpiresAt',
+      '_id email name createdAt isPremium premiumActivatedAt premiumExpiresAt authProvider avatarUrl googleSub appleSub vkUserId telegramId instagramUserId',
     );
     if (!user) {
       res.status(404).json({ message: 'Пользователь не найден' });
@@ -67,6 +84,8 @@ export async function getProfile(
       id: user._id,
       email: user.email,
       name: user.name,
+      provider: providerForUser(user),
+      avatarUrl: user.avatarUrl ?? null,
       createdAt: user.createdAt,
       isPremium: isPremiumActive(user),
       premiumActivatedAt: user.premiumActivatedAt ?? null,
@@ -123,7 +142,9 @@ export async function updateProfile(
 
     const user = await User.findByIdAndUpdate(req.userId, updates, {
       new: true,
-    }).select('_id email name createdAt isPremium premiumActivatedAt premiumExpiresAt');
+    }).select(
+      '_id email name createdAt isPremium premiumActivatedAt premiumExpiresAt authProvider avatarUrl googleSub appleSub vkUserId telegramId instagramUserId',
+    );
 
     if (!user) {
       res.status(404).json({ message: 'Пользователь не найден' });
@@ -134,6 +155,8 @@ export async function updateProfile(
       id: user._id,
       email: user.email,
       name: user.name,
+      provider: providerForUser(user),
+      avatarUrl: user.avatarUrl ?? null,
       createdAt: user.createdAt,
       isPremium: isPremiumActive(user),
       premiumActivatedAt: user.premiumActivatedAt ?? null,

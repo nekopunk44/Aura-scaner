@@ -38,7 +38,15 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
   _CamState _state = _CamState.loading;
   bool _processing = false;
   Offset? _tapPos;
+  // Рамка-результат в экранных координатах — обтягивает реально найденный текст.
+  Rect? _resultRect;
   _ContactCard? _card;
+
+  // Зум (pinch).
+  double _zoom = 1.0;
+  double _minZoom = 1.0;
+  double _maxZoom = 1.0;
+  double _baseZoom = 1.0;
 
   @override
   void initState() {
@@ -75,6 +83,9 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
         await ctrl.dispose();
         return;
       }
+      _minZoom = await ctrl.getMinZoomLevel();
+      _maxZoom = await ctrl.getMaxZoomLevel();
+      _zoom = _minZoom;
       setState(() {
         _camCtrl = ctrl;
         _state = _CamState.ready;
@@ -84,14 +95,14 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
     }
   }
 
-  Future<void> _captureAndAnalyze(
-      TapDownDetails details, BoxConstraints constraints) async {
+  Future<void> _captureAndAnalyze(Offset tap, BoxConstraints constraints) async {
     if (_processing || _camCtrl == null || _state != _CamState.ready) return;
     final l10n = AppLocalizations.of(context);
     setState(() {
       _processing = true;
       _card = null;
-      _tapPos = details.localPosition;
+      _resultRect = null;
+      _tapPos = tap;
     });
 
     String? tmpPath;
@@ -105,14 +116,14 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
       final uW = up.width.toDouble();
       final uH = up.height.toDouble();
 
-      // Cover-преобразование: бокс превью → пиксели снимка (то же, как на экране).
+      // Cover-преобразование: бокс превью ↔ пиксели снимка (то же, как на экране).
       final bW = constraints.maxWidth;
       final bH = constraints.maxHeight;
       final s = math.max(bW / uW, bH / uH);
       final dx = (bW - uW * s) / 2;
       final dy = (bH - uH * s) / 2;
-      final imgX = (details.localPosition.dx - dx) / s;
-      final imgY = (details.localPosition.dy - dy) / s;
+      final imgX = (tap.dx - dx) / s;
+      final imgY = (tap.dy - dy) / s;
 
       final cropW = (uW * _fracW).round();
       final cropH = (uH * _fracH).round();
@@ -121,9 +132,12 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
 
       var crop = img.copyCrop(up,
           x: cropX, y: cropY, width: cropW, height: cropH);
-      // Мелкий вырез → апскейл для Tesseract (точность растёт).
+      // Мелкий вырез → апскейл для точности; коэффициент учтём в обратном маппинге.
+      double ocrScale = 1.0;
       if (crop.width < 1000) {
-        crop = img.copyResize(crop, width: 1000);
+        final resized = img.copyResize(crop, width: 1000);
+        ocrScale = resized.width / crop.width;
+        crop = resized;
       }
 
       final dir = await getApplicationDocumentsDirectory();
@@ -131,21 +145,39 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
           '${dir.path}/hotzone_crop_${DateTime.now().millisecondsSinceEpoch}.png';
       await File(tmpPath).writeAsBytes(img.encodePng(crop));
 
-      final text = await FlutterTesseractOcr.extractText(
+      // hOCR даёт и текст, и рамки слов — обводка обтянет реальный текст.
+      final hocr = await FlutterTesseractOcr.extractHocr(
         tmpPath,
         language: 'rus+eng',
       );
+      final words = _parseHocrWords(hocr);
 
       if (!mounted) return;
-      if (text.trim().isEmpty) {
+      if (words.isEmpty) {
         setState(() => _processing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(l10n.hotZoneNoText)),
         );
         return;
       }
+
+      // Union рамок слов (в пикселях выреза) → снимок → экран.
+      final union = _wordsUnion(words);
+      final imgL = cropX + union.left / ocrScale;
+      final imgT = cropY + union.top / ocrScale;
+      final imgR = cropX + union.right / ocrScale;
+      final imgB = cropY + union.bottom / ocrScale;
+      const pad = 6.0;
+      final rect = Rect.fromLTRB(
+        dx + imgL * s - pad,
+        dy + imgT * s - pad,
+        dx + imgR * s + pad,
+        dy + imgB * s + pad,
+      );
+
       setState(() {
-        _card = _parseContact(text);
+        _card = _parseContact(_wordsToText(words));
+        _resultRect = rect;
         _processing = false;
       });
     } catch (e) {
@@ -162,6 +194,75 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
         } catch (_) {}
       }
     }
+  }
+
+  // hOCR-слова: рамка (bbox в пикселях выреза) + текст.
+  List<_Word> _parseHocrWords(String hocr) {
+    final re = RegExp(
+      r'''class=['"]ocrx_word['"][^>]*?title=['"]bbox (\d+) (\d+) (\d+) (\d+)[^'"]*['"][^>]*>(.*?)</span>''',
+      dotAll: true,
+    );
+    final words = <_Word>[];
+    for (final m in re.allMatches(hocr)) {
+      final text = _stripTags(m.group(5)!).trim();
+      if (text.isEmpty) continue;
+      words.add(_Word(
+        double.parse(m.group(1)!),
+        double.parse(m.group(2)!),
+        double.parse(m.group(3)!),
+        double.parse(m.group(4)!),
+        text,
+      ));
+    }
+    return words;
+  }
+
+  String _stripTags(String s) => s
+      .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&apos;', "'");
+
+  Rect _wordsUnion(List<_Word> words) {
+    var l = double.infinity, t = double.infinity;
+    var r = -double.infinity, b = -double.infinity;
+    for (final w in words) {
+      l = math.min(l, w.x0);
+      t = math.min(t, w.y0);
+      r = math.max(r, w.x1);
+      b = math.max(b, w.y1);
+    }
+    return Rect.fromLTRB(l, t, r, b);
+  }
+
+  // Слова → текст с восстановлением строк (группировка по вертикали).
+  String _wordsToText(List<_Word> words) {
+    if (words.isEmpty) return '';
+    final avgH =
+        words.map((w) => w.y1 - w.y0).reduce((a, b) => a + b) / words.length;
+    final sorted = [...words]..sort((a, b) => a.y0.compareTo(b.y0));
+    final lines = <List<_Word>>[];
+    for (final w in sorted) {
+      if (lines.isEmpty) {
+        lines.add([w]);
+        continue;
+      }
+      final last = lines.last;
+      final lastY =
+          last.map((e) => e.y0).reduce((a, b) => a + b) / last.length;
+      if ((w.y0 - lastY).abs() <= avgH * 0.6) {
+        last.add(w);
+      } else {
+        lines.add([w]);
+      }
+    }
+    return lines.map((ln) {
+      ln.sort((a, b) => a.x0.compareTo(b.x0));
+      return ln.map((e) => e.text).join(' ');
+    }).join('\n');
   }
 
   _ContactCard _parseContact(String rawText) {
@@ -283,16 +384,45 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
             ),
           ),
 
-          // Слой захвата тапов.
+          // Слой жестов: тап = снимок (onTapUp, чтобы пинч не срабатывал),
+          // щипок двумя пальцами = зум.
           Positioned.fill(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTapDown: (d) => _captureAndAnalyze(d, constraints),
+              onTapUp: (d) => _captureAndAnalyze(d.localPosition, constraints),
+              onScaleStart: (_) => _baseZoom = _zoom,
+              onScaleUpdate: (d) {
+                if (d.pointerCount < 2) return;
+                final z = (_baseZoom * d.scale).clamp(_minZoom, _maxZoom);
+                if ((z - _zoom).abs() < 0.01) return;
+                _zoom = z;
+                _camCtrl?.setZoomLevel(z);
+                setState(() {});
+              },
             ),
           ),
 
-          // Рамка «горячей зоны» в месте тапа — видно, что именно снято.
-          if (_tapPos != null) _buildTapBox(constraints),
+          // Во время сканирования — статичная рамка у тапа; после — рамка,
+          // обтягивающая реально распознанный текст.
+          if (_processing && _tapPos != null) _buildScanBox(constraints),
+          if (!_processing && _resultRect != null) _buildResultBox(),
+
+          // Индикатор зума.
+          if (_zoom > _minZoom + 0.05)
+            Positioned(
+              top: 12,
+              right: 12,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text('${_zoom.toStringAsFixed(1)}x',
+                    style: const TextStyle(color: Colors.white, fontSize: 13)),
+              ),
+            ),
 
           // Подсказка.
           if (!_processing && _card == null)
@@ -354,7 +484,8 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
     });
   }
 
-  Widget _buildTapBox(BoxConstraints constraints) {
+  // Статичная рамка-«сканер» у тапа (показывается, пока идёт распознавание).
+  Widget _buildScanBox(BoxConstraints constraints) {
     final w = constraints.maxWidth * _fracW;
     final h = constraints.maxHeight * _fracH;
     final left = (_tapPos!.dx - w / 2).clamp(0.0, constraints.maxWidth - w);
@@ -367,10 +498,29 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
       child: IgnorePointer(
         child: Container(
           decoration: BoxDecoration(
-            border: Border.all(
-                color: _processing ? Colors.amber : _accent, width: 2.5),
+            border: Border.all(color: Colors.amber, width: 2.5),
             borderRadius: BorderRadius.circular(12),
             color: Colors.white.withValues(alpha: 0.06),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Рамка по реально найденному тексту (обтягивает union слов).
+  Widget _buildResultBox() {
+    final r = _resultRect!;
+    return Positioned(
+      left: r.left,
+      top: r.top,
+      width: r.width,
+      height: r.height,
+      child: IgnorePointer(
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: _accent, width: 2.5),
+            borderRadius: BorderRadius.circular(8),
+            color: _accent.withValues(alpha: 0.10),
           ),
         ),
       ),
@@ -441,6 +591,7 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
                   onPressed: () => setState(() {
                     _card = null;
                     _tapPos = null;
+                    _resultRect = null;
                   }),
                 ),
               ],
@@ -482,6 +633,7 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
                 onPressed: () => setState(() {
                   _card = null;
                   _tapPos = null;
+                  _resultRect = null;
                 }),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _accent,
@@ -566,6 +718,12 @@ class _HotZoneScreenState extends State<HotZoneScreen> {
       ),
     );
   }
+}
+
+class _Word {
+  final double x0, y0, x1, y1;
+  final String text;
+  const _Word(this.x0, this.y0, this.x1, this.y1, this.text);
 }
 
 class _ContactCard {

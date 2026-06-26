@@ -10,6 +10,8 @@ export interface IUser extends Document {
   vkUserId?: string;
   telegramId?: string;
   instagramUserId?: string;
+  authProvider?: 'google' | 'apple' | 'vk' | 'telegram' | 'instagram';
+  avatarUrl?: string;
   isPremium: boolean;
   premiumActivatedAt?: Date;
   premiumExpiresAt?: Date;
@@ -30,6 +32,11 @@ const userSchema = new Schema<IUser>(
     vkUserId: { type: String, unique: true, sparse: true, trim: true },
     telegramId: { type: String, unique: true, sparse: true, trim: true },
     instagramUserId: { type: String, unique: true, sparse: true, trim: true },
+    authProvider: {
+      type: String,
+      enum: ['google', 'apple', 'vk', 'telegram', 'instagram'],
+    },
+    avatarUrl: { type: String, trim: true },
     isPremium: { type: Boolean, default: false },
     premiumActivatedAt: { type: Date },
     premiumExpiresAt: { type: Date },
