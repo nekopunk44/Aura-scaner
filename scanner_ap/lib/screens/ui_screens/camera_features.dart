@@ -98,10 +98,4 @@ final List<Map<String, dynamic>> cameraFeatures = [
     'description': 'Оптимизация файла для экологичной печати',
     'isDocument': false
   },
-  {
-    'name': 'Импорт документов',
-    'label': 'Импорт',
-    'icon': Icons.file_upload,
-    'isDocument': false,
-  },
 ];

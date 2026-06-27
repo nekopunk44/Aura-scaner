@@ -147,11 +147,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
     setState(() => _purchasing = true);
     final param = PurchaseParam(productDetails: product);
     try {
-      if (Platform.isIOS) {
-        await _iap.buyNonConsumable(purchaseParam: param);
-      } else {
-        await _iap.buyNonConsumable(purchaseParam: param);
-      }
+      await _iap.buyNonConsumable(purchaseParam: param);
     } catch (e) {
       if (mounted) {
         setState(() => _purchasing = false);
@@ -242,12 +238,29 @@ class _PremiumScreenState extends State<PremiumScreen> {
 
     return Scaffold(
       backgroundColor: bg,
-      appBar: AppBar(
-        title: Text('Premium',
-            style: TextStyle(fontWeight: FontWeight.w600, color: textColor)),
-        backgroundColor: isDark ? const Color(0xFF141E2B) : Colors.white,
-        elevation: 0,
-        iconTheme: IconThemeData(color: textColor),
+      extendBodyBehindAppBar: true,
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight),
+        child: SafeArea(
+          bottom: false,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: BackButton(color: Colors.white),
+              ),
+              Text(
+                'Premium',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF2CA5E0)))
@@ -263,8 +276,16 @@ class _PremiumScreenState extends State<PremiumScreen> {
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
+                      borderRadius: BorderRadius.vertical(
+                        bottom: Radius.circular(32),
+                      ),
                     ),
-                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 48),
+                    padding: EdgeInsets.fromLTRB(
+                      24,
+                      MediaQuery.of(context).padding.top + kToolbarHeight + 16,
+                      24,
+                      48,
+                    ),
                     child: Column(
                       children: [
                         Container(
@@ -287,25 +308,6 @@ class _PremiumScreenState extends State<PremiumScreen> {
                         const SizedBox(height: 6),
                         Text(l10n.premiumHeadline,
                             style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.75))),
-                        if (_isPremium) ...[
-                          const SizedBox(height: 14),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                            decoration: BoxDecoration(
-                              color: Colors.green.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: Colors.green.withValues(alpha: 0.4)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.check_circle, color: Colors.greenAccent, size: 16),
-                                const SizedBox(width: 6),
-                                Text(l10n.premiumActive, style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.w600)),
-                              ],
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),
@@ -474,9 +476,10 @@ class _PremiumScreenState extends State<PremiumScreen> {
       ),
       padding: const EdgeInsets.all(20),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
                 width: 40, height: 40,
@@ -487,19 +490,17 @@ class _PremiumScreenState extends State<PremiumScreen> {
                 child: const Icon(Icons.verified, color: Colors.green, size: 22),
               ),
               const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(l10n.premiumSubscriptionActive,
-                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: textColor)),
-                    const SizedBox(height: 2),
-                    Text(
-                      expiresText != null ? l10n.premiumValidUntil(expiresText) : l10n.premiumAccessOpen,
-                      style: TextStyle(fontSize: 12, color: subColor),
-                    ),
-                  ],
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(l10n.premiumSubscriptionActive,
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: textColor)),
+                  const SizedBox(height: 2),
+                  Text(
+                    expiresText != null ? l10n.premiumValidUntil(expiresText) : l10n.premiumAccessOpen,
+                    style: TextStyle(fontSize: 12, color: subColor),
+                  ),
+                ],
               ),
             ],
           ),

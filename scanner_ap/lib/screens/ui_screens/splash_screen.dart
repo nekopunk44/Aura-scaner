@@ -166,9 +166,9 @@ class _SplashScreenState extends State<SplashScreen>
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Color(0xFFEEF4FF),
-              Color(0xFFF5F9FF),
-              Colors.white,
+              Color(0xFFD6E6F7),
+              Color(0xFFDDEBF8),
+              Color(0xFFE8F2FF),
             ],
           );
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
@@ -190,7 +190,7 @@ class _SplashScreenState extends State<SplashScreen>
                   tag: kAuraLogoHeroTag,
                   child: const AuraLogo(size: 170, animate: true),
                 ),
-                const SizedBox(height: 28),
+                const SizedBox(height: 16),
                 FadeTransition(
                   opacity: _textCtrl,
                   child: SlideTransition(

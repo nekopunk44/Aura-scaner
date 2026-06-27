@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'dart:io';
+import '../../../l10n/app_localizations.dart';
 
 import 'apis/recognition_api.dart';
 import 'apis/translation_api.dart';
@@ -579,25 +580,28 @@ class _TranslateCameraState extends State<TranslateCamera> {
             right: 0,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                children: const [
-                  Text(
-                    'Режим перевода',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
+              child: Builder(builder: (context) {
+                final l10n = AppLocalizations.of(context);
+                return Column(
+                  children: [
+                    Text(
+                      l10n.translateCameraTitle,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    'Наведите камеру на текст — перевод появится автоматически',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                ],
-              ),
+                    const SizedBox(height: 6),
+                    Text(
+                      l10n.translateCameraHint,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                  ],
+                );
+              }),
             ),
           ),
 

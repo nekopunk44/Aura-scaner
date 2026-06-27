@@ -106,6 +106,31 @@ export async function downloadDocument(req: AuthRequest, res: Response): Promise
   }
 }
 
+export async function thumbnailDocument(req: AuthRequest, res: Response): Promise<void> {
+  if (!isValidObjectId(req.params.id)) {
+    res.status(400).json({ message: 'Некорректный идентификатор' });
+    return;
+  }
+  try {
+    const doc = await DocumentModel.findOne({ _id: req.params.id, userId: req.userId });
+    if (!doc || !['jpg', 'jpeg', 'png'].includes(doc.format)) {
+      res.status(404).json({ message: 'Превью недоступно' });
+      return;
+    }
+    const filePath = path.resolve(env.uploadDir, doc.filePath);
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ message: 'Файл не найден' });
+      return;
+    }
+    res.setHeader('Content-Type', doc.mimeType);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.sendFile(filePath);
+  } catch (err) {
+    logger.error('[thumbnailDocument]', err);
+    res.status(500).json({ message: 'Ошибка при получении превью' });
+  }
+}
+
 export async function renameDocument(req: AuthRequest, res: Response): Promise<void> {
   if (!isValidObjectId(req.params.id)) {
     res.status(400).json({ message: 'Некорректный идентификатор документа' });

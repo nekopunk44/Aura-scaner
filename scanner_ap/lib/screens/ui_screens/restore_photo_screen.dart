@@ -258,6 +258,7 @@ class _RestorePhotoScreenState extends State<RestorePhotoScreen> {
       backgroundColor: scaffoldBg,
       appBar: AppBar(
         title: Text(l10n.featRestorePhoto),
+        centerTitle: true,
         backgroundColor: isDark ? const Color(0xFF141E2B) : Colors.white,
         foregroundColor: textColor,
         elevation: 0,

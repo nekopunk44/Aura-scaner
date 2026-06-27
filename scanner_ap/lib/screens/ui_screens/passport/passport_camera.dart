@@ -3,6 +3,7 @@ import 'package:camera/camera.dart';
 
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
+import '../../../l10n/app_localizations.dart';
 
 class PassportCameraView extends StatelessWidget {
   const PassportCameraView({
@@ -63,7 +64,7 @@ class PassportCameraView extends StatelessWidget {
     );
   }
 
-  Widget _buildTopPanel() {
+  Widget _buildTopPanel(AppLocalizations l10n) {
     final String currentMode = captureModeController.captureMode;
 
     return SafeArea(
@@ -87,12 +88,12 @@ class PassportCameraView extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  _buildTopSegment("Авто", currentMode == "Автоматически", () {
+                  _buildTopSegment(l10n.camAutoLabel, currentMode == "Автоматически", () {
                     if (currentMode != "Автоматически") {
-                      setCaptureModeAuto(); 
+                      setCaptureModeAuto();
                     }
                   }),
-                  _buildTopSegment("Ручн.", currentMode == "Вручную", () {
+                  _buildTopSegment(l10n.camManualLabel, currentMode == "Вручную", () {
                     if (currentMode != "Вручную") {
                       setCaptureModeManual();
                     }
@@ -164,6 +165,7 @@ class PassportCameraView extends StatelessWidget {
     const bool isDocumentMode = true;
     final bool canSnap =
         captureModeController.canTakePicture(isDocumentMode: isDocumentMode);
+    final l10n = AppLocalizations.of(context);
 
     return CameraControlsBar(
       onCapture: canSnap ? takePicture : null,
@@ -179,12 +181,13 @@ class PassportCameraView extends StatelessWidget {
       ],
       rightActions: [
         CameraActionPill(
-          label: '$pageCount стр.',
+          label: l10n.camPassportPages(pageCount),
           onTap: () async {
             final selectedCount = await showModalBottomSheet<int>(
               context: context,
               backgroundColor: const Color(0xFF111111),
               builder: (sheetContext) {
+                final sl10n = AppLocalizations.of(sheetContext);
                 return SafeArea(
                   child: ListView.builder(
                     shrinkWrap: true,
@@ -194,7 +197,7 @@ class PassportCameraView extends StatelessWidget {
                       final isSelected = count == pageCount;
                       return ListTile(
                         title: Text(
-                          '$count стр.',
+                          sl10n.camPassportPages(count),
                           style: TextStyle(
                             color: isSelected ? const Color(0xFF2CA5E0) : Colors.white,
                             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
@@ -248,7 +251,7 @@ class PassportCameraView extends StatelessWidget {
           top: 0,
           left: 0,
           right: 0,
-          child: _buildTopPanel(),
+          child: _buildTopPanel(AppLocalizations.of(context)),
         ),
 
         Positioned(

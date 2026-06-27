@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../config/theme_config.dart';
@@ -8,6 +9,7 @@ import '../../services/social_auth_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../utils/app_notification.dart';
 import '../../utils/error_messages.dart';
+import '../../widgets/auth_scaffold.dart';
 import '../../widgets/aura_logo.dart';
 import '../ui_screens/main_screen/app_tabs_screen.dart';
 import '../ui_screens/onboarding_screen.dart';
@@ -21,7 +23,8 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen>
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -31,8 +34,38 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
 
+  // Social-buttons stagger entry
+  late final AnimationController _entryCtrl;
+  late final Animation<double> _socialFade;
+  late final Animation<Offset> _socialSlide;
+
+  @override
+  void initState() {
+    super.initState();
+    _entryCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _socialFade = CurvedAnimation(
+      parent: _entryCtrl,
+      curve: const Interval(0.35, 1.0, curve: Curves.easeOut),
+    );
+    _socialSlide = Tween<Offset>(begin: const Offset(0, 0.35), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _entryCtrl,
+            curve: const Interval(0.35, 1.0, curve: Curves.easeOutCubic),
+          ),
+        );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _entryCtrl.forward();
+    });
+  }
+
   @override
   void dispose() {
+    _entryCtrl.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -82,7 +115,8 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _onGoogleTap() => _socialLogin(() => _socialAuth.loginWithGoogle(context));
+  void _onGoogleTap() =>
+      _socialLogin(() => _socialAuth.loginWithGoogle(context));
 
   void _onAppleTap() => _socialLogin(_socialAuth.loginWithApple);
 
@@ -115,8 +149,12 @@ class _LoginScreenState extends State<LoginScreen> {
     final bg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
-    final inputFill = isDark ? Colors.white.withValues(alpha: 0.07) : const Color(0xFFF2F6FC);
-    final inputBorder = isDark ? Colors.white.withValues(alpha: 0.15) : const Color(0xFFE8EDF5);
+    final inputFill = isDark
+        ? Colors.white.withValues(alpha: 0.07)
+        : const Color(0xFFF2F6FC);
+    final inputBorder = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : const Color(0xFFE8EDF5);
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -125,15 +163,23 @@ class _LoginScreenState extends State<LoginScreen> {
         final scheme = Theme.of(ctx).colorScheme;
         return Dialog(
           backgroundColor: bg,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(l10n.telegramAddEmailTitle,
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: textColor)),
+                Text(
+                  l10n.telegramAddEmailTitle,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: textColor,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Text(
                   l10n.telegramAddEmailBody,
@@ -149,7 +195,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     hintStyle: TextStyle(color: subColor),
                     filled: true,
                     fillColor: inputFill,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide(color: inputBorder),
@@ -166,27 +215,44 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 20),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      style: TextButton.styleFrom(
-                        foregroundColor: subColor,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        style: TextButton.styleFrom(
+                          foregroundColor: subColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 12,
+                          ),
+                        ),
+                        child: Text(l10n.actionSkip),
                       ),
-                      child: Text(l10n.actionSkip),
                     ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: scheme.primary,
-                        foregroundColor: scheme.onPrimary,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: scheme.primary,
+                          foregroundColor: scheme.onPrimary,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 12,
+                          ),
+                        ),
+                        child: Text(
+                          l10n.actionAdd,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
                       ),
-                      child: Text(l10n.actionAdd, style: const TextStyle(fontWeight: FontWeight.w600)),
                     ),
                   ],
                 ),
@@ -213,27 +279,21 @@ class _LoginScreenState extends State<LoginScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-    final subtextColor = isDark ? Colors.white54 : const Color(0xFF8A94A6);
-    final cardBg = isDark ? Colors.white.withValues(alpha: 0.07) : Colors.white;
-    final cardBorder = isDark ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFE8EDF5);
-    final inputFill = isDark ? Colors.white.withValues(alpha: 0.07) : const Color(0xFFF2F6FC);
-    final inputBorder = isDark ? Colors.white.withValues(alpha: 0.15) : const Color(0xFFE8EDF5);
-    final dividerColor = isDark ? Colors.white.withValues(alpha: 0.15) : const Color(0xFFDDE3ED);
-    final prefixColor = isDark ? Colors.white54 : const Color(0xFFAAB4C8);
+    final subtextColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+    final inputFill = isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : const Color(0xFFF4F8FF);
+    final inputBorder = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : const Color(0xFFD7E3F4);
+    final dividerColor = isDark
+        ? Colors.white.withValues(alpha: 0.12)
+        : const Color(0xFFD5E0F0);
+    final prefixColor = isDark ? Colors.white54 : const Color(0xFF7D8FB0);
 
     return Scaffold(
-      body: AnimatedContainer(
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOut,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: isDark
-                ? [const Color(0xFF1a1a2e), const Color(0xFF16213e), const Color(0xFF0f3460)]
-                : [const Color(0xFFEEF4FF), const Color(0xFFF5F9FF), Colors.white],
-          ),
-        ),
+      body: AuthBackground(
+        isDark: isDark,
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -252,12 +312,12 @@ class _LoginScreenState extends State<LoginScreen> {
                       onTap: _toggleTheme,
                       child: Hero(
                         tag: kAuraLogoHeroTag,
-                        child: const AuraLogo(size: 88),
+                        child: const AuraLogo(size: 116, animate: true),
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 10),
 
                   AnimatedDefaultTextStyle(
                     duration: const Duration(milliseconds: 300),
@@ -269,27 +329,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     child: Text(l10n.appName, textAlign: TextAlign.center),
                   ),
-                  const SizedBox(height: 6),
-                  AnimatedDefaultTextStyle(
-                    duration: const Duration(milliseconds: 300),
-                    style: TextStyle(fontSize: 14, color: subtextColor),
-                    child: Text(l10n.loginSubtitle, textAlign: TextAlign.center),
-                  ),
-
                   const SizedBox(height: 36),
 
-                  // Form card
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 400),
-                    decoration: BoxDecoration(
-                      color: cardBg,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: cardBorder, width: 1),
-                      boxShadow: isDark
-                          ? null
-                          : [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 16, offset: const Offset(0, 4))],
-                    ),
-                    padding: const EdgeInsets.all(20),
+                  AuthFormCard(
+                    isDark: isDark,
+                    padding: const EdgeInsets.all(22),
                     child: Form(
                       key: _formKey,
                       child: Column(
@@ -304,8 +348,12 @@ class _LoginScreenState extends State<LoginScreen> {
                             inputBorder: inputBorder,
                             prefixColor: prefixColor,
                             validator: (v) {
-                              if (v == null || v.trim().isEmpty) return l10n.validateEmailRequired;
-                              if (!v.contains('@')) return l10n.validateEmailInvalid;
+                              if (v == null || v.trim().isEmpty) {
+                                return l10n.validateEmailRequired;
+                              }
+                              if (!v.contains('@')) {
+                                return l10n.validateEmailInvalid;
+                              }
                               return null;
                             },
                           ),
@@ -327,42 +375,25 @@ class _LoginScreenState extends State<LoginScreen> {
                                 color: prefixColor,
                                 size: 20,
                               ),
-                              onPressed: () =>
-                                  setState(() => _obscurePassword = !_obscurePassword),
+                              onPressed: () => setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              ),
                             ),
                             validator: (v) {
-                              if (v == null || v.isEmpty) return l10n.validatePasswordRequired;
-                              if (v.length < 6) return l10n.validatePasswordMin;
+                              if (v == null || v.isEmpty) {
+                                return l10n.validatePasswordRequired;
+                              }
+                              if (v.length < 6) {
+                                return l10n.validatePasswordMin;
+                              }
                               return null;
                             },
                           ),
                           const SizedBox(height: 20),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 50,
-                            child: ElevatedButton(
-                              onPressed: _isLoading ? null : _login,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF2CA5E0),
-                                disabledBackgroundColor:
-                                    const Color(0xFF2CA5E0).withValues(alpha: 0.4),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14)),
-                                elevation: 0,
-                              ),
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.white),
-                                    )
-                                  : Text(l10n.actionLogin,
-                                      style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.white)),
-                            ),
+                          AuthPrimaryButton(
+                            isLoading: _isLoading,
+                            label: l10n.actionLogin,
+                            onPressed: _login,
                           ),
                         ],
                       ),
@@ -371,106 +402,132 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 28),
 
-                  Row(
-                    children: [
-                      Expanded(child: Divider(color: dividerColor)),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        child: Text(l10n.loginOrVia,
-                            style: TextStyle(fontSize: 12, color: subtextColor)),
+                  // Social buttons — fade + slide in on first load
+                  FadeTransition(
+                    opacity: _socialFade,
+                    child: SlideTransition(
+                      position: _socialSlide,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(child: Divider(color: dividerColor)),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                ),
+                                child: Text(
+                                  l10n.loginOrVia,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: subtextColor,
+                                  ),
+                                ),
+                              ),
+                              Expanded(child: Divider(color: dividerColor)),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _SocialTile(
+                                  label: 'Google',
+                                  color: const Color(0xFFEA4335),
+                                  faIcon: FontAwesomeIcons.google,
+                                  isDark: isDark,
+                                  labelColor: textColor,
+                                  onTap: _isLoading ? null : _onGoogleTap,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _SocialTile(
+                                  label: 'Telegram',
+                                  color: const Color(0xFF26A5E4),
+                                  faIcon: FontAwesomeIcons.telegram,
+                                  isDark: isDark,
+                                  labelColor: textColor,
+                                  onTap: _isLoading ? null : _onTelegramTap,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (Platform.isIOS) ...[
+                            const SizedBox(height: 12),
+                            _SocialTile(
+                              label: l10n.loginWithApple,
+                              color: isDark ? Colors.white : Colors.black,
+                              faIcon: FontAwesomeIcons.apple,
+                              isDark: isDark,
+                              labelColor: textColor,
+                              onTap: _isLoading ? null : _onAppleTap,
+                            ),
+                          ],
+                        ],
                       ),
-                      Expanded(child: Divider(color: dividerColor)),
-                    ],
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _SocialTile(
-                          label: 'Google',
-                          color: const Color(0xFFEA4335),
-                          faIcon: FontAwesomeIcons.google,
-                          isDark: isDark,
-                          labelColor: textColor,
-                          onTap: _isLoading ? null : _onGoogleTap,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _SocialTile(
-                          label: 'Telegram',
-                          color: const Color(0xFF26A5E4),
-                          faIcon: FontAwesomeIcons.telegram,
-                          isDark: isDark,
-                          labelColor: textColor,
-                          onTap: _isLoading ? null : _onTelegramTap,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  if (Platform.isIOS) ...[
-                    const SizedBox(height: 12),
-                    _SocialTile(
-                      label: l10n.loginWithApple,
-                      color: isDark ? Colors.white : Colors.black,
-                      faIcon: FontAwesomeIcons.apple,
-                      isDark: isDark,
-                      labelColor: textColor,
-                      onTap: _isLoading ? null : _onAppleTap,
                     ),
-                  ],
+                  ),
 
                   const SizedBox(height: 32),
 
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(l10n.loginNoAccount,
-                          style: TextStyle(color: subtextColor, fontSize: 14)),
+                      Text(
+                        l10n.loginNoAccount,
+                        style: TextStyle(color: subtextColor, fontSize: 14),
+                      ),
                       GestureDetector(
-                        onTap: () => Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => const RegisterScreen())),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const RegisterScreen(),
+                          ),
+                        ),
                         child: Text(
                           l10n.actionRegister,
                           style: const TextStyle(
-                              color: Color(0xFF2CA5E0),
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14),
+                            color: Color(0xFF2CA5E0),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  if (kDebugMode) const SizedBox(height: 16),
 
                   // ── DEV: preview onboarding ──────────────────────────
-                  Center(
-                    child: TextButton.icon(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const OnboardingScreen(),
+                  if (kDebugMode)
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const OnboardingScreen(),
+                          ),
+                        ),
+                        icon: Icon(
+                          Icons.remove_red_eye_outlined,
+                          size: 15,
+                          color: subtextColor,
+                        ),
+                        label: Text(
+                          'Preview Onboarding',
+                          style: TextStyle(fontSize: 12, color: subtextColor),
+                        ),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                       ),
-                      icon: Icon(
-                        Icons.remove_red_eye_outlined,
-                        size: 15,
-                        color: subtextColor,
-                      ),
-                      label: Text(
-                        'Preview Onboarding',
-                        style: TextStyle(fontSize: 12, color: subtextColor),
-                      ),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
+                  if (kDebugMode) const SizedBox(height: 8),
                 ],
               ),
             ),
@@ -529,22 +586,30 @@ class _AdaptiveTextField extends StatelessWidget {
         filled: true,
         fillColor: inputFill,
         border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: inputBorder)),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: inputBorder),
+        ),
         enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: inputBorder)),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: inputBorder),
+        ),
         focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF2CA5E0), width: 1.5)),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF2CA5E0), width: 1.5),
+        ),
         errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Colors.redAccent)),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.redAccent),
+        ),
         focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Colors.redAccent, width: 1.5)),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
+        ),
         errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 12),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 15,
+        ),
       ),
     );
   }
@@ -572,14 +637,33 @@ class _SocialTile extends StatelessWidget {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 400),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withValues(alpha: 0.07) : Colors.white,
+        color: isDark
+            ? const Color(0xFF132033).withValues(alpha: 0.74)
+            : Colors.white.withValues(alpha: 0.82),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isDark
-              ? Colors.white.withValues(alpha: 0.12)
-              : const Color(0xFFE8EDF5),
-          width: 1,
+              ? Colors.white.withValues(alpha: 0.10)
+              : Colors.white.withValues(alpha: 0.78),
+          width: 1.2,
         ),
+        boxShadow: isDark
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.16),
+                  blurRadius: 16,
+                  spreadRadius: -8,
+                  offset: const Offset(0, 10),
+                ),
+              ]
+            : [
+                BoxShadow(
+                  color: const Color(0xFF6B9BE8).withValues(alpha: 0.11),
+                  blurRadius: 18,
+                  spreadRadius: -8,
+                  offset: const Offset(0, 12),
+                ),
+              ],
       ),
       child: Material(
         color: Colors.transparent,
@@ -594,11 +678,14 @@ class _SocialTile extends StatelessWidget {
               children: [
                 FaIcon(faIcon, color: color, size: 20),
                 const SizedBox(width: 8),
-                Text(label,
-                    style: TextStyle(
-                        color: labelColor,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 13)),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: isDark ? labelColor : const Color(0xFF2A3856),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13.5,
+                  ),
+                ),
               ],
             ),
           ),

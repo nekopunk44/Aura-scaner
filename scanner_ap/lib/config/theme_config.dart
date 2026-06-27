@@ -41,6 +41,7 @@ class AppTheme {
     scaffoldBackgroundColor: const Color(0xFFF2F6FC),
     appBarTheme: const AppBarTheme(
       elevation: 0,
+      centerTitle: true,
       backgroundColor: Colors.white,
       foregroundColor: Color(0xFF1A1A2E),
       iconTheme: IconThemeData(color: Color(0xFF1A1A2E)),
@@ -70,6 +71,7 @@ class AppTheme {
     scaffoldBackgroundColor: const Color(0xFF0F1923),
     appBarTheme: const AppBarTheme(
       elevation: 0,
+      centerTitle: true,
       backgroundColor: Color(0xFF141E2B),
       foregroundColor: Colors.white,
       iconTheme: IconThemeData(color: Colors.white),

@@ -90,15 +90,15 @@ class _OcrCameraViewState extends State<OcrCameraView> {
 
   Widget _buildBottomBar() {
     return CameraControlsBar(
-      onCapture: _busy ? null : () => _guard(widget.onCapture),
-      isBusy: _busy,
       leftActions: [
         CameraActionIcon(
-          icon: Icons.photo_library_outlined,
+          icon: Icons.photo_library,
           onTap: _busy ? null : () => _guard(widget.onPickGallery),
         ),
       ],
       rightActions: const [],
+      onCapture: _busy ? null : () => _guard(widget.onCapture),
+      isBusy: _busy,
     );
   }
 

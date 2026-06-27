@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import '../../../config/server_config.dart';
 import '../../../services/api_service.dart';
 import '../../../services/document_sync_service.dart';
 import '../../../l10n/app_localizations.dart';
+import '../../../utils/app_notification.dart';
 
 const _documentKey = 'saved_document_paths';
 
@@ -31,6 +33,7 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
   bool _isBusy = false;
   String? _busyLabel;
   String? _error;
+  final Map<String, Future<Uint8List?>> _thumbCache = {};
 
   void _setBusy(String? label) {
     if (!mounted) return;
@@ -39,7 +42,6 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
       _busyLabel = label;
     });
   }
-  String _serverUrl = ServerConfig().baseUrl;
 
   @override
   void initState() {
@@ -60,14 +62,12 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
       if (!mounted) return;
       setState(() {
         _documents = docs;
-        _serverUrl = ServerConfig().baseUrl;
         _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString();
-        _serverUrl = ServerConfig().baseUrl;
         _isLoading = false;
       });
     }
@@ -88,8 +88,10 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
       await _apiService.syncBaseUrl();
       await _syncService.upload(file);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.remoteUploaded(p.basename(file.path)))),
+      AppNotification.show(
+        context,
+        message: '«${p.basename(file.path)}»\nзагружен в облако',
+        type: NotificationType.success,
       );
       await _loadRemoteDocuments();
     } catch (e) {
@@ -248,58 +250,6 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
     }
   }
 
-  Future<void> _editServerUrl() async {
-    await ServerConfig().load();
-    if (!mounted) return;
-    final l10n = AppLocalizations.of(context);
-    final controller = TextEditingController(text: ServerConfig().baseUrl);
-    final newUrl = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) {
-        final isDarkDialog = Theme.of(dialogContext).brightness == Brightness.dark;
-        return AlertDialog(
-          backgroundColor: isDarkDialog ? const Color(0xFF1E2A3A) : Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(l10n.dialogRename),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              hintText: 'http://localhost:3000/api',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text(l10n.actionCancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-              child: Text(l10n.actionSave,
-                  style: const TextStyle(color: Color(0xFF2CA5E0))),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (newUrl == null || newUrl.isEmpty) return;
-
-    try {
-      await ServerConfig().save(newUrl);
-      if (!mounted) return;
-      await _apiService.syncBaseUrl();
-      if (!mounted) return;
-      setState(() => _serverUrl = ServerConfig().baseUrl);
-      await _loadRemoteDocuments();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.remoteServerSaveError(e.toString()))),
-      );
-    }
-  }
-
   String _formatFileSize(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
@@ -307,14 +257,40 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
   }
 
   IconData _iconForFormat(String format) {
-    final value = format.toLowerCase();
-    if (value.contains('pdf')) return Icons.picture_as_pdf;
-    if (value.contains('doc')) return Icons.description;
-    if (value.contains('txt')) return Icons.text_snippet;
-    if (value.contains('jpg') || value.contains('jpeg') || value.contains('png')) {
-      return Icons.image;
+    final v = format.toLowerCase();
+    if (v.contains('pdf')) return Icons.picture_as_pdf_outlined;
+    if (v.contains('doc')) return Icons.description_outlined;
+    if (v.contains('txt')) return Icons.text_snippet_outlined;
+    if (v.contains('jpg') || v.contains('jpeg') || v.contains('png')) return Icons.image_outlined;
+    return Icons.insert_drive_file_outlined;
+  }
+
+  List<Color> _gradientForFormat(String format) {
+    final v = format.toLowerCase();
+    if (v.contains('pdf')) return [const Color(0xFFFF6B6B), const Color(0xFFEE5A24)];
+    if (v.contains('doc')) return [const Color(0xFF2CA5E0), const Color(0xFF1A7FC4)];
+    if (v.contains('txt')) return [const Color(0xFF78909C), const Color(0xFF546E7A)];
+    if (v.contains('jpg') || v.contains('jpeg') || v.contains('png')) {
+      return [const Color(0xFF26C060), const Color(0xFF20A050)];
     }
-    return Icons.insert_drive_file;
+    return [const Color(0xFF8E7BEA), const Color(0xFF6C5CE7)];
+  }
+
+  bool _isImageFormat(String format) {
+    final v = format.toLowerCase();
+    return v == 'jpg' || v == 'jpeg' || v == 'png';
+  }
+
+  Widget _buildFormatIcon(List<Color> grad, double size, String format) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: grad, begin: Alignment.topLeft, end: Alignment.bottomRight),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Icon(_iconForFormat(format), color: Colors.white, size: 24),
+    );
   }
 
   @override
@@ -323,12 +299,11 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.remoteDocTitle),
+        centerTitle: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+        ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.link),
-            tooltip: l10n.dialogRename,
-            onPressed: _isBusy ? null : _editServerUrl,
-          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: l10n.remoteRefresh,
@@ -347,28 +322,6 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
           final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
           return Column(
         children: [
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF2CA5E0).withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF2CA5E0).withValues(alpha: 0.18)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.cloud, color: Color(0xFF2CA5E0)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    l10n.remoteServerLabel(_serverUrl),
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-          ),
           if (_isLoading)
             const Expanded(
               child: Center(child: CircularProgressIndicator(color: Color(0xFF2CA5E0))),
@@ -426,52 +379,133 @@ class _RemoteDocumentsScreenState extends State<RemoteDocumentsScreen> {
               child: Stack(
                 children: [
                   ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
                     itemCount: _documents.length,
                     itemBuilder: (context, index) {
                       final doc = _documents[index];
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        child: ListTile(
-                          leading: Icon(_iconForFormat(doc.format), color: const Color(0xFF2CA5E0)),
-                          title: Text(
-                            doc.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            '${doc.format.toUpperCase()} • ${_formatFileSize(doc.fileSize)}',
-                          ),
-                          trailing: PopupMenuButton<String>(
-                            onSelected: (value) {
-                              switch (value) {
-                                case 'download':
-                                  _downloadDocument(doc);
-                                  break;
-                                case 'rename':
-                                  _renameRemoteDocument(doc);
-                                  break;
-                                case 'delete':
-                                  _deleteRemoteDocument(doc);
-                                  break;
-                              }
-                            },
-                            itemBuilder: (_) => [
-                              PopupMenuItem(
-                                value: 'download',
-                                child: Text(l10n.remoteDownloadLocal),
+                      final grad = _gradientForFormat(doc.format);
+                      final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+                      final cardBorder = isDark
+                          ? Colors.white.withValues(alpha: 0.07)
+                          : const Color(0xFFE8EFF8);
+                      final titleColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+                      final subColor2 = isDark ? Colors.white54 : const Color(0xFF6B7A99);
+                      const previewSize = 52.0;
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _isBusy ? null : () => _downloadDocument(doc),
+                            borderRadius: BorderRadius.circular(16),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: cardBg,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: cardBorder),
+                                boxShadow: isDark ? null : [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.04),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
-                              PopupMenuItem(
-                                value: 'rename',
-                                child: Text(l10n.dialogRename),
+                              child: SizedBox(
+                                height: previewSize + 16,
+                                child: Row(
+                                  children: [
+                                    // Превью
+                                    Padding(
+                                      padding: const EdgeInsets.all(8),
+                                      child: _isImageFormat(doc.format)
+                                          ? FutureBuilder<Uint8List?>(
+                                              future: _thumbCache.putIfAbsent(
+                                                  doc.id, () => _syncService.getThumbnail(doc.id)),
+                                              builder: (_, snap) {
+                                                if (snap.hasData && snap.data != null) {
+                                                  return ClipRRect(
+                                                    borderRadius: BorderRadius.circular(10),
+                                                    child: Image.memory(
+                                                      snap.data!,
+                                                      width: previewSize,
+                                                      height: previewSize,
+                                                      fit: BoxFit.cover,
+                                                    ),
+                                                  );
+                                                }
+                                                return _buildFormatIcon(grad, previewSize, doc.format);
+                                              },
+                                            )
+                                          : _buildFormatIcon(grad, previewSize, doc.format),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    // Название и инфо
+                                    Expanded(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            doc.name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                              color: titleColor,
+                                              height: 1.2,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            '${doc.format.toUpperCase()} • ${_formatFileSize(doc.fileSize)}',
+                                            style: TextStyle(fontSize: 12, color: subColor2),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    // Бейдж меню
+                                    PopupMenuButton<String>(
+                                      onSelected: (value) {
+                                        switch (value) {
+                                          case 'download': _downloadDocument(doc);
+                                          case 'rename':   _renameRemoteDocument(doc);
+                                          case 'delete':   _deleteRemoteDocument(doc);
+                                        }
+                                      },
+                                      itemBuilder: (_) => [
+                                        PopupMenuItem(value: 'download', child: Text(l10n.remoteDownloadLocal)),
+                                        PopupMenuItem(value: 'rename',   child: Text(l10n.dialogRename)),
+                                        PopupMenuItem(value: 'delete',   child: Text(l10n.actionDelete)),
+                                      ],
+                                      child: Container(
+                                        width: 48,
+                                        height: double.infinity,
+                                        decoration: BoxDecoration(
+                                          color: isDark
+                                              ? Colors.white.withValues(alpha: 0.05)
+                                              : const Color(0xFF2CA5E0).withValues(alpha: 0.06),
+                                          borderRadius: const BorderRadius.only(
+                                            topRight: Radius.circular(16),
+                                            bottomRight: Radius.circular(16),
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          Icons.more_vert_rounded,
+                                          size: 18,
+                                          color: isDark
+                                              ? Colors.white.withValues(alpha: 0.30)
+                                              : const Color(0xFF2CA5E0).withValues(alpha: 0.45),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              PopupMenuItem(
-                                value: 'delete',
-                                child: Text(l10n.actionDelete),
-                              ),
-                            ],
+                            ),
                           ),
-                          onTap: _isBusy ? null : () => _downloadDocument(doc),
                         ),
                       );
                     },

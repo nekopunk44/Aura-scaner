@@ -3,6 +3,7 @@ import '../../l10n/app_localizations.dart';
 import '../../services/auth_service.dart';
 import '../../utils/app_notification.dart';
 import '../../utils/error_messages.dart';
+import '../../widgets/auth_scaffold.dart';
 import '../ui_screens/main_screen/app_tabs_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -60,40 +61,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final subtextColor = isDark ? Colors.white54 : const Color(0xFF8A94A6);
-    final cardBg = isDark ? Colors.white.withValues(alpha: 0.07) : Colors.white;
-    final cardBorder = isDark ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFE8EDF5);
-    final inputFill = isDark ? Colors.white.withValues(alpha: 0.07) : const Color(0xFFF2F6FC);
-    final inputBorder = isDark ? Colors.white.withValues(alpha: 0.15) : const Color(0xFFE8EDF5);
-    final prefixColor = isDark ? Colors.white54 : const Color(0xFFAAB4C8);
-    final labelColor = isDark ? Colors.white.withValues(alpha: 0.5) : const Color(0xFF8A94A6);
-    final iconBg = isDark ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFDCEBFF);
+    final inputFill = isDark
+        ? Colors.white.withValues(alpha: 0.06)
+        : const Color(0xFFF4F8FF);
+    final inputBorder = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : const Color(0xFFD7E3F4);
+    final prefixColor = isDark ? Colors.white54 : const Color(0xFF7D8FB0);
+    final labelColor = isDark
+        ? Colors.white.withValues(alpha: 0.5)
+        : const Color(0xFF8A94A6);
     final iconColor = isDark ? Colors.white : const Color(0xFF2CA5E0);
 
     return Scaffold(
-      body: AnimatedContainer(
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOut,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: isDark
-                ? [const Color(0xFF1a1a2e), const Color(0xFF16213e), const Color(0xFF0f3460)]
-                : [const Color(0xFFEEF4FF), const Color(0xFFF5F9FF), Colors.white],
-          ),
-        ),
+      body: AuthBackground(
+        isDark: isDark,
         child: SafeArea(
           child: Column(
             children: [
-              // AppBar
+              // AppBar с центрированным заголовком
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Row(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                child: Stack(
+                  alignment: Alignment.center,
                   children: [
-                    IconButton(
-                      icon: Icon(Icons.arrow_back_ios_new_rounded,
-                          color: textColor, size: 20),
-                      onPressed: () => Navigator.pop(context),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: IconButton(
+                        icon: Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: textColor,
+                          size: 20,
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                      ),
                     ),
                     Text(
                       l10n.registerTitle,
@@ -110,31 +111,76 @@ class _RegisterScreenState extends State<RegisterScreen> {
               Expanded(
                 child: Center(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const SizedBox(height: 8),
 
-                        // Icon
+                        // Иконка с glow
                         Center(
-                          child: Container(
-                            width: 72,
-                            height: 72,
-                            decoration: BoxDecoration(
-                              color: iconBg,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: iconColor.withValues(alpha: 0.35),
-                                width: 1.5,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Container(
+                                width: 90,
+                                height: 90,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(
+                                        0xFF2CA5E0,
+                                      ).withValues(alpha: isDark ? 0.30 : 0.18),
+                                      blurRadius: 28,
+                                      spreadRadius: 6,
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            child: Icon(Icons.person_add_outlined,
-                                size: 34, color: iconColor),
+                              Container(
+                                width: 76,
+                                height: 76,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: isDark
+                                        ? [
+                                            const Color(
+                                              0xFF2CA5E0,
+                                            ).withValues(alpha: 0.22),
+                                            const Color(
+                                              0xFF7B61FF,
+                                            ).withValues(alpha: 0.12),
+                                          ]
+                                        : [
+                                            const Color(0xFFDCEBFF),
+                                            const Color(0xFFEEF4FF),
+                                          ],
+                                  ),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: const Color(
+                                      0xFF2CA5E0,
+                                    ).withValues(alpha: isDark ? 0.45 : 0.30),
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: Icon(
+                                  Icons.person_add_outlined,
+                                  size: 36,
+                                  color: iconColor,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
 
-                        const SizedBox(height: 18),
+                        const SizedBox(height: 20),
 
                         Text(
                           l10n.registerHeadline,
@@ -155,23 +201,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                         const SizedBox(height: 32),
 
-                        // Form card
-                        Container(
-                          decoration: BoxDecoration(
-                            color: cardBg,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: cardBorder, width: 1),
-                            boxShadow: isDark
-                                ? null
-                                : [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.06),
-                                      blurRadius: 16,
-                                      offset: const Offset(0, 4),
-                                    )
-                                  ],
-                          ),
-                          padding: const EdgeInsets.all(20),
+                        AuthFormCard(
+                          isDark: isDark,
+                          padding: const EdgeInsets.all(22),
                           child: Form(
                             key: _formKey,
                             child: Column(
@@ -188,7 +220,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   labelColor: labelColor,
                                   textColor: textColor,
                                   validator: (v) {
-                                    if (v == null || v.trim().isEmpty) return l10n.validateNameRequired;
+                                    if (v == null || v.trim().isEmpty) {
+                                      return l10n.validateNameRequired;
+                                    }
                                     return null;
                                   },
                                 ),
@@ -205,8 +239,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   labelColor: labelColor,
                                   textColor: textColor,
                                   validator: (v) {
-                                    if (v == null || v.trim().isEmpty) return l10n.validateEmailRequired;
-                                    if (!v.contains('@')) return l10n.validateEmailInvalid;
+                                    if (v == null || v.trim().isEmpty) {
+                                      return l10n.validateEmailRequired;
+                                    }
+                                    if (!v.contains('@')) {
+                                      return l10n.validateEmailInvalid;
+                                    }
                                     return null;
                                   },
                                 ),
@@ -231,43 +269,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       size: 20,
                                     ),
                                     onPressed: () => setState(
-                                        () => _obscurePassword = !_obscurePassword),
+                                      () =>
+                                          _obscurePassword = !_obscurePassword,
+                                    ),
                                   ),
                                   validator: (v) {
-                                    if (v == null || v.isEmpty) return l10n.validatePasswordRequired;
-                                    if (v.length < 6) return l10n.validatePasswordMin;
+                                    if (v == null || v.isEmpty) {
+                                      return l10n.validatePasswordRequired;
+                                    }
+                                    if (v.length < 6) {
+                                      return l10n.validatePasswordMin;
+                                    }
                                     return null;
                                   },
                                 ),
-                                const SizedBox(height: 20),
-                                SizedBox(
-                                  width: double.infinity,
-                                  height: 50,
-                                  child: ElevatedButton(
-                                    onPressed: _isLoading ? null : _register,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF2CA5E0),
-                                      disabledBackgroundColor:
-                                          const Color(0xFF2CA5E0).withValues(alpha: 0.4),
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(14)),
-                                      elevation: 0,
-                                    ),
-                                    child: _isLoading
-                                        ? const SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: CircularProgressIndicator(
-                                                strokeWidth: 2, color: Colors.white),
-                                          )
-                                        : Text(
-                                            l10n.actionRegister,
-                                            style: const TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w600,
-                                                color: Colors.white),
-                                          ),
-                                  ),
+                                const SizedBox(height: 22),
+                                AuthPrimaryButton(
+                                  isLoading: _isLoading,
+                                  label: l10n.actionRegister,
+                                  onPressed: _register,
                                 ),
                               ],
                             ),
@@ -279,16 +299,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(l10n.registerHaveAccount,
-                                style: TextStyle(color: subtextColor, fontSize: 14)),
+                            Text(
+                              l10n.registerHaveAccount,
+                              style: TextStyle(
+                                color: subtextColor,
+                                fontSize: 14,
+                              ),
+                            ),
                             GestureDetector(
                               onTap: () => Navigator.pop(context),
                               child: Text(
                                 l10n.actionLogin,
                                 style: const TextStyle(
-                                    color: Color(0xFF2CA5E0),
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14),
+                                  color: Color(0xFF2CA5E0),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
                               ),
                             ),
                           ],
@@ -358,22 +384,30 @@ class _Field extends StatelessWidget {
         filled: true,
         fillColor: inputFill,
         border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: inputBorder)),
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: inputBorder),
+        ),
         enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: inputBorder)),
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: inputBorder),
+        ),
         focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF2CA5E0), width: 1.5)),
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFF2CA5E0), width: 1.5),
+        ),
         errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Colors.redAccent)),
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Colors.redAccent),
+        ),
         focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Colors.redAccent, width: 1.5)),
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
+        ),
         errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 12),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 16,
+        ),
       ),
     );
   }

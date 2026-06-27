@@ -6,6 +6,7 @@ import {
   uploadDocument,
   listDocuments,
   downloadDocument,
+  thumbnailDocument,
   renameDocument,
   deleteDocument,
 } from '../controllers/documents.controller';
@@ -36,6 +37,7 @@ router.post('/upload', (req: Request, res: Response, next: NextFunction) => {
 }, uploadDocument);
 
 router.get('/:id/download', downloadDocument);
+router.get('/:id/thumbnail', thumbnailDocument);
 router.patch('/:id', renameDocument);
 router.delete('/:id', deleteDocument);
 

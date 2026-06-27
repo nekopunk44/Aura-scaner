@@ -75,6 +75,49 @@ class CameraControlsBar extends StatelessWidget {
   }
 }
 
+/// Упрощённая панель для инструментов без захвата: только кнопка галереи.
+/// Стиль повторяет кнопку галереи экрана «Перевод».
+class CameraGalleryBar extends StatelessWidget {
+  final VoidCallback? onGallery;
+
+  const CameraGalleryBar({super.key, required this.onGallery});
+
+  @override
+  Widget build(BuildContext context) {
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+    final enabled = onGallery != null;
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + safeBottom),
+      decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5)),
+      child: SizedBox(
+        height: 78,
+        child: Center(
+          child: GestureDetector(
+            onTap: onGallery,
+            child: Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: enabled ? Colors.white : Colors.white38,
+                  width: 2,
+                ),
+              ),
+              child: Icon(
+                Icons.photo_library,
+                color: enabled ? Colors.white : Colors.white38,
+                size: 26,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Компактная action-кнопка для левого/правого слота панели (refresh,
 /// gallery и т.д.). Иконка в круглой полупрозрачной плашке — единый
 /// стиль для всех режимов камеры.

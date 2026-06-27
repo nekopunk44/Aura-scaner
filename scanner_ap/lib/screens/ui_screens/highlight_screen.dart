@@ -164,6 +164,7 @@ class _HighlightScreenState extends State<HighlightScreen> {
       backgroundColor: scaffoldBg,
       appBar: AppBar(
         title: Text(l10n.highlightTitle),
+        centerTitle: true,
         backgroundColor: isDark ? const Color(0xFF141E2B) : Colors.white,
         foregroundColor: textColor,
         elevation: 0,

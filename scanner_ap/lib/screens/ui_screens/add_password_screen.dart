@@ -151,15 +151,19 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
       backgroundColor: scaffoldBg,
       appBar: AppBar(
         title: Text(l10n.featAddPassword),
+        centerTitle: true,
         backgroundColor: isDark ? const Color(0xFF141E2B) : Colors.white,
         foregroundColor: textColor,
         elevation: 0,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
             decoration: BoxDecoration(
               color: cardBg,
               borderRadius: BorderRadius.circular(16),
@@ -167,47 +171,73 @@ class _AddPasswordScreenState extends State<AddPasswordScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(l10n.pwdSourceLabel, style: TextStyle(fontSize: 13, color: subColor, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 10),
-                GestureDetector(
-                  onTap: _pickPdf,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: inputFill,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _selectedFile != null
-                            ? const Color(0xFF2CA5E0)
-                            : inputBorder,
+                // Метка и кнопка выбора — в одну строку
+                Row(
+                  children: [
+                    Text(
+                      l10n.pwdSourceLabel,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: textColor,
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.picture_as_pdf,
-                            color: _selectedFile != null ? const Color(0xFF2CA5E0) : subColor),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _selectedFile != null
-                                ? p.basename(_selectedFile!.path)
-                                : l10n.pwdSelectPdfFile,
-                            style: TextStyle(
-                              color: _selectedFile != null ? textColor : subColor,
-                              fontSize: 14,
-                            ),
-                            overflow: TextOverflow.ellipsis,
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: _pickPdf,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: _selectedFile != null
+                              ? const Color(0xFF2CA5E0).withValues(alpha: 0.10)
+                              : inputFill,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _selectedFile != null
+                                ? const Color(0xFF2CA5E0)
+                                : inputBorder,
                           ),
                         ),
-                        Icon(Icons.chevron_right, color: subColor, size: 20),
-                      ],
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.picture_as_pdf_outlined,
+                              size: 16,
+                              color: _selectedFile != null
+                                  ? const Color(0xFF2CA5E0)
+                                  : subColor,
+                            ),
+                            const SizedBox(width: 6),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 160),
+                              child: Text(
+                                _selectedFile != null
+                                    ? p.basename(_selectedFile!.path)
+                                    : l10n.pwdSelectPdfFile,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: _selectedFile != null
+                                      ? const Color(0xFF2CA5E0)
+                                      : subColor,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(Icons.chevron_right, size: 16, color: subColor),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
                 const SizedBox(height: 10),
-                Text(l10n.pwdOutputHint,
-                    style: TextStyle(fontSize: 11.5, color: subColor, height: 1.3)),
+                Text(
+                  l10n.pwdOutputHint,
+                  style: TextStyle(fontSize: 12, color: subColor, height: 1.4),
+                ),
               ],
             ),
           ),

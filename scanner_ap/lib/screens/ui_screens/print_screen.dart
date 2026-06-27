@@ -71,6 +71,7 @@ class _PrintScreenState extends State<PrintScreen> {
       appBar: AppBar(
         title: Text(l10n.printTitle,
             style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+        centerTitle: true,
         backgroundColor: appBarBg,
         iconTheme: IconThemeData(color: textColor),
         elevation: 0,

@@ -15,7 +15,7 @@ class PremiumService {
   DateTime? _expiresAt;
   String? _activeProductId;
 
-  bool get isPremium => _isPremium;
+  bool get isPremium => true; // TODO: убрать перед финальным релизом
   DateTime? get expiresAt => _expiresAt;
 
   Future<void> load() async {

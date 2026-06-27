@@ -209,6 +209,7 @@ class _RemoveWatermarkScreenState extends State<RemoveWatermarkScreen> {
       backgroundColor: scaffoldBg,
       appBar: AppBar(
         title: Text(l10n.wmTitle),
+        centerTitle: true,
         backgroundColor: isDark ? const Color(0xFF141E2B) : Colors.white,
         foregroundColor: textColor,
         elevation: 0,

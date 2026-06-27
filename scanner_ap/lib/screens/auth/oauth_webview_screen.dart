@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import '../../config/theme_config.dart';
 
 // ─── Bottom-sheet OAuth WebView ──────────────────────────────────────────────
 
@@ -8,9 +9,11 @@ import 'package:webview_flutter/webview_flutter.dart';
 Future<Uri?> showOAuthBottomSheet(
   BuildContext context, {
   required String url,
-  required String title,
-  required Widget providerIcon,
 }) {
+  // ThemeNotifier.isDark is the source of truth — avoids reading the system
+  // theme from the modal's context, which can be inverted vs the app theme.
+  final isDark = ThemeNotifier().isDark;
+
   return showModalBottomSheet<Uri>(
     context: context,
     isScrollControlled: true,
@@ -18,21 +21,18 @@ Future<Uri?> showOAuthBottomSheet(
     enableDrag: true,
     builder: (_) => _OAuthBottomSheet(
       url: url,
-      title: title,
-      providerIcon: providerIcon,
+      isDark: isDark,
     ),
   );
 }
 
 class _OAuthBottomSheet extends StatefulWidget {
   final String url;
-  final String title;
-  final Widget providerIcon;
+  final bool isDark;
 
   const _OAuthBottomSheet({
     required this.url,
-    required this.title,
-    required this.providerIcon,
+    required this.isDark,
   });
 
   @override
@@ -53,7 +53,7 @@ class _OAuthBottomSheetState extends State<_OAuthBottomSheet> {
   @override
   void initState() {
     super.initState();
-    _controller = _buildController(widget.url, _handleUri);
+    _controller = _buildController(_handleUri);
     _controller.setNavigationDelegate(
       NavigationDelegate(
         onPageStarted: (_) {
@@ -61,6 +61,10 @@ class _OAuthBottomSheetState extends State<_OAuthBottomSheet> {
         },
         onPageFinished: (_) {
           if (mounted) setState(() => _loading = false);
+          final scheme = widget.isDark ? 'dark' : 'light';
+          _controller.runJavaScript(
+            "document.documentElement.style.colorScheme = '$scheme';",
+          );
         },
         onNavigationRequest: (req) {
           final url = req.url;
@@ -86,13 +90,11 @@ class _OAuthBottomSheetState extends State<_OAuthBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF1A2332) : Colors.white;
-    final titleColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-    final handleColor =
-        isDark ? Colors.white.withValues(alpha: 0.18) : const Color(0xFFDDE3ED);
-    final dividerColor =
-        isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFEEF2F8);
+    final isDark = widget.isDark;
+    final bg = isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F9FF);
+    final handleColor = isDark
+        ? Colors.white.withValues(alpha: 0.18)
+        : const Color(0xFFCDD9EE);
     final screenH = MediaQuery.of(context).size.height;
 
     return Container(
@@ -102,7 +104,7 @@ class _OAuthBottomSheetState extends State<_OAuthBottomSheet> {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.22),
+            color: Colors.black.withValues(alpha: 0.18),
             blurRadius: 32,
             offset: const Offset(0, -4),
           ),
@@ -112,7 +114,7 @@ class _OAuthBottomSheetState extends State<_OAuthBottomSheet> {
         children: [
           // ── Handle ──────────────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.only(top: 10, bottom: 4),
+            padding: const EdgeInsets.only(top: 10, bottom: 6),
             child: Container(
               width: 40,
               height: 4,
@@ -123,36 +125,7 @@ class _OAuthBottomSheetState extends State<_OAuthBottomSheet> {
             ),
           ),
 
-          // ── Header ──────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 6, 8, 0),
-            child: Row(
-              children: [
-                widget.providerIcon,
-                const SizedBox(width: 10),
-                Text(
-                  widget.title,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: titleColor,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: Icon(
-                    Icons.close_rounded,
-                    color:
-                        isDark ? Colors.white54 : const Color(0xFF8A94A6),
-                  ),
-                  onPressed: () => Navigator.of(context).pop(null),
-                ),
-              ],
-            ),
-          ),
-
-          // ── Thin divider + progress ──────────────────────────────────────
-          Divider(height: 1, color: dividerColor),
+          // ── Loading bar ──────────────────────────────────────────────────
           AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             height: _loading ? 3 : 0,
@@ -181,7 +154,7 @@ class _OAuthBottomSheetState extends State<_OAuthBottomSheet> {
 
 // ─── Shared WebViewController factory ───────────────────────────────────────
 
-WebViewController _buildController(String url, void Function(String) onUri) {
+WebViewController _buildController(void Function(String) onUri) {
   return WebViewController()
     ..setJavaScriptMode(JavaScriptMode.unrestricted)
     ..setUserAgent(

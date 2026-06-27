@@ -280,7 +280,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
             width: 62,
@@ -303,6 +303,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 20),
           Text(
             _emptyTitle(context),
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: titleColor,
               fontSize: 24,
@@ -312,6 +313,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 8),
           Text(
             _emptySubtitle(context),
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: subtitleColor,
               fontSize: 14,
@@ -559,34 +561,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      _signatures.isEmpty ? Icons.draw_rounded : Icons.add_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    l10n.sigAdd,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
+            child: Center(
+              child: Text(
+                l10n.sigAdd,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),

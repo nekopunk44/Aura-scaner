@@ -5,6 +5,7 @@ import 'package:camera/camera.dart';
 
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
+import '../../../l10n/app_localizations.dart';
 
 class IdCardCameraView extends StatelessWidget {
   const IdCardCameraView({
@@ -60,7 +61,7 @@ class IdCardCameraView extends StatelessWidget {
     );
   }
 
-  Widget _buildTopPanel() {
+  Widget _buildTopPanel(AppLocalizations l10n) {
     final String currentMode = captureModeController.captureMode;
 
     return SafeArea(
@@ -82,12 +83,12 @@ class IdCardCameraView extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  _buildTopSegment("Авто", currentMode == "Автоматически", () {
+                  _buildTopSegment(l10n.camAutoLabel, currentMode == "Автоматически", () {
                     if (currentMode != "Автоматически") {
                       setCaptureModeAuto();
                     }
                   }),
-                  _buildTopSegment("Ручн.", currentMode == "Вручную", () {
+                  _buildTopSegment(l10n.camManualLabel, currentMode == "Вручную", () {
                     if (currentMode != "Вручную") {
                       setCaptureModeManual();
                     }
@@ -173,7 +174,12 @@ class IdCardCameraView extends StatelessWidget {
         ),
       ],
       rightActions: [
-        CameraActionPill(label: currentSide, onTap: null),
+        CameraActionPill(
+          label: currentSide == 'Лицевая'
+              ? AppLocalizations.of(context).camIdFront
+              : AppLocalizations.of(context).camIdBack,
+          onTap: null,
+        ),
       ],
     );
   }
@@ -204,7 +210,7 @@ class IdCardCameraView extends StatelessWidget {
           top: 0,
           left: 0,
           right: 0,
-          child: _buildTopPanel(),
+          child: _buildTopPanel(AppLocalizations.of(context)),
         ),
 
         Positioned(

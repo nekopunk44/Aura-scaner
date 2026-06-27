@@ -201,24 +201,16 @@ class RestorePhotoCameraView extends StatelessWidget {
   }
 
   Widget _buildBottomBar(BuildContext context) {
-    const isDocumentMode = true;
-    final canSnap = captureModeController.canTakePicture(
-      isDocumentMode: isDocumentMode,
-    );
-
     return CameraControlsBar(
-      onCapture: canSnap ? takePicture : null,
       leftActions: [
         CameraActionIcon(
-          icon: Icons.refresh,
-          onTap: isScanning ? null : setCaptureModeAuto,
-        ),
-        CameraActionIcon(
-          icon: Icons.photo_library_outlined,
+          icon: Icons.photo_library,
           onTap: isScanning ? null : pickImageFromGallery,
         ),
       ],
       rightActions: const [],
+      onCapture: isScanning ? null : takePicture,
+      isBusy: isScanning,
     );
   }
 

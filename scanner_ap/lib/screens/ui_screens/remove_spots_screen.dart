@@ -595,6 +595,7 @@ class _RemoveSpotsScreenState extends State<RemoveSpotsScreen> {
           l10n.featRemoveSpots,
           style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
         ),
+        centerTitle: true,
         backgroundColor: appBarBg,
         iconTheme: IconThemeData(color: textColor),
         elevation: 0,

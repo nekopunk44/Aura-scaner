@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'api_service.dart';
 import '../utils/error_messages.dart';
@@ -74,6 +75,21 @@ class DocumentSyncService {
       await _api.dio.download('/documents/$id/download', savePath);
     } on DioException catch (e) {
       throw _parseError(e);
+    }
+  }
+
+  Future<Uint8List?> getThumbnail(String id) async {
+    try {
+      await _api.syncBaseUrl();
+      final resp = await _api.dio.get<List<int>>(
+        '/documents/$id/thumbnail',
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final data = resp.data;
+      if (data == null) return null;
+      return Uint8List.fromList(data);
+    } catch (_) {
+      return null;
     }
   }
 

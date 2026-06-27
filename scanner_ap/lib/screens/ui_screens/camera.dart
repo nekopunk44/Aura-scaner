@@ -2388,6 +2388,26 @@ class _CameraScreenState extends State<CameraScreen>
         _isEcoFeature(feature['name'] as String? ?? '');
   }
 
+  String _featureLabel(Map<String, dynamic> feature, AppLocalizations l10n) {
+    switch (feature['name'] as String) {
+      case 'Паспорт': return l10n.camChipPassport;
+      case 'Удостоверение личности': return l10n.camChipIdCard;
+      case 'Документ': return l10n.camChipDocument;
+      case 'Сканер qr-код': return l10n.camChipQr;
+      case '+10 страниц': return l10n.camChip10Pages;
+      case 'Перевод': return l10n.camChipTranslate;
+      case 'Знак / Подпись': return l10n.camChipSignature;
+      case 'Восстановить фото': return l10n.camChipRestore;
+      case 'Убрать пятна': return l10n.camChipRemoveSpots;
+      case 'Подсветка текста': return l10n.camChipHighlight;
+      case 'OCR': return l10n.camChipOcr;
+      case 'Удалить водяной знак': return l10n.camChipNoWatermark;
+      case 'Добавить пароль': return l10n.camChipPassword;
+      case 'Эко упаковка': return l10n.camChipEco;
+      default: return (feature['label'] ?? feature['name']) as String;
+    }
+  }
+
   bool _canUseFeature(String featureName) {
     if (!_isPremiumFeatureName(featureName)) {
       return true;
@@ -2606,6 +2626,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   Widget _buildFeatureSelector() {
     final mq = MediaQuery.of(context);
+    final l10n = AppLocalizations.of(context);
     final isCompact = mq.size.width < 360;
     final tileWidth = isCompact ? 72.0 : 84.0;
     final fontSize = isCompact ? 10.5 : 11.5;
@@ -2776,22 +2797,25 @@ class _CameraScreenState extends State<CameraScreen>
                       ),
                     ),
                     const SizedBox(height: 6),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        (feature['label'] ?? feature['name']) as String,
-                        maxLines: 1,
-                        textAlign: TextAlign.center,
-                        softWrap: false,
-                        style: TextStyle(
-                          fontSize: fontSize,
-                          height: 1.15,
-                          color: isSelected
-                              ? Colors.white
-                              : Colors.white.withValues(alpha: 0.7),
-                          fontWeight: isSelected
-                              ? FontWeight.w700
-                              : FontWeight.w500,
+                    SizedBox(
+                      height: 14,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          _featureLabel(feature, l10n),
+                          maxLines: 1,
+                          textAlign: TextAlign.center,
+                          softWrap: false,
+                          style: TextStyle(
+                            fontSize: fontSize,
+                            height: 1.0,
+                            color: isSelected
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.7),
+                            fontWeight: isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
                         ),
                       ),
                     ),
@@ -3054,7 +3078,7 @@ class _CameraScreenState extends State<CameraScreen>
             // SafeArea и сам встаёт на bottom:0. Селектор сидит точно над
             // ним — высота bar'а ~78 + 32 padding + safeBottom; берём
             // 110 + safeBottom как стабильный отступ.
-            bottom: MediaQuery.of(context).padding.bottom + 110,
+            bottom: MediaQuery.of(context).padding.bottom + (isTranslateSelected ? 96 : 110),
             left: 0,
             right: 0,
             child: Container(

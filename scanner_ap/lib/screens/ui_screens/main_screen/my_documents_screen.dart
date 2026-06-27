@@ -30,7 +30,6 @@ class MyDocumentsScreen extends StatefulWidget {
 
 class MyDocumentsScreenState extends State<MyDocumentsScreen>
     with AutomaticKeepAliveClientMixin, DocumentUtils, DocumentFilePreview {
-
   @override
   bool get wantKeepAlive => true;
 
@@ -74,7 +73,10 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
 
   void _onSearchChanged() {
     _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 250), _applySearchFilter);
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 250),
+      _applySearchFilter,
+    );
   }
 
   void _applySearchFilter() {
@@ -90,8 +92,11 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
         _isSearching = true;
         _filteredDocumentPaths
           ..clear()
-          ..addAll(_documentPaths.where((path) =>
-              getFileNameFromPath(path).toLowerCase().contains(query)));
+          ..addAll(
+            _documentPaths.where(
+              (path) => getFileNameFromPath(path).toLowerCase().contains(query),
+            ),
+          );
       });
     }
   }
@@ -177,7 +182,9 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
   }
 
   Future<void> _downloadAndRegister(
-      RemoteDocument remote, DocumentRegistry registry) async {
+    RemoteDocument remote,
+    DocumentRegistry registry,
+  ) async {
     try {
       final dir = await getApplicationDocumentsDirectory();
       var finalPath = '${dir.path}/${remote.name}.${remote.format}';
@@ -187,11 +194,9 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
         counter++;
       }
       await DocumentSyncService().download(remote.id, finalPath);
-      await registry.add(DocEntry(
-        localPath: finalPath,
-        remoteId: remote.id,
-        name: remote.name,
-      ));
+      await registry.add(
+        DocEntry(localPath: finalPath, remoteId: remote.id, name: remote.name),
+      );
     } catch (e) {
       debugPrint('Download failed for ${remote.id}: $e');
     }
@@ -199,8 +204,10 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
 
   Future<void> _retryUpload(DocEntry entry) async {
     try {
-      final remote = await DocumentSyncService()
-          .upload(File(entry.localPath), name: entry.name);
+      final remote = await DocumentSyncService().upload(
+        File(entry.localPath),
+        name: entry.name,
+      );
       await DocumentRegistry().updateRemoteId(entry.localPath, remote.id);
     } catch (e) {
       debugPrint('Retry upload failed: $e');
@@ -226,15 +233,20 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
           lower.endsWith('.png') ||
           lower.endsWith('.jpeg')) {
         final bytes = await fileToExport.readAsBytes();
-        final result =
-            await ImageGallerySaverPlus.saveImage(bytes, name: fileName);
+        final result = await ImageGallerySaverPlus.saveImage(
+          bytes,
+          name: fileName,
+        );
         final ok = result is Map
             ? result['isSuccess'] == true || result['isSuccess'] == 1
             : result == true;
         if (!ok) throw Exception(l10n.docSaveToGalleryFailed);
         if (mounted) {
-          AppNotification.show(context,
-              message: l10n.docSavedToGallery, type: NotificationType.success);
+          AppNotification.show(
+            context,
+            message: l10n.docSavedToGallery,
+            type: NotificationType.success,
+          );
         }
       } else {
         final bytes = await fileToExport.readAsBytes();
@@ -244,14 +256,19 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
         );
         if (newPath == null) throw Exception(l10n.docSaveCancelled);
         if (mounted) {
-          AppNotification.show(context,
-              message: l10n.docFileSaved, type: NotificationType.success);
+          AppNotification.show(
+            context,
+            message: l10n.docFileSaved,
+            type: NotificationType.success,
+          );
         }
       }
     } catch (e) {
       if (mounted) {
-        AppNotification.show(context,
-            message: e.toString().replaceFirst('Exception: ', ''));
+        AppNotification.show(
+          context,
+          message: e.toString().replaceFirst('Exception: ', ''),
+        );
       }
     }
   }
@@ -293,8 +310,11 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     }();
 
     if (mounted) {
-      AppNotification.show(context,
-          message: AppLocalizations.of(context).docDeleted(fileName), type: NotificationType.info);
+      AppNotification.show(
+        context,
+        message: AppLocalizations.of(context).docDeleted(fileName),
+        type: NotificationType.info,
+      );
     }
   }
 
@@ -329,15 +349,14 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     showDialog(
       context: context,
       builder: (dialogCtx) {
-        final dialogBg =
-            isDark ? const Color(0xFF1a2535) : Colors.white;
+        final dialogBg = isDark ? const Color(0xFF1a2535) : Colors.white;
         final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-        final subtextColor =
-            isDark ? Colors.white54 : const Color(0xFF8A94A6);
+        final subtextColor = isDark ? Colors.white54 : const Color(0xFF8A94A6);
         return Dialog(
           backgroundColor: dialogBg,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
@@ -347,9 +366,10 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                 Text(
                   l10n.dialogRename,
                   style: TextStyle(
-                      color: textColor,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600),
+                    color: textColor,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -368,10 +388,14 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: const BorderSide(
-                          color: Color(0xFF2CA5E0), width: 1.5),
+                        color: Color(0xFF2CA5E0),
+                        width: 1.5,
+                      ),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                   ),
                 ),
                 if (fileExtension != null) ...[
@@ -390,7 +414,8 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                         style: TextButton.styleFrom(
                           foregroundColor: subtextColor,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
                         child: Text(l10n.actionCancel),
@@ -403,17 +428,21 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                           final nav = Navigator.of(dialogCtx);
                           String newBaseName = controller.text.trim();
                           if (newBaseName.isEmpty) {
-                            AppNotification.show(context,
-                                message: l10n.docNameEmpty);
+                            AppNotification.show(
+                              context,
+                              message: l10n.docNameEmpty,
+                            );
                             return;
                           }
 
                           if (fileExtension != null &&
-                              newBaseName
-                                  .toLowerCase()
-                                  .endsWith(fileExtension.toLowerCase())) {
+                              newBaseName.toLowerCase().endsWith(
+                                fileExtension.toLowerCase(),
+                              )) {
                             newBaseName = newBaseName.substring(
-                                0, newBaseName.length - fileExtension.length);
+                              0,
+                              newBaseName.length - fileExtension.length,
+                            );
                           }
 
                           final newFullName =
@@ -423,34 +452,46 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                             return;
                           }
 
-                          final newPath =
-                              currentPath.replaceAll(currentFullName, newFullName);
+                          final newPath = currentPath.replaceAll(
+                            currentFullName,
+                            newFullName,
+                          );
 
                           try {
                             if (await File(newPath).exists()) {
-                              AppNotification.show(context,
-                                  message: l10n.docNameExists(newFullName));
+                              AppNotification.show(
+                                context,
+                                message: l10n.docNameExists(newFullName),
+                              );
                               nav.pop();
                               return;
                             }
 
                             await File(currentPath).rename(newPath);
-                            await DocumentRegistry()
-                                .updateLocalPath(currentPath, newPath, newBaseName);
+                            await DocumentRegistry().updateLocalPath(
+                              currentPath,
+                              newPath,
+                              newBaseName,
+                            );
 
-                            final remoteId =
-                                DocumentRegistry().getRemoteId(newPath);
+                            final remoteId = DocumentRegistry().getRemoteId(
+                              newPath,
+                            );
                             if (remoteId != null) {
                               try {
-                                await DocumentSyncService()
-                                    .rename(remoteId, newBaseName);
+                                await DocumentSyncService().rename(
+                                  remoteId,
+                                  newBaseName,
+                                );
                               } catch (e) {
                                 debugPrint('Cloud rename failed: $e');
                               }
                             }
 
                             final future = previewFutures.remove(currentPath);
-                            if (future != null) previewFutures[newPath] = future;
+                            if (future != null) {
+                              previewFutures[newPath] = future;
+                            }
 
                             setState(() {
                               _documentPaths[originalIndex] = newPath;
@@ -460,14 +501,18 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                             });
 
                             if (mounted) {
-                              AppNotification.show(context,
-                                  message: l10n.docRenamedTo(newFullName),
-                                  type: NotificationType.success);
+                              AppNotification.show(
+                                context,
+                                message: l10n.docRenamedTo(newFullName),
+                                type: NotificationType.success,
+                              );
                             }
                           } catch (e) {
                             if (mounted) {
-                              AppNotification.show(context,
-                                  message: friendlyError(e));
+                              AppNotification.show(
+                                context,
+                                message: friendlyError(e),
+                              );
                             }
                           }
                           nav.pop();
@@ -477,11 +522,14 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                           foregroundColor: Colors.white,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        child: Text(l10n.actionDone,
-                            style: const TextStyle(fontWeight: FontWeight.w600)),
+                        child: Text(
+                          l10n.actionDone,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ),
                   ],
@@ -492,6 +540,26 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
         );
       },
     );
+  }
+
+  Future<void> _uploadToCloud(String filePath) async {
+    final fileName = getFileNameFromPath(filePath);
+    try {
+      await DocumentSyncService().upload(File(filePath), name: fileName);
+      if (!mounted) return;
+      AppNotification.show(
+        context,
+        message: '«$fileName»\nзагружен в облако',
+        type: NotificationType.success,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppNotification.show(
+        context,
+        message: 'Ошибка загрузки: $e',
+        type: NotificationType.error,
+      );
+    }
   }
 
   void _showDocumentMenu(BuildContext context, int index) {
@@ -585,6 +653,17 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                     _shareDocument(fullPath);
                   },
                 ),
+                SheetAction(
+                  icon: Icons.cloud_upload_outlined,
+                  iconColor: const Color(0xFF2CA5E0),
+                  iconBg: const Color(0xFF2CA5E0).withValues(alpha: 0.12),
+                  label: 'Загрузить в облако',
+                  textColor: textColor,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _uploadToCloud(fullPath);
+                  },
+                ),
                 Divider(color: dividerColor, height: 1),
                 SheetAction(
                   icon: Icons.delete_outline,
@@ -630,15 +709,21 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                   color: const Color(0xFFEF5350).withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.delete_outline,
-                    color: Color(0xFFEF5350), size: 28),
+                child: const Icon(
+                  Icons.delete_outline,
+                  color: Color(0xFFEF5350),
+                  size: 28,
+                ),
               ),
               const SizedBox(height: 16),
-              Text(l10n.dialogDeleteTitle,
-                  style: TextStyle(
-                      color: textColor,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                l10n.dialogDeleteTitle,
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const SizedBox(height: 8),
               Text(
                 l10n.dialogDeleteBody,
@@ -654,7 +739,8 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                       style: TextButton.styleFrom(
                         foregroundColor: subtextColor,
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                       child: Text(l10n.actionCancel),
@@ -669,11 +755,14 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                         foregroundColor: Colors.white,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
-                      child: Text(l10n.actionDelete,
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      child: Text(
+                        l10n.actionDelete,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ),
                 ],
@@ -690,14 +779,16 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     final file = File(fullPath);
     if (!await file.exists()) {
       if (mounted) {
-        AppNotification.show(context, message: AppLocalizations.of(context).docFileNotFound);
+        AppNotification.show(
+          context,
+          message: AppLocalizations.of(context).docFileNotFound,
+        );
       }
       return;
     }
-    await Share.shareXFiles(
-      [XFile(fullPath)],
-      subject: getFileNameFromPath(fullPath),
-    );
+    await Share.shareXFiles([
+      XFile(fullPath),
+    ], subject: getFileNameFromPath(fullPath));
   }
 
   void _addDocument(String fullPath) {
@@ -713,8 +804,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
       }
     });
 
-    previewFutures.putIfAbsent(
-        fullPath, () => loadPreviewFuture(fullPath));
+    previewFutures.putIfAbsent(fullPath, () => loadPreviewFuture(fullPath));
 
     () async {
       final entryName = () {
@@ -722,11 +812,14 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
         final dot = name.lastIndexOf('.');
         return dot != -1 ? name.substring(0, dot) : name;
       }();
-      await DocumentRegistry()
-          .add(DocEntry(localPath: fullPath, remoteId: null, name: entryName));
+      await DocumentRegistry().add(
+        DocEntry(localPath: fullPath, remoteId: null, name: entryName),
+      );
       try {
-        final remote =
-            await DocumentSyncService().upload(File(fullPath), name: entryName);
+        final remote = await DocumentSyncService().upload(
+          File(fullPath),
+          name: entryName,
+        );
         await DocumentRegistry().updateRemoteId(fullPath, remote.id);
       } catch (e) {
         debugPrint('Import upload failed: $e');
@@ -735,17 +828,21 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
   }
 
   void _importDocument(FileType fileType) async {
-    final result = await FilePicker.platform
-        .pickFiles(type: fileType, allowMultiple: false);
+    final result = await FilePicker.platform.pickFiles(
+      type: fileType,
+      allowMultiple: false,
+    );
 
     if (result != null && result.files.first.path != null) {
       final fullPath = result.files.first.path!;
       final fileName = getFileNameFromPath(fullPath);
       _addDocument(fullPath);
       if (mounted) {
-        AppNotification.show(context,
-            message: AppLocalizations.of(context).docImported(fileName),
-            type: NotificationType.success);
+        AppNotification.show(
+          context,
+          message: AppLocalizations.of(context).docImported(fileName),
+          type: NotificationType.success,
+        );
       }
     }
   }
@@ -755,8 +852,7 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final sheetBg = isDark ? const Color(0xFF152030) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-    final subtextColor =
-        isDark ? Colors.white38 : const Color(0xFFAAB4C8);
+    final subtextColor = isDark ? Colors.white38 : const Color(0xFFAAB4C8);
 
     showModalBottomSheet(
       context: context,
@@ -785,9 +881,10 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                   child: Text(
                     l10n.importSheetTitle,
                     style: TextStyle(
-                        color: textColor,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600),
+                      color: textColor,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -830,8 +927,10 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
 
     if (storageStatus.isPermanentlyDenied || photosStatus.isPermanentlyDenied) {
       if (mounted) {
-        AppNotification.show(context,
-            message: AppLocalizations.of(context).permissionDenied);
+        AppNotification.show(
+          context,
+          message: AppLocalizations.of(context).permissionDenied,
+        );
       }
     }
     return false;
@@ -844,44 +943,58 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     final fileName = getFileNameFromPath(fullPath);
     final lower = fileName.toLowerCase();
 
-    if (lower.endsWith('.jpg') || lower.endsWith('.png') || lower.endsWith('.jpeg')) {
+    if (lower.endsWith('.jpg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.jpeg')) {
       await OpenFilex.open(fullPath);
     } else if (lower.endsWith('.pdf')) {
-      final result = await navigator.push<String?>(MaterialPageRoute(
-        builder: (_) => PdfViewerScreen(filePath: fullPath, fileName: fileName),
-      ));
+      final result = await navigator.push<String?>(
+        MaterialPageRoute(
+          builder: (_) =>
+              PdfViewerScreen(filePath: fullPath, fileName: fileName),
+        ),
+      );
       if (result != null && result.isNotEmpty && mounted) {
         await _loadDocuments();
       }
     } else if (lower.endsWith('.docx') || lower.endsWith('.doc')) {
-      navigator.push(MaterialPageRoute(
-        builder: (_) =>
-            DocxViewerScreen(filePath: fullPath, fileName: fileName),
-      ));
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) =>
+              DocxViewerScreen(filePath: fullPath, fileName: fileName),
+        ),
+      );
     } else if (lower.endsWith('.txt')) {
-      navigator.push(MaterialPageRoute(
-        builder: (_) =>
-            TextFileViewerScreen(filePath: fullPath, fileName: fileName),
-      ));
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) =>
+              TextFileViewerScreen(filePath: fullPath, fileName: fileName),
+        ),
+      );
     } else {
       try {
         final file = File(fullPath);
         if (await file.exists()) {
           final result = await OpenFilex.open(fullPath);
           if (result.type != ResultType.done && mounted) {
-            AppNotification.show(context,
-                message: l10n.docOpenUnsupported(
-                    fileName.split('.').last.toUpperCase()));
+            AppNotification.show(
+              context,
+              message: l10n.docOpenUnsupported(
+                fileName.split('.').last.toUpperCase(),
+              ),
+            );
           }
         } else {
           if (mounted) {
-            AppNotification.show(context, message: l10n.docFileNotFoundNamed(fileName));
+            AppNotification.show(
+              context,
+              message: l10n.docFileNotFoundNamed(fileName),
+            );
           }
         }
       } catch (e) {
         if (mounted) {
-          AppNotification.show(context,
-              message: '${l10n.docOpenError}: $e');
+          AppNotification.show(context, message: '${l10n.docOpenError}: $e');
         }
       }
     }
@@ -892,23 +1005,21 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
     super.build(context);
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor =
-        isDark ? const Color(0xFF0f1923) : const Color(0xFFE8EFF9);
+    final bgColor = isDark ? const Color(0xFF0f1923) : const Color(0xFFE8EFF9);
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-    final subtextColor =
-        isDark ? Colors.white38 : const Color(0xFFAAB4C8);
+    final subtextColor = isDark ? Colors.white38 : const Color(0xFFAAB4C8);
     final searchFill = isDark
         ? Colors.white.withValues(alpha: 0.06)
-        : Colors.white;
+        : const Color(0xFFF4F8FE);
     final searchBorder = isDark
-        ? Colors.white.withValues(alpha: 0.1)
-        : const Color(0xFFE8EDF5);
+        ? Colors.white.withValues(alpha: 0.10)
+        : const Color(0xFFD8E4F2);
     final cardBg = isDark
-        ? Colors.white.withValues(alpha: 0.05)
-        : Colors.white;
+        ? Colors.white.withValues(alpha: 0.07)
+        : const Color(0xFFF4F8FE);
     final cardBorder = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : const Color(0xFFEEF2F8);
+        ? Colors.white.withValues(alpha: 0.10)
+        : const Color(0xFFD8E4F2);
     final l10n = AppLocalizations.of(context);
 
     return Container(
@@ -919,62 +1030,70 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
           // max-width 560 и центрирован, чтобы поле не растягивалось во
           // весь экран и казалось «балконом».
           Padding(
-            padding:
-                const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 560),
                 child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  key: _searchBarKey,
-                  decoration: BoxDecoration(
-                    color: searchFill,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: searchBorder, width: 1),
-                  ),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 12),
-                      Icon(Icons.search_rounded,
-                          color: subtextColor, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _searchController,
-                          style:
-                              TextStyle(color: textColor, fontSize: 14),
-                          decoration: InputDecoration(
-                            hintText: l10n.searchHint,
-                            hintStyle: TextStyle(
-                                color: subtextColor, fontSize: 14),
-                            border: InputBorder.none,
-                            suffixIcon: _searchController.text.isNotEmpty
-                                ? IconButton(
-                                    icon: Icon(Icons.close_rounded,
-                                        size: 18, color: subtextColor),
-                                    onPressed: _clearSearch,
-                                  )
-                                : null,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      key: _searchBarKey,
+                      decoration: BoxDecoration(
+                        color: searchFill,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: searchBorder, width: 1),
+                      ),
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 12),
+                          Icon(
+                            Icons.search_rounded,
+                            color: subtextColor,
+                            size: 20,
                           ),
-                        ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              style: TextStyle(color: textColor, fontSize: 14),
+                              decoration: InputDecoration(
+                                hintText: l10n.searchHint,
+                                hintStyle: TextStyle(
+                                  color: subtextColor,
+                                  fontSize: 14,
+                                ),
+                                border: InputBorder.none,
+                                suffixIcon: _searchController.text.isNotEmpty
+                                    ? IconButton(
+                                        icon: Icon(
+                                          Icons.close_rounded,
+                                          size: 18,
+                                          color: subtextColor,
+                                        ),
+                                        onPressed: _clearSearch,
+                                      )
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_isSearching) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        _filteredDocumentPaths.isEmpty
+                            ? l10n.searchNothingFound
+                            : l10n.searchFoundCount(
+                                _filteredDocumentPaths.length,
+                              ),
+                        style: TextStyle(color: subtextColor, fontSize: 12),
                       ),
                     ],
-                  ),
+                    const SizedBox(height: 16),
+                  ],
                 ),
-                if (_isSearching) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    _filteredDocumentPaths.isEmpty
-                        ? l10n.searchNothingFound
-                        : l10n.searchFoundCount(_filteredDocumentPaths.length),
-                    style: TextStyle(color: subtextColor, fontSize: 12),
-                  ),
-                ],
-                const SizedBox(height: 16),
-              ],
-            ),
               ),
             ),
           ),
@@ -984,24 +1103,25 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
             child: _isLoading
                 ? _buildSkeletonList(isDark)
                 : _displayedDocumentPaths.isEmpty
-                    ? _buildEmptyState(isDark, subtextColor)
-                    : Builder(builder: (ctx) {
+                ? _buildEmptyState(isDark, subtextColor)
+                : Builder(
+                    builder: (ctx) {
                       final isCompact = MediaQuery.of(ctx).size.width < 360;
                       final previewSize = isCompact ? 44.0 : 52.0;
-                      final gap = isCompact ? 10.0 : 14.0;
-                      final hPad = isCompact ? 10.0 : 14.0;
+                      final gap = isCompact ? 6.0 : 8.0;
                       return ListView.builder(
-                        padding: EdgeInsets.fromLTRB(isCompact ? 14 : 20, 0, isCompact ? 14 : 20, 120),
+                        padding: EdgeInsets.fromLTRB(
+                          isCompact ? 14 : 20,
+                          0,
+                          isCompact ? 14 : 20,
+                          120,
+                        ),
                         itemCount: _displayedDocumentPaths.length,
                         itemBuilder: (context, index) {
                           final filePath = _displayedDocumentPaths[index];
-                          final fileName =
-                              getFileNameFromPath(filePath);
+                          final fileName = getFileNameFromPath(filePath);
                           final ext = fileName.contains('.')
-                              ? fileName
-                                  .split('.')
-                                  .last
-                                  .toUpperCase()
+                              ? fileName.split('.').last.toUpperCase()
                               : '–';
 
                           return Padding(
@@ -1009,78 +1129,104 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                             child: Material(
                               color: Colors.transparent,
                               child: InkWell(
-                                onTap: () =>
-                                    _navigateToDocumentView(filePath),
-                                borderRadius:
-                                    BorderRadius.circular(16),
+                                onTap: () => _navigateToDocumentView(filePath),
+                                borderRadius: BorderRadius.circular(16),
                                 child: Container(
                                   decoration: BoxDecoration(
                                     color: cardBg,
-                                    borderRadius:
-                                        BorderRadius.circular(16),
+                                    borderRadius: BorderRadius.circular(16),
                                     border: Border.all(
-                                        color: cardBorder, width: 1),
+                                      color: cardBorder,
+                                      width: 1,
+                                    ),
                                     boxShadow: isDark
                                         ? null
                                         : [
                                             BoxShadow(
-                                              color: Colors.black
-                                                  .withValues(alpha: 0.04),
+                                              color: Colors.black.withValues(
+                                                alpha: 0.04,
+                                              ),
                                               blurRadius: 8,
                                               offset: const Offset(0, 2),
-                                            )
+                                            ),
                                           ],
                                   ),
-                                  padding: EdgeInsets.symmetric(
-                                      horizontal: hPad, vertical: 12),
-                                  child: Row(
-                                    children: [
-                                      buildFilePreview(
-                                          filePath, isDark, size: previewSize),
-                                      SizedBox(width: gap),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              fileName,
-                                              maxLines: isCompact ? 2 : 1,
-                                              overflow:
-                                                  TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                color: textColor,
-                                                fontSize: isCompact ? 13 : 14,
-                                                fontWeight:
-                                                    FontWeight.w500,
-                                                height: 1.2,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 3),
-                                            Text(
-                                              ext,
-                                              style: TextStyle(
-                                                color: subtextColor,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ],
+                                  child: SizedBox(
+                                    height: previewSize + 16,
+                                    child: Row(
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.all(8),
+                                          child: buildFilePreview(
+                                            filePath,
+                                            isDark,
+                                            size: previewSize,
+                                          ),
                                         ),
-                                      ),
-                                      IconButton(
-                                        icon: Icon(
-                                            Icons.more_vert_rounded,
-                                            color: subtextColor,
-                                            size: 20),
-                                        onPressed: () =>
-                                            _showDocumentMenu(
-                                                context, index),
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(
-                                            minWidth: 32,
-                                            minHeight: 32),
-                                      ),
-                                    ],
+                                        SizedBox(width: gap),
+                                        Expanded(
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                fileName,
+                                                maxLines: isCompact ? 2 : 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: textColor,
+                                                  fontSize: isCompact ? 13 : 14,
+                                                  fontWeight: FontWeight.w500,
+                                                  height: 1.2,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                ext,
+                                                style: TextStyle(
+                                                  color: subtextColor,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        GestureDetector(
+                                          onTap: () =>
+                                              _showDocumentMenu(context, index),
+                                          child: Container(
+                                            width: isCompact ? 42 : 48,
+                                            height: double.infinity,
+                                            decoration: BoxDecoration(
+                                              color: isDark
+                                                  ? Colors.white
+                                                      .withValues(alpha: 0.05)
+                                                  : const Color(0xFF2CA5E0)
+                                                      .withValues(alpha: 0.06),
+                                              borderRadius:
+                                                  const BorderRadius.only(
+                                                    topRight: Radius.circular(
+                                                      16,
+                                                    ),
+                                                    bottomRight:
+                                                        Radius.circular(16),
+                                                  ),
+                                            ),
+                                            child: Icon(
+                                              Icons.more_vert_rounded,
+                                              color: isDark
+                                                  ? Colors.white
+                                                      .withValues(alpha: 0.30)
+                                                  : const Color(0xFF2CA5E0)
+                                                      .withValues(alpha: 0.45),
+                                              size: 18,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1088,9 +1234,9 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                           );
                         },
                       );
-                    }),
+                    },
+                  ),
           ),
-
         ],
       ),
     );
@@ -1117,7 +1263,10 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
       itemCount: 6,
       itemBuilder: (_, __) => Padding(
         padding: const EdgeInsets.only(bottom: 10),
-        child: SkeletonRow(baseColor: baseColor, highlightColor: highlightColor),
+        child: SkeletonRow(
+          baseColor: baseColor,
+          highlightColor: highlightColor,
+        ),
       ),
     );
   }
@@ -1137,7 +1286,10 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
 
         return Center(
           child: SingleChildScrollView(
-            padding: EdgeInsets.symmetric(horizontal: 40, vertical: isCompact ? 12 : 24),
+            padding: EdgeInsets.symmetric(
+              horizontal: 40,
+              vertical: isCompact ? 12 : 24,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1170,7 +1322,11 @@ class MyDocumentsScreenState extends State<MyDocumentsScreen>
                       ? l10n.emptyTryDifferentQuery
                       : l10n.emptyScanOrImport,
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: subtextColor, fontSize: 13.5, height: 1.45),
+                  style: TextStyle(
+                    color: subtextColor,
+                    fontSize: 13.5,
+                    height: 1.45,
+                  ),
                 ),
               ],
             ),
