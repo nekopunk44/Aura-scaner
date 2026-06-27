@@ -47,12 +47,9 @@ class ScannerApp extends StatelessWidget {
           themeMode: ThemeNotifier().mode,
           themeAnimationDuration: const Duration(milliseconds: 300),
           themeAnimationCurve: Curves.easeOut,
-          // Локализация: ru — основной язык, en — перевод. locale=null →
-          // язык по системной локали устройства; иначе — выбор пользователя
-          // из настроек. ru первый в supportedLocales — fallback по умолчанию.
           locale: LocaleNotifier().locale,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: const [Locale('ru'), Locale('en')],
+          supportedLocales: const [Locale('en'), Locale('ru')],
           home: const SplashScreen(),
           builder: (context, child) => AppLockGuard(
             navigatorKey: appNavigatorKey,

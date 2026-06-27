@@ -348,8 +348,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
               ),
               child: TabBar(
                 controller: _tabCtrl,
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
+                tabAlignment: TabAlignment.fill,
                 labelColor: Colors.white,
                 unselectedLabelColor: tabInactive,
                 indicatorSize: TabBarIndicatorSize.tab,
@@ -470,23 +469,6 @@ class _AllActionsScreenState extends State<AllActionsScreen>
             ),
           ),
           _tile(
-            l10n.featTranslate,
-            Icons.translate,
-            subtitle: l10n.featTranslateSub,
-            iconColor: const Color(0xFFE67E22),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => CameraScreen(initialFeature: 'Перевод'),
-                ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 12),
-        _pairRow(
-          _tile(
             l10n.featQr,
             Icons.qr_code_2,
             subtitle: l10n.featQrSub,
@@ -496,6 +478,23 @@ class _AllActionsScreenState extends State<AllActionsScreen>
                 context,
                 MaterialPageRoute(
                   builder: (_) => CameraScreen(initialFeature: 'Сканер qr-код'),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        _pairRow(
+          _tile(
+            l10n.featTranslate,
+            Icons.translate,
+            subtitle: l10n.featTranslateSub,
+            iconColor: const Color(0xFFE67E22),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CameraScreen(initialFeature: 'Перевод'),
                 ),
               );
             },
@@ -564,13 +563,13 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _pairRow(
           _tile(
-            l10n.featSignature,
-            Icons.edit_note,
-            iconColor: Colors.green,
-            subtitle: l10n.featSignatureSub,
+            'OCR',
+            Icons.text_fields_outlined,
+            iconColor: const Color(0xFF6B7A99),
+            subtitle: l10n.featOcrSub,
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const sig.HomeScreen()),
+              MaterialPageRoute(builder: (_) => const OcrScreen()),
             ),
           ),
           _tile(
@@ -602,31 +601,23 @@ class _AllActionsScreenState extends State<AllActionsScreen>
             ),
           ),
           _tile(
-            'OCR',
-            Icons.text_fields_outlined,
-            iconColor: const Color(0xFF6B7A99),
-            subtitle: l10n.featOcrSub,
+            l10n.featSignature,
+            Icons.edit_note,
+            iconColor: Colors.green,
+            subtitle: l10n.featSignatureSub,
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const OcrScreen()),
+              MaterialPageRoute(builder: (_) => const sig.HomeScreen()),
             ),
           ),
         ),
         const SizedBox(height: 12),
         _pairRow(
           _tile(
-            l10n.featHighlight,
-            Icons.highlight,
-            isPremium: true,
-            subtitle: l10n.featHighlightSub,
-            iconColor: const Color(0xFFE8A317),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    HighlightScreen(onSaved: widget.onDocumentImported),
-              ),
-            ),
+            l10n.featGeoStamp,
+            Icons.punch_clock_rounded,
+            subtitle: l10n.featGeoStampSub,
+            onTap: () => _addTimestamp(context),
           ),
           _tile(
             l10n.featPdfTools,
@@ -645,10 +636,18 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _singleRow(
           _tile(
-            l10n.featGeoStamp,
-            Icons.punch_clock_rounded,
-            subtitle: l10n.featGeoStampSub,
-            onTap: () => _addTimestamp(context),
+            l10n.featHighlight,
+            Icons.highlight,
+            isPremium: true,
+            subtitle: l10n.featHighlightSub,
+            iconColor: const Color(0xFFE8A317),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    HighlightScreen(onSaved: widget.onDocumentImported),
+              ),
+            ),
           ),
         ),
       ],
@@ -677,25 +676,6 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _pairRow(
           _tile(
-            'PDF/JPEG',
-            Icons.swap_horiz_rounded,
-            subtitle: l10n.featPdfToImagesSub,
-            iconColor: const Color(0xFF2CA5E0),
-            onTap: () => _convertPdfJpeg(context),
-          ),
-          _tile(
-            l10n.featPrint,
-            Icons.print,
-            subtitle: l10n.featPrintSub,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const PrintScreen()),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        _pairRow(
-          _tile(
             l10n.featRemoveWatermark,
             Icons.auto_fix_normal,
             isPremium: true,
@@ -713,6 +693,25 @@ class _AllActionsScreenState extends State<AllActionsScreen>
             Icons.mail_outline,
             subtitle: l10n.featEmailSub,
             onTap: () => _shareByEmail(context),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _pairRow(
+          _tile(
+            'PDF/JPEG',
+            Icons.swap_horiz_rounded,
+            subtitle: l10n.featPdfToImagesSub,
+            iconColor: const Color(0xFF2CA5E0),
+            onTap: () => _convertPdfJpeg(context),
+          ),
+          _tile(
+            l10n.featPrint,
+            Icons.print,
+            subtitle: l10n.featPrintSub,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PrintScreen()),
+            ),
           ),
         ),
       ],

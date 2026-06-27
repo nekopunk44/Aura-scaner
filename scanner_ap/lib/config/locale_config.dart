@@ -13,7 +13,7 @@ class LocaleNotifier extends ChangeNotifier {
   static const _key = 'app_locale';
 
   /// Поддерживаемые языки (должны совпадать с supportedLocales в MaterialApp).
-  static const supported = [Locale('ru'), Locale('en')];
+  static const supported = [Locale('en'), Locale('ru')];
 
   Locale? _locale;
   Locale? get locale => _locale;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../services/auth_service.dart';
+import '../../utils/app_notification.dart';
 import '../../utils/error_messages.dart';
 import '../../l10n/app_localizations.dart';
 
@@ -83,29 +84,24 @@ class _SessionManagementScreenState extends State<SessionManagementScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyError(e))),
-      );
+      AppNotification.show(context, message: friendlyError(e), type: NotificationType.error);
     }
   }
 
   Future<void> _logoutOthers() async {
     final l10n = AppLocalizations.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(_logoutOthersTitle(context)),
-        content: Text(_logoutOthersBody(context)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.actionCancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(_logoutOthersLabel(context)),
-          ),
-        ],
+      builder: (ctx) => _ConfirmDialog(
+        isDark: isDark,
+        icon: Icons.devices_outlined,
+        iconColor: const Color(0xFF2CA5E0),
+        title: _logoutOthersTitle(context),
+        body: _logoutOthersBody(context),
+        cancelLabel: l10n.actionCancel,
+        confirmLabel: _logoutOthersLabel(context),
+        confirmColor: const Color(0xFF2CA5E0),
       ),
     );
 
@@ -116,14 +112,10 @@ class _SessionManagementScreenState extends State<SessionManagementScreen> {
       await _authService.logoutOtherSessions();
       await _loadSessions();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_othersEndedLabel(context))),
-      );
+      AppNotification.show(context, message: _othersEndedLabel(context), type: NotificationType.success);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyError(e))),
-      );
+      AppNotification.show(context, message: friendlyError(e), type: NotificationType.error);
     } finally {
       if (mounted) setState(() => _isMutating = false);
     }
@@ -131,21 +123,18 @@ class _SessionManagementScreenState extends State<SessionManagementScreen> {
 
   Future<void> _revokeSession(UserSession session) async {
     final l10n = AppLocalizations.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(_logoutSessionLabel(context)),
-        content: Text(_describeDevice(context, session)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.actionCancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(_logoutSessionLabel(context)),
-          ),
-        ],
+      builder: (ctx) => _ConfirmDialog(
+        isDark: isDark,
+        icon: Icons.logout_rounded,
+        iconColor: Colors.red,
+        title: _logoutSessionLabel(context),
+        body: _describeDevice(context, session),
+        cancelLabel: l10n.actionCancel,
+        confirmLabel: _logoutSessionLabel(context),
+        confirmColor: Colors.red,
       ),
     );
 
@@ -156,14 +145,10 @@ class _SessionManagementScreenState extends State<SessionManagementScreen> {
       await _authService.revokeSession(session.id);
       await _loadSessions();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_sessionEndedLabel(context))),
-      );
+      AppNotification.show(context, message: _sessionEndedLabel(context), type: NotificationType.success);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyError(e))),
-      );
+      AppNotification.show(context, message: friendlyError(e), type: NotificationType.error);
     } finally {
       if (mounted) setState(() => _isMutating = false);
     }
@@ -218,7 +203,13 @@ class _SessionManagementScreenState extends State<SessionManagementScreen> {
     final others = sessions.where((session) => !session.isCurrent).toList();
 
     return Scaffold(
-      appBar: AppBar(title: Text(_title(context))),
+      appBar: AppBar(
+        title: Text(_title(context)),
+        centerTitle: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+        ),
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -283,6 +274,113 @@ class _SessionManagementScreenState extends State<SessionManagementScreen> {
                 ],
               ),
             ),
+    );
+  }
+}
+
+class _ConfirmDialog extends StatelessWidget {
+  final bool isDark;
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String body;
+  final String cancelLabel;
+  final String confirmLabel;
+  final Color confirmColor;
+
+  const _ConfirmDialog({
+    required this.isDark,
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.body,
+    required this.cancelLabel,
+    required this.confirmLabel,
+    required this.confirmColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final subColor = isDark ? Colors.white60 : const Color(0xFF6B7A99);
+
+    return Dialog(
+      backgroundColor: bg,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: iconColor, size: 26),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: textColor,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              body,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: subColor, height: 1.45),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: isDark ? Colors.white70 : const Color(0xFF6B7A99),
+                      side: BorderSide(
+                        color: isDark ? Colors.white24 : const Color(0xFFDDE3ED),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                    ),
+                    child: Text(cancelLabel,
+                        style: const TextStyle(fontWeight: FontWeight.w500)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: confirmColor,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                    ),
+                    child: Text(confirmLabel,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                        textAlign: TextAlign.center),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

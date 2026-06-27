@@ -9,6 +9,8 @@ class AuthUser {
   final String name;
   final String? provider;
   final String? avatarUrl;
+  final bool hasGoogleLinked;
+  final bool hasTelegramLinked;
 
   const AuthUser({
     required this.id,
@@ -16,6 +18,8 @@ class AuthUser {
     required this.name,
     this.provider,
     this.avatarUrl,
+    this.hasGoogleLinked = false,
+    this.hasTelegramLinked = false,
   });
 
   static String? _readString(Map<String, dynamic> json, List<String> keys) {
@@ -47,6 +51,8 @@ class AuthUser {
       'image',
       'photo',
     ]),
+    hasGoogleLinked: json['hasGoogleLinked'] as bool? ?? false,
+    hasTelegramLinked: json['hasTelegramLinked'] as bool? ?? false,
   );
 }
 
@@ -228,6 +234,34 @@ class AuthService {
         data: {
           if (name != null) 'name': name,
           if (email != null) 'email': email,
+        },
+      );
+      return AuthUser.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw _parseError(e);
+    }
+  }
+
+  Future<AuthUser> linkTelegram({
+    required String id,
+    required String hash,
+    required String authDate,
+    String? firstName,
+    String? lastName,
+    String? username,
+    String? photoUrl,
+  }) async {
+    try {
+      final response = await _api.dio.post(
+        '/auth/link/telegram',
+        data: {
+          'id': id,
+          'hash': hash,
+          'auth_date': authDate,
+          if (firstName != null) 'first_name': firstName,
+          if (lastName != null) 'last_name': lastName,
+          if (username != null) 'username': username,
+          if (photoUrl != null) 'photo_url': photoUrl,
         },
       );
       return AuthUser.fromJson(response.data as Map<String, dynamic>);

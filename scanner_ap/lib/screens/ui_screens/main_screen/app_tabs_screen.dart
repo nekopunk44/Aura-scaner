@@ -22,6 +22,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
   bool _isScanning = false;
   final GlobalKey<MyDocumentsScreenState> _docsKey = GlobalKey();
   late final PageController _pageController;
+  late final AnimationController _pulseCtrl;
 
   // Перетаскиваемая позиция «+» (left/top в координатах body). null = дефолт.
   Offset? _fabPos;
@@ -37,11 +38,6 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
   static const double _fabDockedWidth = 48;
   static const double _fabDockedHeight = 52;
 
-  late final AnimationController _pulseCtrl;
-  late final Animation<double> _pulseAnim;
-
-  late final AnimationController _beamCtrl;
-
   @override
   void initState() {
     super.initState();
@@ -50,13 +46,6 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(milliseconds: 2800),
     )..repeat(reverse: true);
-    _pulseAnim = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
-
-    _beamCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2400),
-    )..repeat();
-
     _loadFabPos();
   }
 
@@ -209,7 +198,6 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
   void dispose() {
     _pageController.dispose();
     _pulseCtrl.dispose();
-    _beamCtrl.dispose();
     super.dispose();
   }
 
@@ -263,9 +251,9 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
     final titleColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final iconColor = isDark ? Colors.white60 : const Color(0xFF6B7A99);
     final navSelected = const Color(0xFF2CA5E0);
-    final navUnselected = isDark ? Colors.white38 : const Color(0xFFAAB4C8);
+    final navUnselected = isDark ? Colors.white38 : const Color(0xFF8A94A6);
     final appBarBg = isDark ? const Color(0xFF141E2B) : Colors.white;
-    final navBg = isDark ? const Color(0xFF141E2B) : Colors.white;
+    final navBg = isDark ? const Color(0xFF141E2B) : const Color(0xFFF0F7FF);
     final scaffoldBg = isDark
         ? const Color(0xFF0F1923)
         : const Color(0xFFE8EFF9);
@@ -279,9 +267,9 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
           appBar: PreferredSize(
             preferredSize: const Size.fromHeight(64),
             child: AnimatedBuilder(
-              animation: _pulseAnim,
+              animation: _pulseCtrl,
               builder: (context, _) {
-                final glow = _pulseAnim.value;
+                final glow = Curves.easeInOut.transform(_pulseCtrl.value);
                 return Container(
                   decoration: BoxDecoration(
                     color: appBarBg,
@@ -291,9 +279,8 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(
-                          0xFF2CA5E0,
-                        ).withValues(alpha: 0.04 + glow * 0.08),
+                        color: const Color(0xFF2CA5E0)
+                            .withValues(alpha: 0.04 + glow * 0.08),
                         blurRadius: 10 + glow * 8,
                         offset: const Offset(0, 3),
                       ),
@@ -322,9 +309,8 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
                                 gradient: LinearGradient(
                                   colors: [
                                     Colors.transparent,
-                                    const Color(
-                                      0xFF2CA5E0,
-                                    ).withValues(alpha: 0.15 + glow * 0.25),
+                                    const Color(0xFF2CA5E0)
+                                        .withValues(alpha: 0.15 + glow * 0.25),
                                     Colors.transparent,
                                   ],
                                 ),
@@ -379,15 +365,8 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
               ),
             ],
           ),
-          bottomNavigationBar: AnimatedBuilder(
-            animation: _beamCtrl,
-            builder: (context, _) {
-              final t = _beamCtrl.value;
-              final sine = (math.sin(t * 2 * math.pi) + 1) / 2;
-              final glowAlpha = 0.08 + sine * 0.16;
-              final borderAlpha = isDark
-                  ? 0.06 + sine * 0.18
-                  : 0.04 + sine * 0.10;
+          bottomNavigationBar: Builder(
+            builder: (context) {
               // На широком экране таб-бар не должен растягиваться во всю
               // ширину. Считаем боковые отступы так, чтобы внутренняя
               // ширина не превышала 520. Не используем Center/ConstrainedBox
@@ -404,24 +383,32 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
                     color: navBg,
                     borderRadius: BorderRadius.circular(32),
                     border: Border.all(
-                      color: const Color(
-                        0xFF2CA5E0,
-                      ).withValues(alpha: borderAlpha),
+                      color: const Color(0xFF2CA5E0).withValues(
+                          alpha: isDark ? 0.14 : 0.20),
                       width: 1.2,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(
-                          0xFF2CA5E0,
-                        ).withValues(alpha: glowAlpha),
-                        blurRadius: 16 + sine * 12,
-                        spreadRadius: sine * 2,
+                        color: const Color(0xFF2CA5E0).withValues(alpha: 0.12),
+                        blurRadius: 20,
                         offset: const Offset(0, 2),
                       ),
                       if (isDark)
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.4),
                           blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      if (!isDark)
+                        BoxShadow(
+                          color: const Color(0xFF2CA5E0).withValues(alpha: 0.10),
+                          blurRadius: 20,
+                          offset: const Offset(0, -6),
+                        ),
+                      if (!isDark)
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.07),
+                          blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
                     ],

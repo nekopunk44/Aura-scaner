@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../config/server_config.dart';
 import '../screens/auth/oauth_webview_screen.dart';
@@ -69,12 +68,6 @@ class SocialAuthService {
     final resultUri = await showOAuthBottomSheet(
       context,
       url: uri.toString(),
-      title: 'Войти через Google',
-      providerIcon: const FaIcon(
-        FontAwesomeIcons.google,
-        color: Color(0xFFEA4335),
-        size: 20,
-      ),
     );
     if (resultUri == null) throw 'Вход через Google отменён.';
     final code = extractOAuthCode(resultUri);
@@ -86,21 +79,51 @@ class SocialAuthService {
   static String buildTelegramLoginUrl(String baseUrl) =>
       '$baseUrl/auth/telegram/login';
 
+  static String buildTelegramLinkUrl(String baseUrl) =>
+      '$baseUrl/auth/telegram/link-page';
+
   Future<AuthUser> loginWithTelegram(BuildContext context) async {
     final loginUrl = buildTelegramLoginUrl(ServerConfig().baseUrl);
     final resultUri = await showOAuthBottomSheet(
       context,
       url: loginUrl,
-      title: 'Войти через Telegram',
-      providerIcon: const FaIcon(
-        FontAwesomeIcons.telegram,
-        color: Color(0xFF26A5E4),
-        size: 20,
-      ),
     );
     if (resultUri == null) throw 'Авторизация Telegram отменена.';
     final code = extractOAuthCode(resultUri);
     return _exchangeCodeForTokens(code);
+  }
+
+  /// Открывает Telegram OAuth для привязки аккаунта к уже авторизованному пользователю.
+  /// Возвращает обновлённый [AuthUser] с [hasTelegramLinked] == true.
+  Future<AuthUser> linkWithTelegram(BuildContext context) async {
+    final linkUrl = buildTelegramLinkUrl(ServerConfig().baseUrl);
+    final resultUri = await showOAuthBottomSheet(
+      context,
+      url: linkUrl,
+    );
+    if (resultUri == null) throw 'Привязка Telegram отменена.';
+
+    // Deep link: aurascanner://tglink?id=...&hash=...&auth_date=...&...
+    if (resultUri.host != 'tglink') {
+      throw 'Неожиданный ответ сервера.';
+    }
+    final params = resultUri.queryParameters;
+    final id = params['id'];
+    final hash = params['hash'];
+    final authDate = params['auth_date'];
+    if (id == null || hash == null || authDate == null) {
+      throw 'Не получены данные Telegram.';
+    }
+
+    return AuthService().linkTelegram(
+      id: id,
+      hash: hash,
+      authDate: authDate,
+      firstName: params['first_name'],
+      lastName: params['last_name'],
+      username: params['username'],
+      photoUrl: params['photo_url'],
+    );
   }
 
   // ── Apple ────────────────────────────────────────────────────────────────
