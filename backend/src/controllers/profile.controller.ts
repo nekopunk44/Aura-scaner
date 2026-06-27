@@ -117,6 +117,8 @@ export async function getProfile(
       isPremium: isPremiumActive(user),
       premiumActivatedAt: user.premiumActivatedAt ?? null,
       premiumExpiresAt: user.premiumExpiresAt ?? null,
+      hasGoogleLinked: !!user.googleSub,
+      hasTelegramLinked: !!user.telegramId,
     });
   } catch (err) {
     logger.error('[getProfile]', { err });
@@ -188,6 +190,8 @@ export async function updateProfile(
       isPremium: isPremiumActive(user),
       premiumActivatedAt: user.premiumActivatedAt ?? null,
       premiumExpiresAt: user.premiumExpiresAt ?? null,
+      hasGoogleLinked: !!user.googleSub,
+      hasTelegramLinked: !!user.telegramId,
     });
   } catch (err) {
     logger.error('[updateProfile]', { err });
@@ -301,6 +305,8 @@ export async function updateAvatar(
       isPremium: isPremiumActive(user),
       premiumActivatedAt: user.premiumActivatedAt ?? null,
       premiumExpiresAt: user.premiumExpiresAt ?? null,
+      hasGoogleLinked: !!user.googleSub,
+      hasTelegramLinked: !!user.telegramId,
     });
   } catch (err) {
     logger.error('[updateAvatar]', { err });

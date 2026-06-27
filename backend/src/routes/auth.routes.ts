@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { register, login, changePassword, refreshAccessToken } from '../controllers/auth.controller';
-import { socialLogin, googleCallback, exchangeOAuthCode } from '../controllers/social.auth.controller';
+import { socialLogin, googleCallback, exchangeOAuthCode, linkTelegramEndpoint } from '../controllers/social.auth.controller';
 import {
   avatarUpload,
   getProfile,
@@ -11,7 +11,7 @@ import {
   updateAvatar,
   updateProfile,
 } from '../controllers/profile.controller';
-import { telegramLoginPage, telegramCallback, telegramExchange } from '../controllers/telegram.controller';
+import { telegramLoginPage, telegramCallback, telegramExchange, telegramLinkPage, telegramLinkCallback } from '../controllers/telegram.controller';
 import { vkLoginPage } from '../controllers/vk.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 
@@ -29,6 +29,11 @@ router.post('/oauth/exchange', exchangeOAuthCode);
 router.get('/telegram/login', telegramLoginPage);
 router.get('/telegram/callback', telegramCallback);
 router.post('/telegram/exchange', telegramExchange);
+
+// Telegram account linking (link-page is public, link-callback is public, linkTelegramEndpoint requires auth)
+router.get('/telegram/link-page', telegramLinkPage);
+router.get('/telegram/link-callback', telegramLinkCallback);
+router.post('/link/telegram', authMiddleware, linkTelegramEndpoint);
 
 // Google server-side OAuth callback
 router.get('/google/callback', googleCallback);

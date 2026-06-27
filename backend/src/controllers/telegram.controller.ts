@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { loginOrCreateUserAndIssueCode } from './social.auth.controller';
-import { buildAndroidIntentUri, buildOAuthCodeDeepLink } from '../utils/oauth.links';
+import { APP_CALLBACK_SCHEME, ANDROID_APP_PACKAGE, buildAndroidIntentUri, buildOAuthCodeDeepLink } from '../utils/oauth.links';
 import { TelegramAuthData, verifyTelegramAuthData } from '../utils/telegramAuth';
 
 interface TelegramData extends TelegramAuthData {
@@ -305,6 +305,153 @@ export async function telegramCallback(req: Request, res: Response): Promise<voi
     var target = isAndroid ? ${JSON.stringify(intentUri)} : ${JSON.stringify(deepLink)};
     setTimeout(function(){ window.location.href = target; }, 600);
     document.getElementById('btn').href = target;
+  </script>
+</body>
+</html>`);
+}
+
+export function telegramLinkPage(req: Request, res: Response): void {
+  if (!isTelegramConfigured()) {
+    res.status(503).send('<h3>Telegram login не настроен.</h3>');
+    return;
+  }
+
+  const botId = env.telegramBotToken.split(':')[0];
+  const origin = `${req.protocol}://${req.headers.host}`;
+  const callbackUrl = `${origin}/api/auth/telegram/link-callback`;
+
+  const authUrl = new URL('https://oauth.telegram.org/auth');
+  authUrl.searchParams.set('bot_id', botId);
+  authUrl.searchParams.set('origin', origin);
+  authUrl.searchParams.set('request_access', 'write');
+  authUrl.searchParams.set('return_to', callbackUrl);
+
+  res.redirect(302, authUrl.toString());
+}
+
+export async function telegramLinkCallback(req: Request, res: Response): Promise<void> {
+  if (!isTelegramConfigured()) {
+    res.status(503).send('<h3>Telegram login не настроен.</h3>');
+    return;
+  }
+
+  let { id, hash, auth_date, first_name, last_name, username, photo_url } =
+    req.query as Record<string, string | undefined>;
+
+  const tgAuthResult = req.query['tgAuthResult'] as string | undefined;
+  if (tgAuthResult) {
+    try {
+      const b64 = tgAuthResult.replace(/-/g, '+').replace(/_/g, '/');
+      const decoded = JSON.parse(
+        Buffer.from(b64, 'base64').toString('utf-8'),
+      ) as Record<string, unknown>;
+      id = decoded['id']?.toString();
+      hash = decoded['hash'] as string | undefined;
+      auth_date = decoded['auth_date']?.toString();
+      first_name = decoded['first_name'] as string | undefined;
+      last_name = decoded['last_name'] as string | undefined;
+      username = decoded['username'] as string | undefined;
+      photo_url = decoded['photo_url'] as string | undefined;
+    } catch {
+      logger.warn('[telegramLinkCallback] Failed to decode tgAuthResult');
+    }
+  }
+
+  if (!id || !hash || !auth_date) {
+    const nonce = crypto.randomBytes(16).toString('base64');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Security-Policy', `script-src 'nonce-${nonce}'`);
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Привязка Telegram</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:sans-serif;background:#0f1923;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px;text-align:center}#err{color:#ff6b6b;font-size:13px;margin-top:12px;display:none}</style>
+</head>
+<body>
+<p id="status">Обработка данных Telegram...</p>
+<div id="err"></div>
+<script nonce="${nonce}">
+(function(){
+  var st=document.getElementById('status');
+  var err=document.getElementById('err');
+  function getParam(str,key){return new URLSearchParams(str).get(key);}
+  var raw=getParam(location.search.slice(1),'tgAuthResult')||getParam(location.hash.slice(1),'tgAuthResult');
+  if(!raw){st.textContent='Данные не найдены. Попробуйте снова.';return;}
+  var d;
+  try{var b64=raw.replace(/-/g,'+').replace(/_/g,'/');while(b64.length%4)b64+='=';d=JSON.parse(atob(b64));}
+  catch(e){st.textContent='Ошибка разбора данных.';return;}
+  var p=new URLSearchParams();
+  p.set('id',String(d.id));p.set('hash',d.hash);p.set('auth_date',String(d.auth_date));
+  if(d.first_name)p.set('first_name',d.first_name);
+  if(d.last_name)p.set('last_name',d.last_name);
+  if(d.username)p.set('username',d.username);
+  if(d.photo_url)p.set('photo_url',d.photo_url);
+  var deepLink='${APP_CALLBACK_SCHEME}://tglink?'+p.toString();
+  var isAndroid=/Android/i.test(navigator.userAgent);
+  var target=isAndroid?('intent://tglink?'+p.toString()+'#Intent;scheme=${APP_CALLBACK_SCHEME};package=${ANDROID_APP_PACKAGE};end'):deepLink;
+  st.textContent='Возврат в приложение...';
+  if(typeof FlutterAuth!=='undefined'){FlutterAuth.postMessage(deepLink);}
+  else{window.location.href=target;}
+})();
+</script>
+</body>
+</html>`);
+    return;
+  }
+
+  const tgData: TelegramData = {
+    id,
+    hash,
+    auth_date,
+    ...(first_name && { first_name }),
+    ...(last_name && { last_name }),
+    ...(username && { username }),
+    ...(photo_url && { photo_url }),
+  };
+
+  if (!verifyTelegramAuthData(tgData, env.telegramBotToken)) {
+    res.status(401).send('<h3>Недействительная или устаревшая подпись Telegram</h3>');
+    return;
+  }
+
+  const params = new URLSearchParams();
+  params.set('id', id);
+  params.set('hash', hash);
+  params.set('auth_date', auth_date);
+  if (first_name) params.set('first_name', first_name);
+  if (last_name) params.set('last_name', last_name);
+  if (username) params.set('username', username);
+  if (photo_url) params.set('photo_url', photo_url);
+
+  const deepLink = `${APP_CALLBACK_SCHEME}://tglink?${params.toString()}`;
+  const intentUri = `intent://tglink?${params.toString()}#Intent;scheme=${APP_CALLBACK_SCHEME};package=${ANDROID_APP_PACKAGE};end`;
+
+  logger.info(`[telegramLinkCallback] Verified tg_id=${id}, redirecting to app`);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Telegram подтверждён</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(160deg,#0f1923 0%,#1a2a3a 50%,#0d2137 100%);color:#fff;padding:32px 24px;text-align:center}.card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:24px;padding:40px 32px;max-width:360px;width:100%}.check-wrap{width:80px;height:80px;margin:0 auto 28px;background:rgba(44,165,224,.15);border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid rgba(44,165,224,.35)}.check-wrap svg{width:38px;height:38px}h1{font-size:20px;font-weight:700;margin-bottom:10px}p{font-size:14px;color:rgba(255,255,255,.55);line-height:1.6;margin-bottom:32px}a.btn{display:flex;align-items:center;justify-content:center;gap:10px;padding:15px 28px;background:#2CA5E0;color:#fff;text-decoration:none;border-radius:14px;font-size:15px;font-weight:600}</style>
+</head>
+<body>
+  <div class="card">
+    <div class="check-wrap">
+      <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" stroke="#2CA5E0" stroke-width="1.5"/><path d="M7 12.5l3.5 3.5 6.5-7" stroke="#2CA5E0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <h1>Telegram подтверждён</h1>
+    <p>Возврат в приложение...</p>
+    <a class="btn" id="btn" href="${deepLink}">Открыть приложение</a>
+  </div>
+  <script>
+    var isAndroid=/Android/i.test(navigator.userAgent);
+    var target=isAndroid?${JSON.stringify(intentUri)}:${JSON.stringify(deepLink)};
+    document.getElementById('btn').href=target;
+    setTimeout(function(){window.location.href=target;},400);
   </script>
 </body>
 </html>`);

@@ -1,5 +1,8 @@
 import { Request, Response } from 'express';
+import fs from 'fs';
 import https from 'https';
+import http from 'http';
+import path from 'path';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { IUser, User } from '../models/User';
@@ -18,8 +21,54 @@ import {
   SessionContext,
 } from '../utils/sessionTokens';
 import { TelegramAuthData, verifyTelegramAuthData } from '../utils/telegramAuth';
+import type { AuthRequest } from '../middleware/auth.middleware';
 
 const OAUTH_CODE_TTL_MS = 5 * 60 * 1000;
+
+/** Скачивает внешний аватар (Telegram / Google CDN) и сохраняет локально.
+ *  Возвращает путь вида `/uploads/avatars/xxx.jpg` или undefined при ошибке. */
+async function downloadExternalAvatar(
+  url: string,
+  userId: string,
+  depth = 0,
+): Promise<string | undefined> {
+  if (depth > 3) return undefined;
+  return new Promise((resolve) => {
+    try {
+      const filename = `social_${userId}_${Date.now()}.jpg`;
+      const dir = path.join(__dirname, '../../uploads/avatars');
+      fs.mkdirSync(dir, { recursive: true });
+      const filePath = path.join(dir, filename);
+      const file = fs.createWriteStream(filePath);
+      const cleanup = () => { try { file.close(); fs.unlinkSync(filePath); } catch {} };
+
+      const transport = url.startsWith('https') ? https : http;
+      const req = transport.get(
+        url,
+        { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AuraBot/1.0)' } },
+        (res) => {
+          if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            cleanup();
+            downloadExternalAvatar(res.headers.location, userId, depth + 1).then(resolve);
+            return;
+          }
+          if (!res.statusCode || res.statusCode !== 200) {
+            cleanup();
+            resolve(undefined);
+            return;
+          }
+          res.pipe(file);
+          file.on('finish', () => { file.close(); resolve(`/uploads/avatars/${filename}`); });
+          file.on('error', () => { cleanup(); resolve(undefined); });
+        },
+      );
+      req.setTimeout(8000, () => { req.destroy(); cleanup(); resolve(undefined); });
+      req.on('error', () => { cleanup(); resolve(undefined); });
+    } catch {
+      resolve(undefined);
+    }
+  });
+}
 
 type SocialProvider = 'google' | 'apple' | 'vk' | 'telegram' | 'instagram';
 type SocialProviderField =
@@ -75,10 +124,23 @@ function getProviderField(provider: SocialProvider): SocialProviderField {
   }
 }
 
+/** Если URL внешний — скачивает локально. Иначе возвращает как есть. */
+export async function resolveAvatarUrl(
+  url: string | undefined,
+  providerUserId: string,
+): Promise<string | undefined> {
+  if (!url) return undefined;
+  if (url.startsWith('/')) return url; // already local
+  const local = await downloadExternalAvatar(url, providerUserId);
+  return local ?? url; // fallback to original URL if download fails
+}
+
 async function findOrCreateSocialUser(identity: SocialIdentity): Promise<IUser> {
   const identityField = getProviderField(identity.provider);
   const canLinkByDeterministicPlaceholder =
     !identity.emailVerified && identity.email.endsWith('.placeholder');
+
+  const resolvedAvatar = await resolveAvatarUrl(identity.avatarUrl, identity.providerUserId);
 
   let user = await User.findOne({ [identityField]: identity.providerUserId });
   if (user) {
@@ -91,9 +153,13 @@ async function findOrCreateSocialUser(identity: SocialIdentity): Promise<IUser> 
       user.email = identity.email;
       changed = true;
     }
-    if (identity.avatarUrl && user.avatarUrl !== identity.avatarUrl) {
-      user.avatarUrl = identity.avatarUrl;
-      changed = true;
+    // Обновляем аватар если: нет локального аватара или пришёл новый локальный
+    const hasLocalAvatar = user.avatarUrl?.startsWith('/');
+    if (resolvedAvatar && (!hasLocalAvatar || resolvedAvatar.startsWith('/'))) {
+      if (user.avatarUrl !== resolvedAvatar) {
+        user.avatarUrl = resolvedAvatar;
+        changed = true;
+      }
     }
     if (user.authProvider !== identity.provider) {
       user.authProvider = identity.provider;
@@ -114,8 +180,8 @@ async function findOrCreateSocialUser(identity: SocialIdentity): Promise<IUser> 
       }
       user.set(identityField, identity.providerUserId);
       user.authProvider = identity.provider;
-      if (identity.avatarUrl) {
-        user.avatarUrl = identity.avatarUrl;
+      if (resolvedAvatar) {
+        user.avatarUrl = resolvedAvatar;
       }
       await user.save();
       return user;
@@ -129,7 +195,7 @@ async function findOrCreateSocialUser(identity: SocialIdentity): Promise<IUser> 
     password: randomPassword,
     [identityField]: identity.providerUserId,
     authProvider: identity.provider,
-    ...(identity.avatarUrl && { avatarUrl: identity.avatarUrl }),
+    ...(resolvedAvatar && { avatarUrl: resolvedAvatar }),
   });
 }
 
@@ -664,4 +730,67 @@ export async function socialLogin(req: Request, res: Response): Promise<void> {
     logger.error('[socialLogin] DB error:', { err });
     res.status(500).json({ message: 'Внутренняя ошибка сервера' });
   }
+}
+
+export async function linkTelegramEndpoint(req: AuthRequest, res: Response): Promise<void> {
+  const { id, hash, auth_date, first_name, last_name, username, photo_url } =
+    req.body as Record<string, string | undefined>;
+
+  if (!id || !hash || !auth_date) {
+    res.status(400).json({ message: 'Поля id, hash, auth_date обязательны' });
+    return;
+  }
+  if (!env.telegramBotToken) {
+    res.status(503).json({ message: 'Telegram login не настроен' });
+    return;
+  }
+
+  const tgData: TelegramAuthData = {
+    id,
+    hash,
+    auth_date,
+    ...(first_name && { first_name }),
+    ...(last_name && { last_name }),
+    ...(username && { username }),
+    ...(photo_url && { photo_url }),
+  };
+
+  if (!verifyTelegramAuthData(tgData, env.telegramBotToken)) {
+    res.status(401).json({ message: 'Недействительная или устаревшая подпись Telegram' });
+    return;
+  }
+
+  const telegramId = String(id);
+
+  const conflict = await User.findOne({ telegramId, _id: { $ne: req.userId } });
+  if (conflict) {
+    res.status(409).json({ message: 'Этот Telegram аккаунт уже привязан к другому пользователю' });
+    return;
+  }
+
+  const user = await User.findById(req.userId);
+  if (!user) {
+    res.status(404).json({ message: 'Пользователь не найден' });
+    return;
+  }
+
+  user.telegramId = telegramId;
+
+  if (photo_url && !user.avatarUrl?.startsWith('/')) {
+    const localAvatar = await resolveAvatarUrl(photo_url, telegramId);
+    if (localAvatar) user.avatarUrl = localAvatar;
+  }
+
+  await user.save();
+  logger.info(`[linkTelegramEndpoint] Linked telegramId=${telegramId} to userId=${req.userId}`);
+
+  res.json({
+    id: user._id,
+    email: user.email,
+    name: user.name,
+    provider: user.authProvider ?? null,
+    avatarUrl: user.avatarUrl ?? null,
+    hasGoogleLinked: !!user.googleSub,
+    hasTelegramLinked: !!user.telegramId,
+  });
 }
