@@ -1736,10 +1736,12 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   bool _loading = false;
   bool _connectingGoogle = false;
   bool _connectingTelegram = false;
+  late AuthUser _currentUser;
 
   @override
   void initState() {
     super.initState();
+    _currentUser = widget.user;
     _nameCtrl = TextEditingController(text: widget.user.name);
     _emailCtrl = TextEditingController(
         text: _isSyntheticEmail(widget.user.email) ? '' : widget.user.email);
@@ -1806,6 +1808,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     try {
       final user = await SocialAuthService().loginWithGoogle(context);
       if (!mounted) return;
+      setState(() => _currentUser = user);
       widget.onSaved(user);
       Navigator.of(context).pop();
     } catch (e) {
@@ -1823,6 +1826,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     try {
       final user = await SocialAuthService().linkWithTelegram(context);
       if (!mounted) return;
+      setState(() => _currentUser = user);
       widget.onSaved(user);
       AppNotification.show(
         context,
@@ -1853,10 +1857,10 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         ? Colors.white.withValues(alpha: 0.08)
         : const Color(0xFFD8E4F4);
     final subColor = isDark ? Colors.white54 : const Color(0xFF6B7A99);
-    final isGoogle = widget.user.hasGoogleLinked ||
-        (widget.user.provider ?? '').toLowerCase().contains('google');
-    final isTelegram = widget.user.hasTelegramLinked ||
-        (widget.user.provider ?? '').toLowerCase().contains('telegram');
+    final isGoogle = _currentUser.hasGoogleLinked ||
+        (_currentUser.provider ?? '').toLowerCase().contains('google');
+    final isTelegram = _currentUser.hasTelegramLinked ||
+        (_currentUser.provider ?? '').toLowerCase().contains('telegram');
 
     ImageProvider? avatarImg;
     if (_newAvatarFile != null) {
