@@ -373,18 +373,20 @@ class _AllActionsScreenState extends State<AllActionsScreen>
                   for (var i = 0; i < _categoryIcons.length; i++)
                     Tab(
                       height: 44,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(_categoryIcons[i], size: 16),
-                            const SizedBox(width: 6),
-                            Text(
-                              _categoryLabels(AppLocalizations.of(context))[i],
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(_categoryIcons[i], size: 16),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                _categoryLabels(AppLocalizations.of(context))[i],
+                              ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                 ],
