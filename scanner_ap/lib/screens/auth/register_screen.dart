@@ -5,6 +5,7 @@ import '../../utils/app_notification.dart';
 import '../../utils/error_messages.dart';
 import '../../widgets/auth_scaffold.dart';
 import '../ui_screens/main_screen/app_tabs_screen.dart';
+import 'login_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -307,7 +308,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               ),
                             ),
                             GestureDetector(
-                              onTap: () => Navigator.pop(context),
+                              onTap: () => Navigator.pushReplacement(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const LoginScreen(),
+                                ),
+                              ),
                               child: Text(
                                 l10n.actionLogin,
                                 style: const TextStyle(
