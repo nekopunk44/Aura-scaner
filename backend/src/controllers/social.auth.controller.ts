@@ -764,8 +764,14 @@ export async function linkTelegramEndpoint(req: AuthRequest, res: Response): Pro
 
   const conflict = await User.findOne({ telegramId, _id: { $ne: req.userId } });
   if (conflict) {
-    res.status(409).json({ message: 'Этот Telegram аккаунт уже привязан к другому пользователю' });
-    return;
+    // Если конфликтующий аккаунт — заглушка Telegram (создана при первом входе через TG),
+    // переносим telegramId на текущего пользователя и очищаем у заглушки.
+    const isPlaceholder = conflict.email.endsWith('@telegram.placeholder');
+    if (!isPlaceholder) {
+      res.status(409).json({ message: 'Этот Telegram аккаунт уже привязан к другому пользователю' });
+      return;
+    }
+    await User.updateOne({ _id: conflict._id }, { $unset: { telegramId: '' } });
   }
 
   const user = await User.findById(req.userId);
