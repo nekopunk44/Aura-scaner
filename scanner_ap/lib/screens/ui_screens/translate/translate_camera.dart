@@ -60,9 +60,11 @@ class _TranslateCameraState extends State<TranslateCamera> {
 
   // --- Живой перевод ---
   String? _liveTranslation;
+  String? _detectedSourceLang; // BCP-код исходного языка (для бейджа «EN → RU»)
   bool _streaming = false;
   bool _busy = false;
   bool _downloadingModels = false;
+  bool _targetInitialized = false;
   DateTime _lastRun = DateTime.fromMillisecondsSinceEpoch(0);
   String _lastRecognized = '';
 
@@ -109,6 +111,19 @@ class _TranslateCameraState extends State<TranslateCamera> {
     // Старт после первого кадра — чтобы предыдущий стрим (напр. QR) успел
     // остановиться при переключении режима.
     WidgetsBinding.instance.addPostFrameCallback((_) => _startLiveStream());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Целевой язык по умолчанию = язык приложения (а не всегда русский).
+    if (!_targetInitialized) {
+      _targetInitialized = true;
+      final appLang = Localizations.localeOf(context).languageCode;
+      if (_languages.containsKey(appLang)) {
+        _targetLang = appLang;
+      }
+    }
   }
 
   @override
@@ -180,7 +195,10 @@ class _TranslateCameraState extends State<TranslateCamera> {
       if (text.length < 2) {
         _lastRecognized = '';
         if (_liveTranslation != null && mounted) {
-          setState(() => _liveTranslation = null);
+          setState(() {
+            _liveTranslation = null;
+            _detectedSourceLang = null;
+          });
         }
         return;
       }
@@ -199,14 +217,24 @@ class _TranslateCameraState extends State<TranslateCamera> {
           _mapToTranslateLang(_targetLang) ?? TranslateLanguage.russian;
 
       if (source == target) {
-        if (mounted) setState(() => _liveTranslation = text);
+        if (mounted) {
+          setState(() {
+            _liveTranslation = text;
+            _detectedSourceLang = source.bcpCode;
+          });
+        }
         return;
       }
 
       final translator = await _ensureTranslator(source, target);
       if (translator == null) return;
       final translated = await translator.translateText(text);
-      if (mounted) setState(() => _liveTranslation = translated);
+      if (mounted) {
+        setState(() {
+          _liveTranslation = translated;
+          _detectedSourceLang = source.bcpCode;
+        });
+      }
     } catch (e) {
       debugPrint('Перевод: ошибка кадра: $e');
     } finally {
@@ -397,11 +425,11 @@ class _TranslateCameraState extends State<TranslateCamera> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Text(
-                  'Перевести на',
-                  style: TextStyle(
+                  AppLocalizations.of(sheetContext).translateTargetTitle,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -434,6 +462,7 @@ class _TranslateCameraState extends State<TranslateCamera> {
                           // перевести текущий текст.
                           _lastRecognized = '';
                           _liveTranslation = null;
+                          _detectedSourceLang = null;
                         });
                         Navigator.pop(sheetContext);
                       },
@@ -451,10 +480,11 @@ class _TranslateCameraState extends State<TranslateCamera> {
   /// Разовый перевод выбранного из галереи изображения (через Tesseract —
   /// поддерживает кириллицу). Результат — в модальном окне.
   Future<void> _pickImageAndTranslate() async {
+    final l10n = AppLocalizations.of(context);
     try {
       setState(() {
         _isProcessing = true;
-        _shownText = 'Обработка...';
+        _shownText = l10n.translateProcessing;
       });
 
       final ImagePicker picker = ImagePicker();
@@ -463,7 +493,10 @@ class _TranslateCameraState extends State<TranslateCamera> {
 
       if (!mounted) return;
       if (galleryImage == null) {
-        setState(() => _isProcessing = false);
+        setState(() {
+          _isProcessing = false;
+          _shownText = null;
+        });
         return;
       }
 
@@ -474,7 +507,7 @@ class _TranslateCameraState extends State<TranslateCamera> {
       if (!mounted) return;
       if (recognizedText == null || recognizedText.isEmpty) {
         setState(() {
-          _shownText = 'Текст не обнаружен';
+          _shownText = l10n.translateNoText;
           _isProcessing = false;
         });
         return;
@@ -487,7 +520,7 @@ class _TranslateCameraState extends State<TranslateCamera> {
 
       if (!mounted) return;
       setState(() {
-        _shownText = translatedText ?? 'Ошибка перевода';
+        _shownText = translatedText ?? l10n.translateFailed;
         _isProcessing = false;
       });
 
@@ -498,7 +531,7 @@ class _TranslateCameraState extends State<TranslateCamera> {
       debugPrint('Ошибка при выборе из галереи: $e');
       if (!mounted) return;
       setState(() {
-        _shownText = 'Ошибка при выборе изображения';
+        _shownText = l10n.translatePickFailed;
         _isProcessing = false;
       });
     }
@@ -694,6 +727,8 @@ class _TranslateCameraState extends State<TranslateCamera> {
   }
 
   Widget _buildLivePanel() {
+    final l10n = AppLocalizations.of(context);
+
     if (_downloadingModels) {
       return Container(
         constraints: const BoxConstraints(maxWidth: 320),
@@ -702,18 +737,18 @@ class _TranslateCameraState extends State<TranslateCamera> {
           color: Colors.black.withValues(alpha: 0.7),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
+            const SizedBox(
               width: 16, height: 16,
               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
             ),
-            SizedBox(width: 12),
+            const SizedBox(width: 12),
             Flexible(
               child: Text(
-                'Загрузка языковых моделей…',
-                style: TextStyle(color: Colors.white, fontSize: 13),
+                l10n.translateDownloadingModels,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
               ),
             ),
           ],
@@ -721,37 +756,113 @@ class _TranslateCameraState extends State<TranslateCamera> {
       );
     }
 
+    // Текста в рамке пока нет — статус-подсказка, чтобы было понятно,
+    // что режим работает и «ищет».
     if (_liveTranslation == null || _liveTranslation!.isEmpty) {
-      return const SizedBox.shrink();
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 12, height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.6, color: Colors.white54,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              l10n.translateSearchingText,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ],
+        ),
+      );
     }
+
+    final srcLabel = _detectedSourceLang == null
+        ? l10n.translateSourceAuto
+        : _detectedSourceLang!.toUpperCase();
+    final targetLabel = _targetLang.toUpperCase();
 
     return Container(
       constraints: BoxConstraints(
         maxWidth: MediaQuery.of(context).size.width * 0.84,
-        maxHeight: 140,
+        maxHeight: 168,
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFF2CA5E0).withValues(alpha: 0.6)),
       ),
-      child: SingleChildScrollView(
-        child: Text(
-          _liveTranslation!,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            height: 1.3,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Бейдж направления перевода: «EN → RU»
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2CA5E0).withValues(alpha: 0.16),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(11)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  srcLabel,
+                  style: const TextStyle(
+                    color: Color(0xFF7CC7F0),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 6),
+                  child: Icon(Icons.arrow_forward_rounded,
+                      size: 13, color: Color(0xFF7CC7F0)),
+                ),
+                Text(
+                  targetLabel,
+                  style: const TextStyle(
+                    color: Color(0xFF7CC7F0),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Text(
+                _liveTranslation!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  height: 1.3,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildGalleryResult() {
+    final l10n = AppLocalizations.of(context);
     return Positioned.fill(
       child: Align(
         alignment: Alignment.center,
@@ -767,9 +878,9 @@ class _TranslateCameraState extends State<TranslateCamera> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'Перевод:',
-                  style: TextStyle(
+                Text(
+                  '${l10n.translateResultTitle}:',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -787,7 +898,7 @@ class _TranslateCameraState extends State<TranslateCamera> {
                   children: [
                     ElevatedButton(
                       onPressed: () => setState(() => _shownText = null),
-                      child: const Text('Закрыть'),
+                      child: Text(l10n.actionClose),
                     ),
                     const SizedBox(width: 10),
                     ElevatedButton(
@@ -795,14 +906,14 @@ class _TranslateCameraState extends State<TranslateCamera> {
                         if (_shownText != null) {
                           Clipboard.setData(ClipboardData(text: _shownText!));
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Текст скопирован'),
-                              duration: Duration(seconds: 2),
+                            SnackBar(
+                              content: Text(l10n.commonTextCopied),
+                              duration: const Duration(seconds: 2),
                             ),
                           );
                         }
                       },
-                      child: const Text('Копировать'),
+                      child: Text(l10n.actionCopy),
                     ),
                   ],
                 ),
