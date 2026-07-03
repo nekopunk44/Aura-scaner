@@ -311,6 +311,18 @@ class _DocumentImporterState extends State<DocumentImporter> {
                     onTap: () => _pickFile(extensions: ['jpg', 'jpeg', 'png']),
                   ),
                   _PickCard(
+                    icon: Icons.table_chart_outlined,
+                    label: 'Excel / PowerPoint',
+                    description: 'Таблицы, презентации',
+                    color: const Color(0xFF107C41),
+                    enabled: enabled,
+                    cardBg: cardBg,
+                    textColor: textColor,
+                    subColor: subColor,
+                    onTap: () =>
+                        _pickFile(extensions: ['xlsx', 'xls', 'pptx', 'ppt']),
+                  ),
+                  _PickCard(
                     icon: Icons.folder_outlined,
                     label: 'Любой файл',
                     description: 'Открыть проводник',
@@ -371,6 +383,12 @@ class _SelectedFileCard extends StatelessWidget {
       case '.jpeg':
       case '.png':
         return Icons.photo_outlined;
+      case '.xls':
+      case '.xlsx':
+        return Icons.table_chart_outlined;
+      case '.ppt':
+      case '.pptx':
+        return Icons.slideshow_outlined;
       default:
         return Icons.insert_drive_file_outlined;
     }
@@ -388,6 +406,12 @@ class _SelectedFileCard extends StatelessWidget {
       case '.jpeg':
       case '.png':
         return const Color(0xFF27AE60);
+      case '.xls':
+      case '.xlsx':
+        return const Color(0xFF107C41);
+      case '.ppt':
+      case '.pptx':
+        return const Color(0xFFC43E1C);
       default:
         return const Color(0xFFE67E22);
     }

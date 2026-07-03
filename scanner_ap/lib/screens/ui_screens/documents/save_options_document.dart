@@ -21,6 +21,8 @@ import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:image/image.dart' as img_lib;
 import 'package:flutter_tesseract_ocr/flutter_tesseract_ocr.dart';
 import 'package:printing/printing.dart';
+import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
+import '../../../utils/pptx_builder.dart';
 import 'document_camera_edit.dart';
 import '../main_screen/app_tabs_screen.dart';
 import '../../../services/document_sync_service.dart';
@@ -357,6 +359,126 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
       .replaceAll('&#39;', "'")
       .replaceAll('&apos;', "'");
 
+  /// Возвращает файлы страниц с применёнными фильтрами редактора
+  /// (или исходники, если фильтров нет). tempFiles — созданные временные
+  /// файлы, их нужно удалить после использования.
+  Future<(List<File>, List<File>)> _resolvePageFiles() async {
+    final files = <File>[];
+    final tempFiles = <File>[];
+    final total = widget.sourceFilePaths.length;
+    if (widget.editStates != null && widget.editStates!.length == total) {
+      for (int i = 0; i < total; i++) {
+        final f = await _applyFiltersAndSaveTemp(widget.editStates![i], i);
+        files.add(f);
+        tempFiles.add(f);
+      }
+    } else {
+      files.addAll(widget.sourceFilePaths.map(File.new));
+    }
+    return (files, tempFiles);
+  }
+
+  /// Excel: каждая страница распознаётся Tesseract'ом (rus+eng), строки
+  /// текста становятся строками таблицы. Колонки — по табам/2+ пробелам
+  /// (простая табличная эвристика). Каждая страница — отдельный лист.
+  Future<String> _saveAsXlsx(String fileName) async {
+    final l10n = AppLocalizations.of(context);
+    final (files, tempFiles) = await _resolvePageFiles();
+    final workbook = xlsio.Workbook();
+
+    try {
+      for (int i = 0; i < files.length; i++) {
+        if (mounted) {
+          setState(
+            () => _progressMessage =
+                '${l10n.docOcrInProgress} ${i + 1}/${files.length}',
+          );
+        }
+
+        final sheet = i == 0
+            ? workbook.worksheets[0]
+            : workbook.worksheets.add();
+        sheet.name = 'Page ${i + 1}';
+
+        String text = '';
+        try {
+          text = await FlutterTesseractOcr.extractText(
+            files[i].path,
+            language: 'rus+eng',
+          );
+        } catch (_) {
+          // Страница без распознанного текста останется пустым листом.
+        }
+
+        final lines = text
+            .split('\n')
+            .map((l) => l.trimRight())
+            .where((l) => l.trim().isNotEmpty)
+            .toList();
+
+        for (int row = 0; row < lines.length; row++) {
+          // Табличная эвристика: таб или 2+ пробела = граница колонки.
+          final cells = lines[row].split(RegExp(r'\t| {2,}'));
+          for (int col = 0; col < cells.length; col++) {
+            final value = cells[col].trim();
+            if (value.isEmpty) continue;
+            final range = sheet.getRangeByIndex(row + 1, col + 1);
+            final asNum = num.tryParse(value.replaceAll(',', '.'));
+            if (asNum != null) {
+              range.setNumber(asNum.toDouble());
+            } else {
+              range.setText(value);
+            }
+          }
+        }
+        // Автоширина первых колонок, чтобы текст не сжимался в узкие ячейки.
+        for (int col = 1; col <= 8; col++) {
+          sheet.autoFitColumn(col);
+        }
+      }
+
+      final bytes = workbook.saveAsStream();
+      final outputDir = await getApplicationDocumentsDirectory();
+      final baseName = fileName.toLowerCase().endsWith('.xlsx')
+          ? fileName.substring(0, fileName.length - 5)
+          : fileName;
+      final finalPath = '${outputDir.path}/$baseName.xlsx';
+      await File(finalPath).writeAsBytes(bytes, flush: true);
+      return finalPath;
+    } finally {
+      workbook.dispose();
+      for (final f in tempFiles) {
+        try {
+          await f.delete();
+        } catch (_) {}
+      }
+    }
+  }
+
+  /// PowerPoint: одна страница скана = один слайд 16:9 (картинка вписана
+  /// по центру). Генерация OOXML — см. PptxBuilder.
+  Future<String> _saveAsPptx(String fileName) async {
+    final (files, tempFiles) = await _resolvePageFiles();
+    try {
+      final outputDir = await getApplicationDocumentsDirectory();
+      final baseName = fileName.toLowerCase().endsWith('.pptx')
+          ? fileName.substring(0, fileName.length - 5)
+          : fileName;
+      final finalPath = '${outputDir.path}/$baseName.pptx';
+      await PptxBuilder.build(
+        imagePaths: files.map((f) => f.path).toList(),
+        outputPath: finalPath,
+      );
+      return finalPath;
+    } finally {
+      for (final f in tempFiles) {
+        try {
+          await f.delete();
+        } catch (_) {}
+      }
+    }
+  }
+
 
 
   Future<void> _handleSave(SaveFormat format) async {
@@ -381,17 +503,21 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
 
     String finalPath = '';
     try {
+      if (widget.sourceFilePaths.isEmpty) {
+        throw Exception("Отсутствует изображение для сохранения.");
+      }
       if (format == SaveFormat.img) {
-        if (widget.sourceFilePaths.isEmpty) throw Exception("Отсутствует изображение для сохранения.");
         if (widget.editStates != null && widget.editStates!.length > 1) {
           throw Exception("IMG доступно только для одной страницы. Используйте PDF.");
         }
         finalPath = await _saveAsImage(newFileName);
       } else if (format == SaveFormat.textPdf) {
-        if (widget.sourceFilePaths.isEmpty) throw Exception("Отсутствует изображение для сохранения.");
         finalPath = await _saveAsTextPdf(newFileName);
+      } else if (format == SaveFormat.xlsx) {
+        finalPath = await _saveAsXlsx(newFileName);
+      } else if (format == SaveFormat.pptx) {
+        finalPath = await _saveAsPptx(newFileName);
       } else {
-        if (widget.sourceFilePaths.isEmpty) throw Exception("Отсутствует изображение для сохранения.");
         finalPath = await _saveAsPdf(newFileName);
       }
 
@@ -514,6 +640,24 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
             subText: '(OCR)',
             onTap: () => _handleSave(SaveFormat.textPdf),
           ),
+          const SizedBox(height: 14),
+          _buildOptionButton(
+            context,
+            icon: Icons.table_chart_outlined,
+            text: l10n.saveAsExcel,
+            color: const Color(0xFF107C41),
+            subText: '(XLSX, OCR)',
+            onTap: () => _handleSave(SaveFormat.xlsx),
+          ),
+          const SizedBox(height: 14),
+          _buildOptionButton(
+            context,
+            icon: Icons.slideshow_outlined,
+            text: l10n.saveAsPowerPoint,
+            color: const Color(0xFFC43E1C),
+            subText: '(PPTX)',
+            onTap: () => _handleSave(SaveFormat.pptx),
+          ),
         ],
       ),
     );
@@ -543,9 +687,12 @@ class _SaveOptionsScreenState extends State<SaveOptionsScreen> {
   }
 
   String _formatText(AppLocalizations l10n) {
-    return _finalFormat == SaveFormat.img
-        ? l10n.saveFormatImage
-        : l10n.saveFormatPdf;
+    return switch (_finalFormat) {
+      SaveFormat.img => l10n.saveFormatImage,
+      SaveFormat.xlsx => 'Excel (XLSX)',
+      SaveFormat.pptx => 'PowerPoint (PPTX)',
+      _ => l10n.saveFormatPdf,
+    };
   }
 
   Widget _buildSaveSuccessScreen(BuildContext context) {

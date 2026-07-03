@@ -13,8 +13,12 @@ class SaveSuccessScreen extends StatelessWidget {
     required this.format,
   });
 
-  String _formatText(AppLocalizations l10n) =>
-      format == SaveFormat.pdf ? l10n.saveFormatPdf : l10n.saveFormatImage;
+  String _formatText(AppLocalizations l10n) => switch (format) {
+        SaveFormat.pdf || SaveFormat.textPdf => l10n.saveFormatPdf,
+        SaveFormat.xlsx => 'Excel (XLSX)',
+        SaveFormat.pptx => 'PowerPoint (PPTX)',
+        SaveFormat.img => l10n.saveFormatImage,
+      };
 
   @override
   Widget build(BuildContext context) {

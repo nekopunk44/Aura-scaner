@@ -1,1 +1,1 @@
-enum SaveFormat { img, pdf, textPdf }
+enum SaveFormat { img, pdf, textPdf, xlsx, pptx }
