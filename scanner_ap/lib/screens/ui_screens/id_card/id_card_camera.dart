@@ -5,6 +5,7 @@ import 'package:camera/camera.dart';
 
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
+import '../../../widgets/document_guide_frame.dart';
 import '../../../l10n/app_localizations.dart';
 
 class IdCardCameraView extends StatelessWidget {
@@ -130,30 +131,15 @@ class IdCardCameraView extends StatelessWidget {
     );
   }
 
-  Widget _buildDocumentFrameOverlay() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // ширина рамки
-        final double frameWidth = constraints.maxWidth * 0.85;
-
-        const double aspectRatio = 1.6;
-        final double frameHeight = frameWidth / aspectRatio; // Высота = Ширина / 1.6
-
-        return Align(
-          alignment: const Alignment(0, -0.16),
-          child: Container(
-            width: frameWidth,
-            height: frameHeight,
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: isDocumentDetected ? Colors.greenAccent : Colors.white,
-                width: 2.0,
-              ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      },
+  Widget _buildDocumentFrameOverlay(AppLocalizations l10n) {
+    // ID-1 карта: 85.6 × 53.98 мм → aspect 1.586.
+    return DocumentGuideFrame(
+      aspectRatio: 1.586,
+      widthFactor: 0.85,
+      verticalAlignment: -0.25,
+      detected: isDocumentDetected,
+      icon: Icons.badge_outlined,
+      label: isDocumentDetected ? l10n.camDocDetectedHint : l10n.camFitIdInFrame,
     );
   }
 
@@ -190,12 +176,11 @@ class IdCardCameraView extends StatelessWidget {
       return const Center(child: CircularProgressIndicator(color: Colors.white));
     }
 
-    final bool isAutoMode = captureModeController.captureMode == 'Автоматически';
-
     return Stack(
       children: [
-        if (isAutoMode)
-          _buildDocumentFrameOverlay(),
+        // Рамка-трафарет показывается всегда — и в авто-, и в ручном режиме:
+        // пользователь должен видеть, куда положить карту.
+        _buildDocumentFrameOverlay(AppLocalizations.of(context)),
 
         Positioned.fill(
           child: captureModeController.buildStatusOverlay(

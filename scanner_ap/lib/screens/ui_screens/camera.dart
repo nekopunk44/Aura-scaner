@@ -24,6 +24,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter_doc_scanner/flutter_doc_scanner.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1881,6 +1882,32 @@ class _CameraScreenState extends State<CameraScreen>
     if (mounted) unawaited(_ensureCameraReady());
   }
 
+  /// Обрезка снимка перед распознаванием: пользователь выделяет только
+  /// нужный фрагмент текста — точность OCR заметно выше, чем по всему кадру.
+  /// Отмена обрезки = используем исходный кадр целиком.
+  Future<XFile> _cropForOcr(XFile file) async {
+    final l10n = AppLocalizations.of(context);
+    try {
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: file.path,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: l10n.editCropDocTitle,
+            toolbarColor: Colors.black,
+            toolbarWidgetColor: Colors.white,
+            initAspectRatio: CropAspectRatioPreset.original,
+            lockAspectRatio: false,
+          ),
+          IOSUiSettings(title: l10n.editCropDocTitle),
+        ],
+      );
+      return cropped == null ? file : XFile(cropped.path);
+    } catch (e) {
+      debugPrint('Ошибка обрезки (OCR): $e');
+      return file;
+    }
+  }
+
   /// Съёмка в режиме OCR. Детекция документа для OCR не запускается
   /// (см. условия в initState и селекторе), поэтому image-stream не
   /// активен и takePicture() не конфликтует с ним.
@@ -1889,7 +1916,9 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
     try {
-      final XFile file = await _cameraController!.takePicture();
+      XFile file = await _cameraController!.takePicture();
+      if (!mounted) return;
+      file = await _cropForOcr(file);
       await _runOcrWith(file);
     } catch (e) {
       debugPrint('Ошибка съёмки (OCR): $e');
@@ -1898,8 +1927,9 @@ class _CameraScreenState extends State<CameraScreen>
 
   Future<void> _pickImageForOcr() async {
     final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-    if (image == null) return;
+    XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    if (image == null || !mounted) return;
+    image = await _cropForOcr(image);
     await _runOcrWith(image);
   }
 
@@ -2709,9 +2739,10 @@ class _CameraScreenState extends State<CameraScreen>
                     }),
                   );
                 } else {
-                  // Отложенно: даём предыдущему вью (напр. живой перевод)
-                  // в dispose остановить свой стрим раньше старта сканера.
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                  // Отложенно: предыдущий вью (напр. живой перевод) диспозится
+                  // только ПОСЛЕ кроссфейда AnimatedSwitcher (~260мс), и его
+                  // dispose останавливает стрим. Стартуем сканер после этого.
+                  Future.delayed(const Duration(milliseconds: 350), () {
                     if (mounted && _selectedFeature == 'Сканер qr-код') {
                       _startBarcodeScanning();
                     }
@@ -3072,7 +3103,30 @@ class _CameraScreenState extends State<CameraScreen>
                 ? _buildAspectCorrectPreview(_cameraController!)
                 : const ColoredBox(color: Colors.black),
           ),
-          Positioned.fill(child: currentCameraView),
+          // Оверлей режима меняется с кроссфейдом + лёгким сдвигом снизу,
+          // а не мгновенно: превью камеры при этом стабильно, поэтому
+          // анимируется только UI-слой (рамки, кнопки, подписи).
+          Positioned.fill(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 260),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.015),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              ),
+              child: KeyedSubtree(
+                key: ValueKey<String>(_selectedFeature),
+                child: currentCameraView,
+              ),
+            ),
+          ),
           Positioned(
             // CameraControlsBar (child-view bottom-bar) уже включает
             // SafeArea и сам встаёт на bottom:0. Селектор сидит точно над

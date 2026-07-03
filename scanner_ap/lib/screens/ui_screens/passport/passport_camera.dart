@@ -3,6 +3,7 @@ import 'package:camera/camera.dart';
 
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
+import '../../../widgets/document_guide_frame.dart';
 import '../../../l10n/app_localizations.dart';
 
 class PassportCameraView extends StatelessWidget {
@@ -136,28 +137,18 @@ class PassportCameraView extends StatelessWidget {
     );
   }
 
-  Widget _buildDocumentFrameOverlay() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final double frameWidth = constraints.maxWidth * 0.85;
-        final double frameHeight = constraints.maxHeight * 0.55;
-
-        // Рамка
-        return Align(
-          alignment: const Alignment(0, -0.40), 
-          child: Container(
-            width: frameWidth,
-            height: frameHeight,
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: isDocumentDetected ? Colors.greenAccent : Colors.white,
-                width: 2.0,
-              ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      },
+  Widget _buildDocumentFrameOverlay(AppLocalizations l10n) {
+    // Разворот паспорта ~125×88 мм → aspect 1.42, рамка выше центра,
+    // чтобы не пересекаться с нижним баром и селектором режимов.
+    return DocumentGuideFrame(
+      aspectRatio: 1.42,
+      widthFactor: 0.85,
+      verticalAlignment: -0.42,
+      detected: isDocumentDetected,
+      icon: Icons.menu_book_outlined,
+      label: isDocumentDetected
+          ? l10n.camDocDetectedHint
+          : l10n.camFitPassportInFrame,
     );
   }
 
@@ -231,12 +222,10 @@ class PassportCameraView extends StatelessWidget {
           child: CircularProgressIndicator(color: Colors.white));
     }
 
-    final bool isAutoMode = captureModeController.captureMode == 'Автоматически';
-
     return Stack(
       children: [
-        if (isAutoMode)
-          _buildDocumentFrameOverlay(),
+        // Рамка-трафарет показывается всегда — и в авто-, и в ручном режиме.
+        _buildDocumentFrameOverlay(AppLocalizations.of(context)),
 
         Positioned.fill(
           child: captureModeController.buildStatusOverlay(
