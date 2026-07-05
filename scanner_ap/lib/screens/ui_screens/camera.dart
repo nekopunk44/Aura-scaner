@@ -491,6 +491,22 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  /// Покадровая стабилизация детекции с гистерезисом: «найден» — только
+  /// после [_kQuadStable] устойчивых кадров подряд, «потерян» — после
+  /// [_kQuadLost]. Между порогами держим текущее состояние.
+  bool _stabilizedDetection(bool matchThisFrame) {
+    if (matchThisFrame) {
+      _quadFoundFrames++;
+      _quadLostFrames = 0;
+    } else {
+      _quadLostFrames++;
+      _quadFoundFrames = 0;
+    }
+    if (_quadFoundFrames >= _kQuadStable) return true;
+    if (_quadLostFrames >= _kQuadLost) return false;
+    return _isDocumentDetected; // держим текущее (гистерезис)
+  }
+
   Future<void> _processDocumentDetectionFrame(CameraImage image) async {
     if (!_isDocumentDetectionStreaming || _isDocumentFrameBusy || !mounted) {
       return;
@@ -521,20 +537,15 @@ class _CameraScreenState extends State<CameraScreen>
         // фактурном фоне/экране) + стабилизация по кадрам и гистерезис — лист
         // считается «найден» лишь после нескольких устойчивых кадров, а теряется
         // тоже не мгновенно. Это убирает дрожь и ранние/ложные автоснимки.
-        if (quadFound) {
-          _quadFoundFrames++;
-          _quadLostFrames = 0;
-        } else {
-          _quadLostFrames++;
-          _quadFoundFrames = 0;
-        }
-        if (_quadFoundFrames >= _kQuadStable) {
-          detected = true;
-        } else if (_quadLostFrames >= _kQuadLost) {
-          detected = false;
-        } else {
-          detected = _isDocumentDetected; // держим текущее (гистерезис)
-        }
+        detected = _stabilizedDetection(quadFound);
+      } else if (_isIdOrPassportFeature(featureName)) {
+        // Паспорт/ID: одной эвристики яркости/линий мало — она ложно
+        // срабатывала на границе ковра и светлого пола. Требуем реальный
+        // четырёхугольник (как для «Документа») И совпадение с зоной рамки,
+        // плюс та же покадровая стабилизация с гистерезисом.
+        final match = quadFound &&
+            _detectDocumentContour(image, featureName: featureName);
+        detected = _stabilizedDetection(match);
       } else {
         detected = _detectDocumentContour(image, featureName: featureName);
       }
@@ -584,14 +595,18 @@ class _CameraScreenState extends State<CameraScreen>
     if (!_isRestorePhotoFeature(featureName) &&
         !_isRemoveWatermarkFeature(featureName) &&
         !_isEcoFeature(featureName) &&
-        !_isDocumentSheetFeature(featureName)) {
+        !_isDocumentSheetFeature(featureName) &&
+        !_isIdOrPassportFeature(featureName)) {
       return false;
     }
 
     // Документ — «пустоватый» лист: выше разрешение детекции + мягче пороги
     // Canny, чтобы граница листа/текст зарегистрировались (на 180px было 0).
+    // Паспорт/ID тоже детектим на повышенном разрешении: документ занимает
+    // рамку-трафарет и его края должны регистрироваться надёжно.
     final bool isDoc = _isDocumentSheetFeature(featureName);
-    final int targetWidth = isDoc ? 300 : 180;
+    final bool isIdPass = _isIdOrPassportFeature(featureName);
+    final int targetWidth = (isDoc || isIdPass) ? 300 : 180;
     final int targetHeight = ((targetWidth * image.width) / image.height)
         .round()
         .clamp(160, 540);
@@ -600,8 +615,13 @@ class _CameraScreenState extends State<CameraScreen>
       targetWidth: targetWidth,
       targetHeight: targetHeight,
     );
-    final quad =
-        detectPhotoQuad(gray, targetWidth, targetHeight, lowContrast: isDoc);
+    // Паспортные страницы — светлые/«пустоватые», как лист документа.
+    final quad = detectPhotoQuad(
+      gray,
+      targetWidth,
+      targetHeight,
+      lowContrast: isDoc || featureName == Feat.passport,
+    );
 
     if ((_quadDiagCounter++ % 12) == 0) {
       debugPrint(
@@ -2412,6 +2432,10 @@ class _CameraScreenState extends State<CameraScreen>
 
   bool _isDocumentSheetFeature(String featureName) {
     return featureName == Feat.document || featureName == Feat.plus10Pages;
+  }
+
+  bool _isIdOrPassportFeature(String featureName) {
+    return featureName == Feat.idCard || featureName == Feat.passport;
   }
 
   bool _isGuidedCameraFeature(Map<String, dynamic> feature) {
