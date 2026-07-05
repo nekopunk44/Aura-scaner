@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../../../services/document_registry.dart';
 import '../main_screen/docx_viewer_screen.dart';
 import '../main_screen/pdf_viewer_screen.dart';
@@ -97,7 +98,7 @@ class _DocumentImporterState extends State<DocumentImporter> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка импорта: $e')),
+          SnackBar(content: Text(AppLocalizations.of(context).impError('$e'))),
         );
       }
     } finally {
@@ -128,7 +129,7 @@ class _DocumentImporterState extends State<DocumentImporter> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка импорта: $e')),
+          SnackBar(content: Text(AppLocalizations.of(context).impError('$e'))),
         );
       }
     } finally {
@@ -140,6 +141,7 @@ class _DocumentImporterState extends State<DocumentImporter> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? const Color(0xFF0F1923) : const Color(0xFFF2F6FC);
     final cardBg = isDark ? const Color(0xFF1E2A3A) : Colors.white;
@@ -157,7 +159,7 @@ class _DocumentImporterState extends State<DocumentImporter> {
         elevation: 0,
         iconTheme: IconThemeData(color: textColor),
         title: Text(
-          'Импорт документа',
+          l10n.impTitle,
           style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
         ),
         leading: IconButton(
@@ -188,7 +190,7 @@ class _DocumentImporterState extends State<DocumentImporter> {
                       child: OutlinedButton.icon(
                         onPressed: _isImporting ? null : _importAndOpenEditor,
                         icon: const Icon(Icons.edit_document, size: 18),
-                        label: const Text('Редактор'),
+                        label: Text(l10n.impEditorBtn),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: accent,
                           side: const BorderSide(color: accent),
@@ -208,7 +210,7 @@ class _DocumentImporterState extends State<DocumentImporter> {
                                 child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                               )
                             : const Icon(Icons.check, size: 18),
-                        label: const Text('Импортировать'),
+                        label: Text(l10n.impImportBtn),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: accent,
                           disabledBackgroundColor: accent.withValues(alpha: 0.4),
@@ -241,7 +243,7 @@ class _DocumentImporterState extends State<DocumentImporter> {
                       ),
                       const SizedBox(height: 14),
                       Text(
-                        'Откройте документ из памяти',
+                        l10n.impOpenFromStorage,
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
@@ -250,7 +252,7 @@ class _DocumentImporterState extends State<DocumentImporter> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Выберите тип файла, чтобы открыть проводник',
+                        l10n.impPickTypeHint,
                         textAlign: TextAlign.center,
                         style: TextStyle(fontSize: 13, color: subColor),
                       ),
@@ -260,7 +262,7 @@ class _DocumentImporterState extends State<DocumentImporter> {
                 const SizedBox(height: 12),
               ],
               Text(
-                'ВЫБОР ТИПА ФАЙЛА',
+                l10n.impPickTypeSection.toUpperCase(),
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -280,7 +282,7 @@ class _DocumentImporterState extends State<DocumentImporter> {
                   _PickCard(
                     icon: Icons.picture_as_pdf,
                     label: 'PDF',
-                    description: 'Документы и книги',
+                    description: l10n.impPdfDesc,
                     color: const Color(0xFFE74C3C),
                     enabled: enabled,
                     cardBg: cardBg,
@@ -290,8 +292,8 @@ class _DocumentImporterState extends State<DocumentImporter> {
                   ),
                   _PickCard(
                     icon: Icons.description_outlined,
-                    label: 'Word / TXT',
-                    description: 'Тексты, отчёты',
+                    label: l10n.impWordLabel,
+                    description: l10n.impWordDesc,
                     color: const Color(0xFF3498DB),
                     enabled: enabled,
                     cardBg: cardBg,
@@ -301,8 +303,8 @@ class _DocumentImporterState extends State<DocumentImporter> {
                   ),
                   _PickCard(
                     icon: Icons.photo_outlined,
-                    label: 'Изображение',
-                    description: 'JPG, PNG',
+                    label: l10n.impImageLabel,
+                    description: l10n.impImageDesc,
                     color: const Color(0xFF27AE60),
                     enabled: enabled,
                     cardBg: cardBg,
@@ -312,8 +314,8 @@ class _DocumentImporterState extends State<DocumentImporter> {
                   ),
                   _PickCard(
                     icon: Icons.table_chart_outlined,
-                    label: 'Excel / PowerPoint',
-                    description: 'Таблицы, презентации',
+                    label: l10n.impOfficeLabel,
+                    description: l10n.impOfficeDesc,
                     color: const Color(0xFF107C41),
                     enabled: enabled,
                     cardBg: cardBg,
@@ -324,8 +326,8 @@ class _DocumentImporterState extends State<DocumentImporter> {
                   ),
                   _PickCard(
                     icon: Icons.folder_outlined,
-                    label: 'Любой файл',
-                    description: 'Открыть проводник',
+                    label: l10n.impAnyLabel,
+                    description: l10n.impAnyDesc,
                     color: const Color(0xFFE67E22),
                     enabled: enabled,
                     cardBg: cardBg,
@@ -457,7 +459,7 @@ class _SelectedFileCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Готов к импорту',
+                  AppLocalizations.of(context).impReady,
                   style: TextStyle(fontSize: 12, color: subColor),
                 ),
               ],
@@ -631,7 +633,11 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
     if (!mounted) return;
     if (result.type != ResultType.done) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось открыть файл: ${result.message}')),
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).docEdOpenFailed(result.message),
+          ),
+        ),
       );
     }
   }
@@ -646,27 +652,30 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
     final extension = dotIndex == -1 ? '' : _fileName.substring(dotIndex);
     final controller = TextEditingController(text: baseName);
 
+    final l10n = AppLocalizations.of(context);
     final newBaseName = await showDialog<String>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Переименовать документ'),
+          title: Text(l10n.docEdRenameTitle),
           content: TextField(
             controller: controller,
             autofocus: true,
             decoration: InputDecoration(
               hintText: baseName,
-              helperText: extension.isEmpty ? null : 'Расширение сохранится: $extension',
+              helperText: extension.isEmpty
+                  ? null
+                  : l10n.docEdRenameKeepExt(extension),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Отмена'),
+              child: Text(l10n.actionCancel),
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-              child: const Text('Сохранить'),
+              child: Text(l10n.actionSave),
             ),
           ],
         );
@@ -692,12 +701,16 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
       if (!mounted) return;
       setState(() => _currentPath = newPath);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Документ переименован в ${p.basename(newPath)}')),
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context).docEdRenamed(p.basename(newPath)),
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка переименования: $e')),
+        SnackBar(content: Text(AppLocalizations.of(context).docEdRenameError('$e'))),
       );
     } finally {
       if (mounted) {
@@ -707,20 +720,21 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
   }
 
   Future<void> _deleteDocument() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Удалить документ'),
-          content: Text('Удалить $_fileName?'),
+          title: Text(l10n.docEdDeleteTitle),
+          content: Text(l10n.docEdDeleteConfirm(_fileName)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Отмена'),
+              child: Text(l10n.actionCancel),
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Удалить'),
+              child: Text(l10n.actionDelete),
             ),
           ],
         );
@@ -744,7 +758,7 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка удаления: $e')),
+        SnackBar(content: Text(AppLocalizations.of(context).docEdDeleteError('$e'))),
       );
     } finally {
       if (mounted) {
@@ -755,12 +769,13 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
 
   Future<void> _cropImage() async {
     if (!_isImage) return;
+    final l10n = AppLocalizations.of(context);
 
     final cropped = await ImageCropper().cropImage(
       sourcePath: _currentPath,
       uiSettings: [
         AndroidUiSettings(
-          toolbarTitle: 'Обрезать изображение',
+          toolbarTitle: l10n.docEdCropImage,
           toolbarColor: Colors.blue,
           toolbarWidgetColor: Colors.white,
           initAspectRatio: CropAspectRatioPreset.original,
@@ -778,12 +793,12 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
       if (!mounted) return;
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Изображение обновлено')),
+        SnackBar(content: Text(l10n.docEdImageUpdated)),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка обрезки: $e')),
+        SnackBar(content: Text(l10n.docEdCropError('$e'))),
       );
     } finally {
       if (mounted) {
@@ -794,6 +809,7 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
 
   Future<void> _rotateImage() async {
     if (!_isImage) return;
+    final l10n = AppLocalizations.of(context);
 
     setState(() => _isBusy = true);
     try {
@@ -815,12 +831,12 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
       if (!mounted) return;
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Изображение повернуто')),
+        SnackBar(content: Text(l10n.docEdImageRotated)),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка поворота: $e')),
+        SnackBar(content: Text(l10n.docEdRotateError('$e'))),
       );
     } finally {
       if (mounted) {
@@ -857,12 +873,12 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
       if (!mounted) return;
       setState(() => _currentPath = result);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Подпись добавлена в документ')),
+        SnackBar(content: Text(AppLocalizations.of(context).docEdSignAdded)),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка подписи: $e')),
+        SnackBar(content: Text(AppLocalizations.of(context).docEdSignError('$e'))),
       );
     } finally {
       if (mounted) {
@@ -927,13 +943,14 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
 
   Widget _buildImageTools() {
     if (!_isImage) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Инструменты изображения',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        Text(
+          l10n.docEdImageTools,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 12),
         Row(
@@ -942,7 +959,7 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
               child: OutlinedButton.icon(
                 onPressed: _isBusy ? null : _cropImage,
                 icon: const Icon(Icons.crop),
-                label: const Text('Обрезать'),
+                label: Text(l10n.docEdCrop),
               ),
             ),
             const SizedBox(width: 12),
@@ -950,7 +967,7 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
               child: OutlinedButton.icon(
                 onPressed: _isBusy ? null : _rotateImage,
                 icon: const Icon(Icons.rotate_right),
-                label: const Text('Повернуть'),
+                label: Text(l10n.docEdRotate),
               ),
             ),
           ],
@@ -961,7 +978,7 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
           child: OutlinedButton.icon(
             onPressed: _isBusy ? null : _signImage,
             icon: const Icon(Icons.draw_outlined),
-            label: const Text('Добавить подпись'),
+            label: Text(l10n.docEdAddSign),
           ),
         ),
       ],
@@ -970,6 +987,7 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -979,7 +997,7 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Редактор документа'),
+          title: Text(l10n.docEdTitle),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: _closeEditor,
@@ -1035,7 +1053,7 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
               ElevatedButton.icon(
                 onPressed: _isBusy ? null : _openDocument,
                 icon: const Icon(Icons.visibility),
-                label: Text(_isImage ? 'Открыть просмотр' : 'Открыть документ'),
+                label: Text(_isImage ? l10n.docEdOpenView : l10n.docEdOpenDoc),
               ),
               const SizedBox(height: 12),
               Row(
@@ -1044,7 +1062,7 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
                     child: OutlinedButton.icon(
                       onPressed: _isBusy ? null : _shareDocument,
                       icon: const Icon(Icons.share),
-                      label: const Text('Поделиться'),
+                      label: Text(l10n.menuShare),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1052,7 +1070,7 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
                     child: OutlinedButton.icon(
                       onPressed: _isBusy ? null : _renameDocument,
                       icon: const Icon(Icons.edit),
-                      label: const Text('Переименовать'),
+                      label: Text(l10n.docEdRename),
                     ),
                   ),
                 ],
@@ -1063,7 +1081,7 @@ class _DocumentEditorScreenState extends State<DocumentEditorScreen> {
               OutlinedButton.icon(
                 onPressed: _isBusy ? null : _deleteDocument,
                 icon: const Icon(Icons.delete, color: Colors.red),
-                label: const Text('Удалить документ'),
+                label: Text(l10n.docEdDeleteTitle),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.red,
                 ),
