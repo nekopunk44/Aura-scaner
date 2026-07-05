@@ -86,8 +86,10 @@ class _OAuthBottomSheetState extends State<_OAuthBottomSheet> {
     super.initState();
     _controller = _buildController(_handleUri);
     // Фон под страницей: в тёмной теме убирает белую вспышку при загрузке.
+    // 0xFF141414 = цвет белой страницы после invert(0.92) — совпадает с
+    // фоном инвертированных OAuth-страниц.
     _controller.setBackgroundColor(
-      widget.isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F9FF),
+      widget.isDark ? const Color(0xFF141414) : const Color(0xFFF5F9FF),
     );
     _controller.setNavigationDelegate(
       NavigationDelegate(
@@ -136,7 +138,9 @@ class _OAuthBottomSheetState extends State<_OAuthBottomSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = widget.isDark;
-    final bg = isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F9FF);
+    // Тёмный фон шита = цвет инвертированной OAuth-страницы (см. _darkModeJs),
+    // чтобы «шапка» с ручкой не отличалась по цвету от содержимого WebView.
+    final bg = isDark ? const Color(0xFF141414) : const Color(0xFFF5F9FF);
     final handleColor = isDark
         ? Colors.white.withValues(alpha: 0.18)
         : const Color(0xFFCDD9EE);
