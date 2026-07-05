@@ -539,13 +539,13 @@ class _CameraScreenState extends State<CameraScreen>
         // тоже не мгновенно. Это убирает дрожь и ранние/ложные автоснимки.
         detected = _stabilizedDetection(quadFound);
       } else if (_isIdOrPassportFeature(featureName)) {
-        // Паспорт/ID: одной эвристики яркости/линий мало — она ложно
-        // срабатывала на границе ковра и светлого пола. Требуем реальный
-        // четырёхугольник (как для «Документа») И совпадение с зоной рамки,
-        // плюс та же покадровая стабилизация с гистерезисом.
-        final match = quadFound &&
-            _detectDocumentContour(image, featureName: featureName);
-        detected = _stabilizedDetection(match);
+        // Паспорт/ID: только реальный четырёхугольник с геометрической
+        // валидацией (аспект/позиция/размер — внутри _updatePhotoQuad) и
+        // покадровой стабилизацией. Старая эвристика линий по зонам рамки
+        // здесь не используется: она ждёт документ на всю ширину рамки и
+        // отсекает, например, вертикальную страницу паспорта, а на фактурном
+        // фоне (ковёр/пол), наоборот, давала ложные срабатывания.
+        detected = _stabilizedDetection(quadFound);
       } else {
         detected = _detectDocumentContour(image, featureName: featureName);
       }
@@ -698,20 +698,22 @@ class _CameraScreenState extends State<CameraScreen>
     if (heightPhys <= 0) return false;
     final aspect = widthPhys / heightPhys;
 
-    // Документ в рамке всегда ландшафтный: ID-1 карта 1.586, разворот
-    // паспорта ~1.42. Допуск на перспективу/наклон — широкий.
-    if (aspect < 1.05 || aspect > 2.3) return false;
+    // Правдоподобный аспект документа в ЛЮБОЙ ориентации: одиночная страница
+    // паспорта вертикально ~0.70, разворот ~1.42, ID-1 карта 1.586 (или 0.63
+    // вертикально). Допуск на перспективу/наклон — широкий; отсекаются лишь
+    // вытянутые полосы (стыки половиц, край ковра).
+    if (aspect < 0.5 || aspect > 2.4) return false;
 
     // Центр по вертикали — в зоне рамки-трафарета (см. _frameSpecsForFeature).
     final centerY = (tl.dy + tr.dy + br.dy + bl.dy) / 4;
     final bool isPassport = featureName == Feat.passport;
-    final double zoneTop = isPassport ? 0.12 : 0.18;
-    final double zoneBottom = isPassport ? 0.60 : 0.65;
+    final double zoneTop = isPassport ? 0.10 : 0.15;
+    final double zoneBottom = isPassport ? 0.62 : 0.68;
     if (centerY < zoneTop || centerY > zoneBottom) return false;
 
     // Размер: документ занимает заметную часть рамки, но не весь экран.
     final heightNorm = (leftLen + rightLen) / 2;
-    if (heightNorm < 0.10 || heightNorm > 0.48) return false;
+    if (heightNorm < 0.08 || heightNorm > 0.58) return false;
 
     return true;
   }
