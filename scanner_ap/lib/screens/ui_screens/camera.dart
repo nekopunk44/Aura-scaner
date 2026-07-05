@@ -636,6 +636,15 @@ class _CameraScreenState extends State<CameraScreen>
       return false;
     }
 
+    // Паспорт/ID: квад должен быть похож на документ в рамке-трафарете, а не
+    // на случайный «прямоугольник» из стыков половиц/края ковра. Проверяем
+    // геометрию: ландшафтная ориентация, правдоподобный аспект, положение по
+    // вертикали в зоне рамки и разумный размер.
+    if (isIdPass && !_quadLooksLikeFramedDocument(quad, image, featureName)) {
+      _photoQuad.value = null;
+      return false;
+    }
+
     final prev = _photoQuad.value;
     if (prev != null && prev.length == 4) {
       const double a = 0.4; // вес нового кадра в сглаживании
@@ -650,6 +659,60 @@ class _CameraScreenState extends State<CameraScreen>
     } else {
       _photoQuad.value = quad;
     }
+    return true;
+  }
+
+  /// Проверяет, что найденный квад геометрически похож на паспорт/ID-карту,
+  /// лежащую в рамке-трафарете. [quad] — [tl,tr,br,bl] в нормализованных
+  /// координатах портретного кадра сенсора.
+  bool _quadLooksLikeFramedDocument(
+    List<Offset> quad,
+    CameraImage image,
+    String featureName,
+  ) {
+    if (quad.length != 4) return false;
+    final tl = quad[0], tr = quad[1], br = quad[2], bl = quad[3];
+
+    double dist(Offset a, Offset b) => (a - b).distance;
+    final topLen = dist(tl, tr);
+    final bottomLen = dist(bl, br);
+    final leftLen = dist(tl, bl);
+    final rightLen = dist(tr, br);
+    if (topLen <= 0 || bottomLen <= 0 || leftLen <= 0 || rightLen <= 0) {
+      return false;
+    }
+
+    // Противоположные стороны сопоставимы — иначе это не прямоугольник
+    // в перспективе, а случайный контур.
+    double ratio(double a, double b) => a > b ? a / b : b / a;
+    if (ratio(topLen, bottomLen) > 1.45 || ratio(leftLen, rightLen) > 1.45) {
+      return false;
+    }
+
+    // Физический аспект: нормализованные координаты растянуты по осям кадра,
+    // поэтому ширину переводим в единицы высоты через аспект портретного
+    // кадра (W/H = image.height / image.width, т.к. previewSize — landscape).
+    final double frameWOverH = image.height / image.width;
+    final widthPhys = (topLen + bottomLen) / 2 * frameWOverH;
+    final heightPhys = (leftLen + rightLen) / 2;
+    if (heightPhys <= 0) return false;
+    final aspect = widthPhys / heightPhys;
+
+    // Документ в рамке всегда ландшафтный: ID-1 карта 1.586, разворот
+    // паспорта ~1.42. Допуск на перспективу/наклон — широкий.
+    if (aspect < 1.05 || aspect > 2.3) return false;
+
+    // Центр по вертикали — в зоне рамки-трафарета (см. _frameSpecsForFeature).
+    final centerY = (tl.dy + tr.dy + br.dy + bl.dy) / 4;
+    final bool isPassport = featureName == Feat.passport;
+    final double zoneTop = isPassport ? 0.12 : 0.18;
+    final double zoneBottom = isPassport ? 0.60 : 0.65;
+    if (centerY < zoneTop || centerY > zoneBottom) return false;
+
+    // Размер: документ занимает заметную часть рамки, но не весь экран.
+    final heightNorm = (leftLen + rightLen) / 2;
+    if (heightNorm < 0.10 || heightNorm > 0.48) return false;
+
     return true;
   }
 
