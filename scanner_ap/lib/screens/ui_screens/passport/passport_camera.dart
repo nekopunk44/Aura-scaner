@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 
+import '../camera_features.dart';
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
 import '../../../widgets/document_guide_frame.dart';
@@ -231,7 +232,7 @@ class PassportCameraView extends StatelessWidget {
           child: captureModeController.buildStatusOverlay(
             isDocumentMode: true,
             pageMode: pageModeLabel,
-            featureName: "Паспорт",
+            featureName: Feat.passport,
             overlayKind: CaptureStatusOverlayKind.passport,
           ),
         ),

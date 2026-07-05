@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 
+import '../camera_features.dart';
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
 import '../../../widgets/document_guide_frame.dart';
@@ -186,7 +187,7 @@ class IdCardCameraView extends StatelessWidget {
           child: captureModeController.buildStatusOverlay(
             isDocumentMode: true,
             pageMode: currentSide,
-            featureName: "Удостоверение личности",
+            featureName: Feat.idCard,
             overlayKind: CaptureStatusOverlayKind.idCard,
           ),
         ),

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'camera.dart';
+import 'camera_features.dart';
 import 'ui_helpers.dart';
 import 'package:path/path.dart' as p;
 import 'package:image_picker/image_picker.dart';
@@ -426,7 +427,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => CameraScreen(initialFeature: 'Документ'),
+              builder: (_) => CameraScreen(initialFeature: Feat.document),
             ),
           ),
         ),
@@ -440,7 +441,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
               context,
               MaterialPageRoute(
                 builder: (_) =>
-                    CameraScreen(initialFeature: 'Удостоверение личности'),
+                    CameraScreen(initialFeature: Feat.idCard),
               ),
             ),
           ),
@@ -451,7 +452,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => CameraScreen(initialFeature: 'Паспорт'),
+                builder: (_) => CameraScreen(initialFeature: Feat.passport),
               ),
             ),
           ),
@@ -466,7 +467,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => CameraScreen(initialFeature: '+10 страниц'),
+                builder: (_) => CameraScreen(initialFeature: Feat.plus10Pages),
               ),
             ),
           ),
@@ -479,7 +480,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => CameraScreen(initialFeature: 'Сканер qr-код'),
+                  builder: (_) => CameraScreen(initialFeature: Feat.qrScanner),
                 ),
               );
             },
@@ -496,7 +497,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => CameraScreen(initialFeature: 'Перевод'),
+                  builder: (_) => CameraScreen(initialFeature: Feat.translate),
                 ),
               );
             },
@@ -565,7 +566,7 @@ class _AllActionsScreenState extends State<AllActionsScreen>
         const SizedBox(height: 12),
         _pairRow(
           _tile(
-            'OCR',
+            Feat.ocr,
             Icons.text_fields_outlined,
             iconColor: const Color(0xFF6B7A99),
             subtitle: l10n.featOcrSub,

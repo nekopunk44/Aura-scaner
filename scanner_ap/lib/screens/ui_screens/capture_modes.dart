@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
+import 'camera_features.dart';
 
 enum CaptureStatusOverlayKind {
   passport,
@@ -88,13 +89,13 @@ class CaptureModeController {
 
   String _compactFeatureLabel(String featureName) {
     switch (featureName) {
-      case 'Удостоверение личности':
+      case Feat.idCard:
         return 'ID-карта';
       case 'Неограниченный документ':
       case 'Пакетный Документ':
       case '+100 страниц':
-      case '+10 страниц':
-        return 'Документ';
+      case Feat.plus10Pages:
+        return Feat.document;
       default:
         return featureName;
     }
@@ -179,7 +180,7 @@ class CaptureModeController {
   String _overlayTitleFor(CaptureStatusOverlayKind kind, String featureName) {
     switch (kind) {
       case CaptureStatusOverlayKind.passport:
-        return 'Паспорт';
+        return Feat.passport;
       case CaptureStatusOverlayKind.idCard:
         return 'ID-карта';
       case CaptureStatusOverlayKind.document:
@@ -188,7 +189,7 @@ class CaptureModeController {
       case CaptureStatusOverlayKind.restorePhoto:
         return 'Восстановить';
       case CaptureStatusOverlayKind.removeSpots:
-        return 'Убрать пятна';
+        return Feat.removeSpots;
       case CaptureStatusOverlayKind.removeWatermark:
         return 'Без водзнака';
       case CaptureStatusOverlayKind.eco:

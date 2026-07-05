@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import '../camera_features.dart';
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
 import '../../../l10n/app_localizations.dart';
@@ -296,7 +297,7 @@ class MultiPageDocumentView extends StatelessWidget {
               child: (captureModeController as dynamic).buildStatusOverlay(
                 isDocumentMode: true,
                 pageMode: pageStatus,
-                featureName: "Документ",
+                featureName: Feat.document,
                 overlayKind: CaptureStatusOverlayKind.document,
                 l10n: l10n,
               ) as Widget,

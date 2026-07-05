@@ -99,13 +99,13 @@ class _CameraScreenState extends State<CameraScreen>
     'com.aurascanner.app/native_bridge',
   );
   static const Set<String> _premiumFeatureNames = {
-    '+10 страниц',
-    'Восстановить фото',
-    'Убрать пятна',
-    'Подсветка текста',
-    'Удалить водяной знак',
-    'Добавить пароль',
-    'Эко упаковка',
+    Feat.plus10Pages,
+    Feat.restorePhoto,
+    Feat.removeSpots,
+    Feat.highlight,
+    Feat.removeWatermark,
+    Feat.addPassword,
+    Feat.eco,
   };
 
   CameraController? _cameraController;
@@ -215,7 +215,7 @@ class _CameraScreenState extends State<CameraScreen>
           : _features.first['name']!;
       _selectedFeature = _canUseFeature(requestedFeature)
           ? requestedFeature
-          : 'Документ';
+          : Feat.document;
     } else {
       _selectedFeature = _features.first['name']!;
     }
@@ -224,15 +224,15 @@ class _CameraScreenState extends State<CameraScreen>
       // QR теперь тоже работает на общей камере, поэтому инициализируем её
       // во всех режимах и при QR сразу запускаем сканирование штрихкодов.
       _initializeCamera().then((_) {
-        if (mounted && _selectedFeature == 'Сканер qr-код') {
+        if (mounted && _selectedFeature == Feat.qrScanner) {
           _startBarcodeScanning();
         }
       });
       // Для «Перевод», «OCR» и «QR» детекция документа не нужна: захват
       // ручной, а активный image-stream помешал бы takePicture().
-      if (_selectedFeature != 'Перевод' &&
-          _selectedFeature != 'OCR' &&
-          _selectedFeature != 'Сканер qr-код') {
+      if (_selectedFeature != Feat.translate &&
+          _selectedFeature != Feat.ocr &&
+          _selectedFeature != Feat.qrScanner) {
         Future.delayed(
           const Duration(milliseconds: 300),
           _startDocumentDetectionStream,
@@ -309,10 +309,10 @@ class _CameraScreenState extends State<CameraScreen>
         unawaited(
           _initializeCamera().then((_) {
             if (!mounted) return;
-            if (_selectedFeature == 'Сканер qr-код') {
+            if (_selectedFeature == Feat.qrScanner) {
               unawaited(_startBarcodeScanning());
-            } else if (_selectedFeature != 'Перевод' &&
-                _selectedFeature != 'OCR') {
+            } else if (_selectedFeature != Feat.translate &&
+                _selectedFeature != Feat.ocr) {
               _startDocumentDetectionStream();
             }
           }),
@@ -326,7 +326,7 @@ class _CameraScreenState extends State<CameraScreen>
   /// системную галерею и мог уронить контроллер.
   Future<void> _ensureCameraReady() async {
     if (_cameraController != null && _cameraController!.value.isInitialized) {
-      if (_selectedFeature == 'Сканер qr-код' && !_isQrStreaming) {
+      if (_selectedFeature == Feat.qrScanner && !_isQrStreaming) {
         _startBarcodeScanning();
       }
       return;
@@ -334,9 +334,9 @@ class _CameraScreenState extends State<CameraScreen>
     if (_isInitializingCamera) return;
     await _initializeCamera();
     if (!mounted) return;
-    if (_selectedFeature == 'Сканер qr-код') {
+    if (_selectedFeature == Feat.qrScanner) {
       unawaited(_startBarcodeScanning());
-    } else if (_selectedFeature != 'Перевод' && _selectedFeature != 'OCR') {
+    } else if (_selectedFeature != Feat.translate && _selectedFeature != Feat.ocr) {
       _startDocumentDetectionStream();
     }
   }
@@ -423,7 +423,7 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   void _startDocumentDetectionStream() {
-    if (_selectedFeature == 'Сканер qr-код') return;
+    if (_selectedFeature == Feat.qrScanner) return;
 
     final feature = _features.firstWhere(
       (f) => f['name'] == _selectedFeature,
@@ -702,7 +702,7 @@ class _CameraScreenState extends State<CameraScreen>
   // Временно отключён: ложно блокировал автоснимок лицевой стороны.
   // ignore: unused_element
   String? _idSideWarningForFrame(CameraImage image) {
-    if (_selectedFeature != 'Удостоверение личности' ||
+    if (_selectedFeature != Feat.idCard ||
         _currentSide != 'Лицевая') {
       return null;
     }
@@ -721,7 +721,7 @@ class _CameraScreenState extends State<CameraScreen>
       targetHeight: targetHeight,
     );
 
-    final looksBackSide = _frameSpecsForFeature('Удостоверение личности').any(
+    final looksBackSide = _frameSpecsForFeature(Feat.idCard).any(
       (spec) => _looksLikeIdBackSide(gray, targetWidth, targetHeight, spec),
     );
 
@@ -941,7 +941,7 @@ class _CameraScreenState extends State<CameraScreen>
         4;
 
     final bool isDocumentSheet =
-        featureName == 'Документ' || featureName == '+10 страниц';
+        featureName == Feat.document || featureName == Feat.plus10Pages;
     final minVertical = globalEdge * (isDocumentSheet ? 1.62 : 1.45);
     final minHorizontal = globalEdge * (isDocumentSheet ? 1.52 : 1.35);
     final frameScores = [leftScore, rightScore, topScore, bottomScore];
@@ -979,20 +979,20 @@ class _CameraScreenState extends State<CameraScreen>
 
   List<_DocumentFrameSpec> _frameSpecsForFeature(String featureName) {
     switch (featureName) {
-      case 'Удостоверение личности':
+      case Feat.idCard:
         return const [
           _DocumentFrameSpec(left: 0.08, right: 0.92, top: 0.27, bottom: 0.57),
           _DocumentFrameSpec(left: 0.05, right: 0.95, top: 0.23, bottom: 0.61),
           _DocumentFrameSpec(left: 0.10, right: 0.90, top: 0.31, bottom: 0.65),
         ];
-      case 'Документ':
-      case '+10 страниц':
+      case Feat.document:
+      case Feat.plus10Pages:
         return const [
           _DocumentFrameSpec(left: 0.11, right: 0.89, top: 0.12, bottom: 0.62),
           _DocumentFrameSpec(left: 0.08, right: 0.92, top: 0.08, bottom: 0.70),
           _DocumentFrameSpec(left: 0.06, right: 0.94, top: 0.06, bottom: 0.80),
         ];
-      case 'Паспорт':
+      case Feat.passport:
       default:
         return const [
           // Паспортный overlay заметно ниже верхней кромки экрана, поэтому
@@ -1214,14 +1214,14 @@ class _CameraScreenState extends State<CameraScreen>
     );
 
     if (!mounted) return;
-    if (_selectedFeature != 'Перевод') {
+    if (_selectedFeature != Feat.translate) {
       _startDocumentDetectionStream();
     }
   }
 
   void _onClearBatch() {
     _resetMultiPageState();
-    if (_selectedFeature != 'Перевод') {
+    if (_selectedFeature != Feat.translate) {
       _startDocumentDetectionStream();
     }
     AppNotification.show(
@@ -1446,7 +1446,7 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       List<XFile> scannedFiles;
 
-      if (_selectedFeature == 'Паспорт') {
+      if (_selectedFeature == Feat.passport) {
         final limit = _passportTargetPageCount;
         scannedFiles = await _scanImagesWithNativeScanner(pageLimit: limit);
         if (scannedFiles.isEmpty || !mounted) return;
@@ -1484,7 +1484,7 @@ class _CameraScreenState extends State<CameraScreen>
         return;
       }
 
-      if (_selectedFeature == 'Удостоверение личности') {
+      if (_selectedFeature == Feat.idCard) {
         final limit = _currentSide == 'Лицевая' ? 2 : 1;
         scannedFiles = await _scanImagesWithNativeScanner(pageLimit: limit);
         if (scannedFiles.isEmpty || !mounted) return;
@@ -1552,7 +1552,7 @@ class _CameraScreenState extends State<CameraScreen>
         return;
       }
 
-      final pageLimit = _selectedFeature == 'Документ'
+      final pageLimit = _selectedFeature == Feat.document
           ? _documentTargetPageCount
           : 30;
       scannedFiles = await _scanImagesWithNativeScanner(pageLimit: pageLimit);
@@ -1588,11 +1588,11 @@ class _CameraScreenState extends State<CameraScreen>
     if (_cameraController == null ||
         !_cameraController!.value.isInitialized ||
         _isScanning ||
-        _selectedFeature == 'Сканер qr-код') {
+        _selectedFeature == Feat.qrScanner) {
       return;
     }
 
-    if (_selectedFeature == 'Перевод') {
+    if (_selectedFeature == Feat.translate) {
       return;
     }
 
@@ -1601,8 +1601,8 @@ class _CameraScreenState extends State<CameraScreen>
       orElse: () => _features.first,
     );
     final bool isDocumentMode = _isGuidedCameraFeature(currentFeature);
-    final bool isMultiPageLimited = _selectedFeature == "Документ";
-    final bool isMultiPageUnlimited = _selectedFeature == "+10 страниц";
+    final bool isMultiPageLimited = _selectedFeature == Feat.document;
+    final bool isMultiPageUnlimited = _selectedFeature == Feat.plus10Pages;
 
     final l10n = AppLocalizations.of(context);
     if (!bypassCaptureMode &&
@@ -1731,7 +1731,7 @@ class _CameraScreenState extends State<CameraScreen>
         return;
       }
 
-      if (_selectedFeature == "Удостоверение личности") {
+      if (_selectedFeature == Feat.idCard) {
         // Авто-обрезка карты до краёв (OpenCV) — убирает фон/руку. При
         // неудаче autoCrop вернёт исходный файл (без регресса).
         final croppedFile = await IdCardScanner.autoCrop(File(file.path));
@@ -1783,7 +1783,7 @@ class _CameraScreenState extends State<CameraScreen>
         return;
       }
 
-      if (_selectedFeature == "Паспорт") {
+      if (_selectedFeature == Feat.passport) {
         final passportImage = await _autoCropPassportXFile(file);
         if (!mounted) return;
         final targetPageCount = _passportTargetPageCount;
@@ -1984,9 +1984,9 @@ class _CameraScreenState extends State<CameraScreen>
     if (galleryImage == null) return;
     if (!mounted) return;
 
-    if (_selectedFeature == 'Сканер qr-код') return;
+    if (_selectedFeature == Feat.qrScanner) return;
 
-    if (_selectedFeature == 'Паспорт') {
+    if (_selectedFeature == Feat.passport) {
       final passportImage = await _autoCropPassportXFile(galleryImage);
       if (!mounted) return;
 
@@ -2017,8 +2017,8 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
 
-    final bool isMultiPageLimited = _selectedFeature == "Документ";
-    final bool isMultiPageUnlimited = _selectedFeature == "+10 страниц";
+    final bool isMultiPageLimited = _selectedFeature == Feat.document;
+    final bool isMultiPageUnlimited = _selectedFeature == Feat.plus10Pages;
 
     if (_isRestorePhotoFeature(_selectedFeature)) {
       await _openRestorePhotoEditor(galleryImage);
@@ -2278,7 +2278,7 @@ class _CameraScreenState extends State<CameraScreen>
       Future.delayed(const Duration(seconds: 3), () {
         if (!mounted) return;
         _qrCooldown = false;
-        if (_selectedFeature == 'Сканер qr-код') {
+        if (_selectedFeature == Feat.qrScanner) {
           setState(() => _qrCode = null);
         }
       });
@@ -2391,23 +2391,23 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   bool _isRestorePhotoFeature(String featureName) {
-    return featureName == 'Восстановить фото';
+    return featureName == Feat.restorePhoto;
   }
 
   bool _isRemoveSpotsFeature(String featureName) {
-    return featureName == 'Убрать пятна';
+    return featureName == Feat.removeSpots;
   }
 
   bool _isRemoveWatermarkFeature(String featureName) {
-    return featureName == 'Удалить водяной знак';
+    return featureName == Feat.removeWatermark;
   }
 
   bool _isEcoFeature(String featureName) {
-    return featureName == 'Эко упаковка';
+    return featureName == Feat.eco;
   }
 
   bool _isDocumentSheetFeature(String featureName) {
-    return featureName == 'Документ' || featureName == '+10 страниц';
+    return featureName == Feat.document || featureName == Feat.plus10Pages;
   }
 
   bool _isGuidedCameraFeature(Map<String, dynamic> feature) {
@@ -2420,20 +2420,20 @@ class _CameraScreenState extends State<CameraScreen>
 
   String _featureLabel(Map<String, dynamic> feature, AppLocalizations l10n) {
     switch (feature['name'] as String) {
-      case 'Паспорт': return l10n.camChipPassport;
-      case 'Удостоверение личности': return l10n.camChipIdCard;
-      case 'Документ': return l10n.camChipDocument;
-      case 'Сканер qr-код': return l10n.camChipQr;
-      case '+10 страниц': return l10n.camChip10Pages;
-      case 'Перевод': return l10n.camChipTranslate;
-      case 'Знак / Подпись': return l10n.camChipSignature;
-      case 'Восстановить фото': return l10n.camChipRestore;
-      case 'Убрать пятна': return l10n.camChipRemoveSpots;
-      case 'Подсветка текста': return l10n.camChipHighlight;
-      case 'OCR': return l10n.camChipOcr;
-      case 'Удалить водяной знак': return l10n.camChipNoWatermark;
-      case 'Добавить пароль': return l10n.camChipPassword;
-      case 'Эко упаковка': return l10n.camChipEco;
+      case Feat.passport: return l10n.camChipPassport;
+      case Feat.idCard: return l10n.camChipIdCard;
+      case Feat.document: return l10n.camChipDocument;
+      case Feat.qrScanner: return l10n.camChipQr;
+      case Feat.plus10Pages: return l10n.camChip10Pages;
+      case Feat.translate: return l10n.camChipTranslate;
+      case Feat.signature: return l10n.camChipSignature;
+      case Feat.restorePhoto: return l10n.camChipRestore;
+      case Feat.removeSpots: return l10n.camChipRemoveSpots;
+      case Feat.highlight: return l10n.camChipHighlight;
+      case Feat.ocr: return l10n.camChipOcr;
+      case Feat.removeWatermark: return l10n.camChipNoWatermark;
+      case Feat.addPassword: return l10n.camChipPassword;
+      case Feat.eco: return l10n.camChipEco;
       default: return (feature['label'] ?? feature['name']) as String;
     }
   }
@@ -2678,7 +2678,7 @@ class _CameraScreenState extends State<CameraScreen>
 
           return GestureDetector(
             onTap: () {
-              if (newFeature == 'Импорт документов') {
+              if (newFeature == Feat.importDocs) {
                 final cameraContext = context;
                 Navigator.push(
                   context,
@@ -2716,12 +2716,12 @@ class _CameraScreenState extends State<CameraScreen>
                 _resetIdCardState();
                 _resetMultiPageState();
 
-                if (_selectedFeature != 'Сканер qr-код') {
+                if (_selectedFeature != Feat.qrScanner) {
                   _qrCode = null;
                 }
               });
 
-              if (newFeature == 'Сканер qr-код') {
+              if (newFeature == Feat.qrScanner) {
                 // Камеру НЕ пересоздаём — запускаем сканирование штрихкодов
                 // на уже работающем контроллере (нет мерцания). Детекцию
                 // документа выключаем.
@@ -2733,7 +2733,7 @@ class _CameraScreenState extends State<CameraScreen>
                 if (_cameraController == null) {
                   unawaited(
                     _initializeCamera().then((_) {
-                      if (mounted && _selectedFeature == 'Сканер qr-код') {
+                      if (mounted && _selectedFeature == Feat.qrScanner) {
                         _startBarcodeScanning();
                       }
                     }),
@@ -2743,7 +2743,7 @@ class _CameraScreenState extends State<CameraScreen>
                   // только ПОСЛЕ кроссфейда AnimatedSwitcher (~260мс), и его
                   // dispose останавливает стрим. Стартуем сканер после этого.
                   Future.delayed(const Duration(milliseconds: 350), () {
-                    if (mounted && _selectedFeature == 'Сканер qr-код') {
+                    if (mounted && _selectedFeature == Feat.qrScanner) {
                       _startBarcodeScanning();
                     }
                   });
@@ -2757,7 +2757,7 @@ class _CameraScreenState extends State<CameraScreen>
                   unawaited(_initializeCamera());
                 }
 
-                if (newFeature != 'Перевод' && newFeature != 'OCR') {
+                if (newFeature != Feat.translate && newFeature != Feat.ocr) {
                   Future.delayed(
                     const Duration(milliseconds: 500),
                     _startDocumentDetectionStream,
@@ -2904,7 +2904,7 @@ class _CameraScreenState extends State<CameraScreen>
       }
     });
 
-    if (!_isCameraInitialized && _selectedFeature != 'Перевод') {
+    if (!_isCameraInitialized && _selectedFeature != Feat.translate) {
       return const Scaffold(
         backgroundColor: Colors.black,
         body: Center(
@@ -2924,7 +2924,7 @@ class _CameraScreenState extends State<CameraScreen>
     }
 
     final Map<String, Widget Function()> featureViews = {
-      'Паспорт': () => PassportCameraView(
+      Feat.passport: () => PassportCameraView(
         cameraController: _cameraController,
         captureModeController: captureModeController,
         isDocumentDetected: _isDocumentDetected,
@@ -2940,7 +2940,7 @@ class _CameraScreenState extends State<CameraScreen>
         onBack: () => Navigator.pop(context),
         onSettings: _openSettings,
       ),
-      'Удостоверение личности': () => IdCardCameraView(
+      Feat.idCard: () => IdCardCameraView(
         cameraController: _cameraController,
         captureModeController: captureModeController,
         isDocumentDetected: _isDocumentDetected,
@@ -2954,7 +2954,7 @@ class _CameraScreenState extends State<CameraScreen>
         onBack: () => Navigator.pop(context),
         onSettings: _openSettings,
       ),
-      'Документ': () => MultiPageDocumentView(
+      Feat.document: () => MultiPageDocumentView(
         cameraController: _cameraController,
         captureModeController: captureModeController,
         isDocumentDetected: _isDocumentDetected,
@@ -2972,7 +2972,7 @@ class _CameraScreenState extends State<CameraScreen>
         photoQuad: _photoQuad,
         previewAspect: _previewAspect,
       ),
-      '+10 страниц': () => UnlimitedDocumentView(
+      Feat.plus10Pages: () => UnlimitedDocumentView(
         cameraController: _cameraController,
         captureModeController: captureModeController,
         isDocumentDetected: _isDocumentDetected,
@@ -2987,7 +2987,7 @@ class _CameraScreenState extends State<CameraScreen>
         onFinishBatch: _onFinishBatch,
         onClearBatch: _onClearBatch,
       ),
-      'Перевод': () => TranslateCamera(
+      Feat.translate: () => TranslateCamera(
         cameraController: _cameraController,
         takePicture: _takePictureForTranslation,
         pickImageFromGallery: _pickImageFromGallery,
@@ -3000,7 +3000,7 @@ class _CameraScreenState extends State<CameraScreen>
         setCaptureModeAuto: _setCaptureModeAutoInline,
         setCaptureModeManual: _setCaptureModeManual,
       ),
-      'Восстановить фото': () => RestorePhotoCameraView(
+      Feat.restorePhoto: () => RestorePhotoCameraView(
         cameraController: _cameraController,
         captureModeController: captureModeController,
         isDocumentDetected: _isDocumentDetected,
@@ -3017,7 +3017,7 @@ class _CameraScreenState extends State<CameraScreen>
       // Эко-упаковка — фото-режим авто-сканирования (как «Восстановить»),
       // но снимок уходит в эко-анализ. Переиспользуем тот же вью с зелёным
       // оверлеем и эко-заголовком.
-      'Эко упаковка': () => RestorePhotoCameraView(
+      Feat.eco: () => RestorePhotoCameraView(
         cameraController: _cameraController,
         captureModeController: captureModeController,
         isDocumentDetected: _isDocumentDetected,
@@ -3034,7 +3034,7 @@ class _CameraScreenState extends State<CameraScreen>
         featureSubtitle: AppLocalizations.of(context).ecoCameraHint,
         overlayKind: CaptureStatusOverlayKind.eco,
       ),
-      'Убрать пятна': () => RemoveSpotsCameraView(
+      Feat.removeSpots: () => RemoveSpotsCameraView(
         cameraController: _cameraController,
         captureModeController: captureModeController,
         isDocumentDetected: _isDocumentDetected,
@@ -3046,7 +3046,7 @@ class _CameraScreenState extends State<CameraScreen>
         onBack: () => Navigator.pop(context),
         onSettings: _openSettings,
       ),
-      'Удалить водяной знак': () => RemoveWatermarkCameraView(
+      Feat.removeWatermark: () => RemoveWatermarkCameraView(
         cameraController: _cameraController,
         captureModeController: captureModeController,
         isDocumentDetected: _isDocumentDetected,
@@ -3060,14 +3060,14 @@ class _CameraScreenState extends State<CameraScreen>
         onBack: () => Navigator.pop(context),
         onSettings: _openSettings,
       ),
-      'OCR': () => OcrCameraView(
+      Feat.ocr: () => OcrCameraView(
         cameraController: _cameraController,
         onCapture: _captureForOcr,
         onPickGallery: _pickImageForOcr,
         onBack: () => Navigator.pop(context),
         onSettings: _openSettings,
       ),
-      'Сканер qr-код': () => _buildQrCodeView(),
+      Feat.qrScanner: () => _buildQrCodeView(),
     };
 
     Widget currentCameraView =
@@ -3086,7 +3086,7 @@ class _CameraScreenState extends State<CameraScreen>
     // исключён — отдельный плагин рисовал своё превью).
     final bool showPersistentPreview =
         _isCameraInitialized && _cameraController != null;
-    final bool isTranslateSelected = _selectedFeature == 'Перевод';
+    final bool isTranslateSelected = _selectedFeature == Feat.translate;
 
     return Scaffold(
       backgroundColor: Colors.black,
