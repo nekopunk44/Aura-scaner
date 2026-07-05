@@ -977,13 +977,20 @@ class _CameraScreenState extends State<CameraScreen>
         hasContrast;
   }
 
+  // Зоны live-детектора должны совпадать с рамками-трафаретами
+  // (DocumentGuideFrame в id_card_camera/passport_camera): пользователь
+  // кладёт документ в рамку, и детектор ищет края именно там. Вертикальные
+  // границы посчитаны из геометрии рамки (widthFactor 0.85, aspect карты
+  // 1.586 / паспорта 1.42, verticalAlignment -0.25 / -0.42) для экранов
+  // с соотношением сторон 1.9–2.3; три варианта дают допуск.
   List<_DocumentFrameSpec> _frameSpecsForFeature(String featureName) {
     switch (featureName) {
       case Feat.idCard:
+        // Рамка ID-карты: верх ~0.27–0.29 H, низ ~0.52–0.55 H.
         return const [
-          _DocumentFrameSpec(left: 0.08, right: 0.92, top: 0.27, bottom: 0.57),
-          _DocumentFrameSpec(left: 0.05, right: 0.95, top: 0.23, bottom: 0.61),
-          _DocumentFrameSpec(left: 0.10, right: 0.90, top: 0.31, bottom: 0.65),
+          _DocumentFrameSpec(left: 0.08, right: 0.92, top: 0.27, bottom: 0.53),
+          _DocumentFrameSpec(left: 0.05, right: 0.95, top: 0.24, bottom: 0.57),
+          _DocumentFrameSpec(left: 0.10, right: 0.90, top: 0.30, bottom: 0.50),
         ];
       case Feat.document:
       case Feat.plus10Pages:
@@ -994,14 +1001,11 @@ class _CameraScreenState extends State<CameraScreen>
         ];
       case Feat.passport:
       default:
+        // Рамка паспорта: верх ~0.20–0.22 H, низ ~0.48–0.51 H.
         return const [
-          // Паспортный overlay заметно ниже верхней кромки экрана, поэтому
-          // live-детектор должен смотреть в ту же область. Старые значения
-          // были слишком высокими и широкими, из-за чего «паспорт» находился
-          // на фоне без документа.
-          _DocumentFrameSpec(left: 0.08, right: 0.92, top: 0.14, bottom: 0.68),
-          _DocumentFrameSpec(left: 0.06, right: 0.94, top: 0.11, bottom: 0.71),
-          _DocumentFrameSpec(left: 0.10, right: 0.90, top: 0.17, bottom: 0.65),
+          _DocumentFrameSpec(left: 0.08, right: 0.92, top: 0.20, bottom: 0.49),
+          _DocumentFrameSpec(left: 0.06, right: 0.94, top: 0.17, bottom: 0.53),
+          _DocumentFrameSpec(left: 0.10, right: 0.90, top: 0.23, bottom: 0.46),
         ];
     }
   }
