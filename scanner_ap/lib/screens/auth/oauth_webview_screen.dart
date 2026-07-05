@@ -50,21 +50,66 @@ class _OAuthBottomSheetState extends State<_OAuthBottomSheet> {
     } catch (_) {}
   }
 
+  /// Тёмная тема для OAuth-страниц (Telegram/Google не поддерживают
+  /// prefers-color-scheme внутри WebView и всегда рендерятся белыми).
+  /// Инвертируем светлые страницы CSS-фильтром (как Dark Reader), картинки
+  /// и видео инвертируем обратно, чтобы логотипы/аватарки остались нормальными.
+  /// Собственные страницы бэкенда (успех входа) уже тёмные — проверка яркости
+  /// фона пропускает их без инверсии.
+  static const String _darkModeJs = '''
+(function () {
+  if (document.getElementById('__auraDark')) return;
+  var el = document.body || document.documentElement;
+  var bg = getComputedStyle(el).backgroundColor;
+  var m = bg ? bg.match(/[\\d.]+/g) : null;
+  var light = true;
+  if (m && m.length >= 3) {
+    var a = m.length > 3 ? parseFloat(m[3]) : 1;
+    if (a > 0.01) {
+      light = (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) > 140;
+    }
+  }
+  if (!light) return; // страница уже тёмная — не трогаем
+  var s = document.createElement('style');
+  s.id = '__auraDark';
+  s.textContent =
+    'html{filter:invert(0.92) hue-rotate(180deg)!important;' +
+    'background:#fff!important}' +
+    'img,video,picture,canvas,iframe' +
+    '{filter:invert(1) hue-rotate(180deg)!important}';
+  (document.head || document.documentElement).appendChild(s);
+})();
+''';
+
   @override
   void initState() {
     super.initState();
     _controller = _buildController(_handleUri);
+    // Фон под страницей: в тёмной теме убирает белую вспышку при загрузке.
+    _controller.setBackgroundColor(
+      widget.isDark ? const Color(0xFF1A2332) : const Color(0xFFF5F9FF),
+    );
     _controller.setNavigationDelegate(
       NavigationDelegate(
         onPageStarted: (_) {
           if (mounted) setState(() => _loading = true);
         },
+        onProgress: (progress) {
+          // Инъекция как можно раньше (до полной загрузки), чтобы страница
+          // не мигала белым, пока грузятся ресурсы.
+          if (widget.isDark && progress >= 60) {
+            _controller.runJavaScript(_darkModeJs);
+          }
+        },
         onPageFinished: (_) {
           if (mounted) setState(() => _loading = false);
-          final scheme = widget.isDark ? 'dark' : 'light';
-          _controller.runJavaScript(
-            "document.documentElement.style.colorScheme = '$scheme';",
-          );
+          if (widget.isDark) {
+            _controller.runJavaScript(_darkModeJs);
+          } else {
+            _controller.runJavaScript(
+              "document.documentElement.style.colorScheme = 'light';",
+            );
+          }
         },
         onNavigationRequest: (req) {
           final url = req.url;
