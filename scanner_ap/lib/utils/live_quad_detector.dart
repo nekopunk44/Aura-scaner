@@ -24,6 +24,25 @@ List<Offset>? detectPhotoQuad(
   int height, {
   bool lowContrast = false,
 }) {
+  final candidates = detectPhotoQuads(
+    gray,
+    width,
+    height,
+    lowContrast: lowContrast,
+  );
+  return candidates.isEmpty ? null : candidates.first;
+}
+
+/// Как [detectPhotoQuad], но возвращает ВСЕХ прошедших фильтры кандидатов,
+/// отсортированных по убыванию площади. Нужно, когда искомый документ — не
+/// самый большой прямоугольник сцены (например, страница паспорта на полу:
+/// контур пола/ковра крупнее и «побеждал» бы по площади).
+List<List<Offset>> detectPhotoQuads(
+  List<int> gray,
+  int width,
+  int height, {
+  bool lowContrast = false,
+}) {
   cv.Mat? mat, blurred, edges, kernel, closed;
   cv.VecVecPoint? contours;
   try {
@@ -45,13 +64,13 @@ List<Offset>? detectPhotoQuad(
     contours = cnts;
 
     final double imgArea = (width * height).toDouble();
-    List<List<double>>? best;
-    double bestArea = 0;
+    // Кандидаты: (площадь, квад) — потом сортируем по убыванию площади.
+    final found = <(double, List<List<double>>)>[];
 
     for (final c in contours) {
       final double area = cv.contourArea(c);
       // Фото должно занимать заметную часть кадра, но не весь экран целиком.
-      if (area < imgArea * 0.10 || area > imgArea * 0.985) continue;
+      if (area < imgArea * 0.06 || area > imgArea * 0.985) continue;
 
       List<List<double>>? quad;
       double rectangularity = 1.0;
@@ -81,28 +100,30 @@ List<Offset>? detectPhotoQuad(
 
       if (quad == null) continue;
       if (rectangularity < 0.6) continue; // отбрасываем «рваные» формы
-      if (area <= bestArea) continue;
-      bestArea = area;
-      best = quad;
+      found.add((area, quad));
     }
 
     // Редкая диагностика: видно, находятся ли контуры и почему отбраковка.
     if ((_diagCounter++ % 12) == 0) {
       debugPrint('detectPhotoQuad: контуров=${contours.length} '
-          'лучший=${(bestArea / imgArea * 100).toStringAsFixed(0)}% '
-          '→ ${best == null ? "null" : "quad"}');
+          'кандидатов=${found.length}');
     }
 
-    if (best == null) return null;
-    final ordered = _orderCorners(best);
-    return ordered
-        .map((p) => Offset(p[0] / width, p[1] / height))
+    if (found.isEmpty) return const [];
+    found.sort((a, b) => b.$1.compareTo(a.$1));
+    return found
+        .take(5)
+        .map(
+          (entry) => _orderCorners(entry.$2)
+              .map((p) => Offset(p[0] / width, p[1] / height))
+              .toList(growable: false),
+        )
         .toList(growable: false);
   } catch (e) {
     if ((_diagCounter++ % 12) == 0) {
       debugPrint('detectPhotoQuad: ошибка $e');
     }
-    return null;
+    return const [];
   } finally {
     mat?.dispose();
     blurred?.dispose();

@@ -616,12 +616,30 @@ class _CameraScreenState extends State<CameraScreen>
       targetHeight: targetHeight,
     );
     // Паспортные страницы — светлые/«пустоватые», как лист документа.
-    final quad = detectPhotoQuad(
-      gray,
-      targetWidth,
-      targetHeight,
-      lowContrast: isDoc || featureName == Feat.passport,
-    );
+    // Для паспорта/ID берём ВСЕХ кандидатов и выбираем похожего на документ:
+    // самый большой прямоугольник сцены — часто пол/ковёр, а не документ.
+    List<Offset>? quad;
+    if (isIdPass) {
+      final candidates = detectPhotoQuads(
+        gray,
+        targetWidth,
+        targetHeight,
+        lowContrast: true,
+      );
+      for (final candidate in candidates) {
+        if (_quadLooksLikeFramedDocument(candidate, image, featureName)) {
+          quad = candidate;
+          break;
+        }
+      }
+    } else {
+      quad = detectPhotoQuad(
+        gray,
+        targetWidth,
+        targetHeight,
+        lowContrast: isDoc,
+      );
+    }
 
     if ((_quadDiagCounter++ % 12) == 0) {
       debugPrint(
@@ -635,15 +653,9 @@ class _CameraScreenState extends State<CameraScreen>
       _photoQuad.value = null;
       return false;
     }
-
-    // Паспорт/ID: квад должен быть похож на документ в рамке-трафарете, а не
-    // на случайный «прямоугольник» из стыков половиц/края ковра. Проверяем
-    // геометрию: ландшафтная ориентация, правдоподобный аспект, положение по
-    // вертикали в зоне рамки и разумный размер.
-    if (isIdPass && !_quadLooksLikeFramedDocument(quad, image, featureName)) {
-      _photoQuad.value = null;
-      return false;
-    }
+    // Локальная non-null копия: промоушен nullable-переменной не действует
+    // внутри замыкания List.generate ниже.
+    final resolvedQuad = quad;
 
     final prev = _photoQuad.value;
     if (prev != null && prev.length == 4) {
@@ -651,13 +663,13 @@ class _CameraScreenState extends State<CameraScreen>
       _photoQuad.value = List<Offset>.generate(
         4,
         (i) => Offset(
-          prev[i].dx + (quad[i].dx - prev[i].dx) * a,
-          prev[i].dy + (quad[i].dy - prev[i].dy) * a,
+          prev[i].dx + (resolvedQuad[i].dx - prev[i].dx) * a,
+          prev[i].dy + (resolvedQuad[i].dy - prev[i].dy) * a,
         ),
         growable: false,
       );
     } else {
-      _photoQuad.value = quad;
+      _photoQuad.value = resolvedQuad;
     }
     return true;
   }
