@@ -21,6 +21,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
@@ -153,6 +154,11 @@ class _CameraScreenState extends State<CameraScreen>
   };
 
   final List<Map<String, dynamic>> _features = [...cameraFeatures];
+  // Ключи пилюль селектора: ширина выбранной пилюли отличается от остальных,
+  // поэтому центрирование делаем через Scrollable.ensureVisible, а не
+  // арифметикой фиксированной ширины тайла.
+  late final List<GlobalKey> _featureKeys =
+      List.generate(_features.length, (_) => GlobalKey());
   late String _selectedFeature;
   String _pageMode = '1 страница';
 
@@ -2308,48 +2314,52 @@ class _CameraScreenState extends State<CameraScreen>
     await _openPreview(imageFile: galleryImage, isTwoPage: false);
   }
 
-  void _scrollToSelectedFeature() {
-    if (!mounted) return;
+  void _scrollToSelectedFeature([int attempt = 0]) {
+    if (!mounted || attempt > 4) return;
 
     final index = _features.indexWhere((f) => f['name'] == _selectedFeature);
     if (index == -1) return;
 
+    // Пилюли разной ширины (выбранная раскрыта с названием), поэтому
+    // центрируем через ensureVisible по ключу тайла, а не расчётом offset'а.
+    final tileContext = _featureKeys[index].currentContext;
+    if (tileContext != null) {
+      Scrollable.ensureVisible(
+        tileContext,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
+      _isInitialScrollDone = true;
+      return;
+    }
+
     if (!_featureScrollController.hasClients) {
       Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted && _featureScrollController.hasClients) {
-          _scrollToSelectedFeature();
+          _scrollToSelectedFeature(attempt + 1);
         }
       });
       return;
     }
 
-    // Значения ДОЛЖНЫ совпадать с _buildFeatureSelector: ширина тайла
-    // зависит от компактности экрана, а у ListView есть ведущий padding 12.
-    // Раньше здесь были захардкожены 120/360 — из-за завышенной itemWidth
-    // расчёт давал перелёт, и выбранный режим (например «Перевод») уезжал
-    // за левый край («вод» вместо «Перевод»).
-    final isCompact = MediaQuery.of(context).size.width < 360;
-    final double itemWidth = isCompact ? 72.0 : 84.0;
-    const double leadingPadding = 12.0;
+    // Тайл ещё не смонтирован (первый кадр): прыжок по фиксированной ширине
+    // слота, затем точная центровка через ensureVisible на следующем кадре.
+    const double leadingPadding = 6.0;
     final double viewportWidth =
         _featureScrollController.position.viewportDimension;
-
-    // Центр выбранного тайла в координатах контента, центрируем в вьюпорте.
-    final double itemCenter =
-        leadingPadding + index * itemWidth + itemWidth / 2;
+    final double itemCenter = leadingPadding +
+        index * _kFeatureSlotWidth +
+        _kFeatureSlotWidth / 2;
     final double targetOffset = itemCenter - (viewportWidth / 2);
 
     final maxOffset = _featureScrollController.position.maxScrollExtent;
     final minOffset = _featureScrollController.position.minScrollExtent;
-    final constrainedOffset = targetOffset.clamp(minOffset, maxOffset);
+    _featureScrollController.jumpTo(targetOffset.clamp(minOffset, maxOffset));
 
-    _featureScrollController.animateTo(
-      constrainedOffset,
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeOutCubic,
-    );
-
-    _isInitialScrollDone = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _scrollToSelectedFeature(attempt + 1);
+    });
   }
 
   Future<void> _launchInBrowser(String string) async {
@@ -2880,29 +2890,22 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
+  // Ширина слота иконки в стеклянной панели (фиксированная — по ней же
+  // считается позиция скользящей подсветки и центрирование скролла).
+  static const double _kFeatureSlotWidth = 56;
+
   Widget _buildFeatureSelector() {
-    final mq = MediaQuery.of(context);
     final l10n = AppLocalizations.of(context);
-    final isCompact = mq.size.width < 360;
-    final tileWidth = isCompact ? 72.0 : 84.0;
-    final fontSize = isCompact ? 10.5 : 11.5;
-    final iconSize = isCompact ? 20.0 : 24.0;
-    final horizontalPad = isCompact ? 8.0 : 10.0;
+    final selIndex =
+        _features.indexWhere((f) => f['name'] == _selectedFeature);
 
-    return SizedBox(
-      height: isCompact ? 82 : 90,
-      child: ListView.builder(
-        controller: _featureScrollController,
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemCount: _features.length,
-        itemBuilder: (context, index) {
-          final feature = _features[index];
-          final newFeature = feature['name']!;
-          final isSelected = _selectedFeature == newFeature;
-          final isPremiumFeature = _isPremiumFeatureName(newFeature);
+    Widget buildItem(int index) {
+      final feature = _features[index];
+      final newFeature = feature['name']!;
+      final isSelected = _selectedFeature == newFeature;
+      final isPremiumFeature = _isPremiumFeatureName(newFeature);
 
-          return GestureDetector(
+      return GestureDetector(
             onTap: () {
               if (newFeature == Feat.importDocs) {
                 final cameraContext = context;
@@ -3002,104 +3005,149 @@ class _CameraScreenState extends State<CameraScreen>
                 }
               });
             },
-            child: SizedBox(
-              width: tileWidth,
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: horizontalPad * 0.4),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Выбранный кружок «подпрыгивает» (scale с overshoot),
-                    // невыбранные слегка ужаты — переключение читается как
-                    // живое перемещение фокуса, а не мгновенная перекраска.
-                    AnimatedScale(
-                      scale: isSelected ? 1.0 : 0.86,
-                      duration: const Duration(milliseconds: 280),
-                      curve: Curves.easeOutBack,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 280),
-                        curve: Curves.easeOut,
-                        width: isCompact ? 40 : 48,
-                        height: isCompact ? 40 : 48,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: isSelected
-                              ? const Color(0xFF2CA5E0)
-                              : Colors.white.withValues(alpha: 0.14),
-                          boxShadow: isSelected
-                              ? [
-                                  BoxShadow(
-                                    color: const Color(
-                                      0xFF2CA5E0,
-                                    ).withValues(alpha: 0.55),
-                                    blurRadius: 14,
-                                    spreadRadius: 1,
-                                  ),
-                                ]
-                              : null,
-                        ),
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Center(
-                              child: AnimatedOpacity(
-                                duration: const Duration(milliseconds: 280),
-                                opacity: isSelected ? 1.0 : 0.72,
-                                child: Icon(
-                                  feature['icon'] ?? Icons.circle,
-                                  size: iconSize,
-                                  color: Colors.white,
-                                ),
+        child: SizedBox(
+          key: _featureKeys[index],
+          width: _kFeatureSlotWidth,
+          height: 56,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Center(
+                child: AnimatedScale(
+                  scale: isSelected ? 1.0 : 0.88,
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeOutBack,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 250),
+                    opacity: isSelected ? 1.0 : 0.62,
+                    child: Icon(
+                      feature['icon'] as IconData? ?? Icons.circle,
+                      size: 22,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+              if (isPremiumFeature)
+                Positioned(
+                  right: 10,
+                  top: 8,
+                  child: Icon(
+                    Icons.workspace_premium,
+                    size: 11,
+                    color: Colors.amber.shade300,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Название выбранного режима — НАД панелью (между панелью и затвором
+        // ему тесно), со сменой через fade+slide.
+        SizedBox(
+          height: 18,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.4),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+            child: Text(
+              selIndex < 0 ? '' : _featureLabel(_features[selIndex], l10n),
+              key: ValueKey<String>(_selectedFeature),
+              maxLines: 1,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+                shadows: [Shadow(blurRadius: 8, color: Colors.black87)],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Стеклянная капсула: blur-подложка, внутри иконки режимов и
+        // скользящая градиентная подсветка под выбранной.
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              child: Container(
+                height: 56,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.30),
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.16),
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  controller: _featureScrollController,
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Stack(
+                    children: [
+                      // Подсветка «перетекает» к выбранной иконке.
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 380),
+                        curve: Curves.easeOutBack,
+                        left: (selIndex < 0 ? 0 : selIndex) *
+                                _kFeatureSlotWidth +
+                            (_kFeatureSlotWidth - 44) / 2,
+                        top: 6,
+                        width: 44,
+                        height: 44,
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 200),
+                          opacity: selIndex < 0 ? 0 : 1,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: const LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [Color(0xFF35B4F4), Color(0xFF1687D5)],
                               ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF2CA5E0)
+                                      .withValues(alpha: 0.55),
+                                  blurRadius: 14,
+                                  spreadRadius: 1,
+                                ),
+                              ],
                             ),
-                            if (isPremiumFeature)
-                              Positioned(
-                                right: isCompact ? 6 : 8,
-                                top: isCompact ? 6 : 8,
-                                child: Icon(
-                                  Icons.workspace_premium,
-                                  size: isCompact ? 11 : 12,
-                                  color: Colors.amber.shade300,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      height: 14,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: AnimatedDefaultTextStyle(
-                          duration: const Duration(milliseconds: 280),
-                          curve: Curves.easeOut,
-                          style: TextStyle(
-                            fontSize: fontSize,
-                            height: 1.0,
-                            color: isSelected
-                                ? Colors.white
-                                : Colors.white.withValues(alpha: 0.7),
-                            fontWeight: isSelected
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                          ),
-                          child: Text(
-                            _featureLabel(feature, l10n),
-                            maxLines: 1,
-                            textAlign: TextAlign.center,
-                            softWrap: false,
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                      Row(
+                        children: [
+                          for (var i = 0; i < _features.length; i++)
+                            buildItem(i),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          );
-        },
-      ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -3372,36 +3420,18 @@ class _CameraScreenState extends State<CameraScreen>
           ),
           Positioned(
             // CameraControlsBar (child-view bottom-bar) уже включает
-            // SafeArea и сам встаёт на bottom:0. Селектор сидит точно над
-            // ним — высота bar'а ~78 + 32 padding + safeBottom; берём
-            // 110 + safeBottom как стабильный отступ.
-            bottom: MediaQuery.of(context).padding.bottom + (isTranslateSelected ? 96 : 110),
+            // SafeArea и сам встаёт на bottom:0. Стеклянная панель висит над
+            // ним с чётким зазором; тёмной полосы-подложки на всю ширину
+            // больше нет — капсула сама даёт фон (blur + затемнение).
+            bottom: MediaQuery.of(context).padding.bottom +
+                (isTranslateSelected ? 104 : 122),
             left: 0,
             right: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(
-                  alpha: isTranslateSelected ? 0.22 : 0.12,
-                ),
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withValues(
-                      alpha: isTranslateSelected ? 0.1 : 0,
-                    ),
-                    Colors.black.withValues(
-                      alpha: isTranslateSelected ? 0.55 : 0.35,
-                    ),
-                  ],
-                ),
-              ),
-              child: _buildFeatureSelector(),
-            ),
+            child: _buildFeatureSelector(),
           ),
         ],
       ),
     );
   }
 }
+
