@@ -645,10 +645,25 @@ class _CameraScreenState extends State<CameraScreen>
         lowContrast: true,
       );
       for (final candidate in candidates) {
-        if (_quadLooksLikeFramedDocument(candidate, image, featureName)) {
-          quad = candidate;
-          break;
+        if (!_quadLooksLikeFramedDocument(candidate, image, featureName)) {
+          continue;
         }
+        // Bounding box кандидата: края документа должны заканчиваться на
+        // углах, сквозные линии сцены (ковёр/половицы) отбрасываем.
+        final xs = candidate.map((p) => p.dx * targetWidth);
+        final ys = candidate.map((p) => p.dy * targetHeight);
+        final bboxLeft = xs.reduce(math.min).round();
+        final bboxRight = xs.reduce(math.max).round();
+        final bboxTop = ys.reduce(math.min).round();
+        final bboxBottom = ys.reduce(math.max).round();
+        if (_rectHasThroughEdges(
+          gray, targetWidth, targetHeight,
+          bboxLeft, bboxTop, bboxRight, bboxBottom,
+        )) {
+          continue;
+        }
+        quad = candidate;
+        break;
       }
     } else {
       quad = detectPhotoQuad(
@@ -690,6 +705,55 @@ class _CameraScreenState extends State<CameraScreen>
       _photoQuad.value = resolvedQuad;
     }
     return true;
+  }
+
+  /// true, если какая-то сторона прямоугольника — «сквозная» линия сцены:
+  /// граница ковра через весь кадр, стык половиц во всю ширину и т.п. —
+  /// линия продолжается с сопоставимой силой ЗА пределами прямоугольника.
+  /// У настоящего документа края заканчиваются на его углах, поэтому
+  /// продолжения слабые. Главный фильтр ложных срабатываний на полу/ковре.
+  bool _rectHasThroughEdges(
+    List<int> gray,
+    int w,
+    int h,
+    int left,
+    int top,
+    int right,
+    int bottom,
+  ) {
+    final rectH = bottom - top;
+    final rectW = right - left;
+    if (rectH < 12 || rectW < 12) return true;
+    final extV = (rectH * 0.45).round();
+    final extH = (rectW * 0.45).round();
+
+    double vScore(int x, int y0, int y1) =>
+        (y1 - y0 < 8) ? 0 : _verticalLineScore(gray, w, h, x, y0, y1);
+    double hScore(int y, int x0, int x1) =>
+        (x1 - x0 < 8) ? 0 : _horizontalLineScore(gray, w, h, y, x0, x1);
+
+    bool through(double edgeScore, double contA, double contB) {
+      if (edgeScore <= 0) return false;
+      return math.max(contA, contB) > edgeScore * 0.62;
+    }
+
+    // Вертикальные края: есть ли продолжение выше top / ниже bottom.
+    for (final x in [left, right]) {
+      if (x < 3 || x > w - 4) continue;
+      final edge = vScore(x, top + 2, bottom - 2);
+      final above = vScore(x, math.max(3, top - extV), top - 3);
+      final below = vScore(x, bottom + 3, math.min(h - 4, bottom + extV));
+      if (through(edge, above, below)) return true;
+    }
+    // Горизонтальные края: есть ли продолжение левее left / правее right.
+    for (final y in [top, bottom]) {
+      if (y < 3 || y > h - 4) continue;
+      final edge = hScore(y, left + 2, right - 2);
+      final contLeft = hScore(y, math.max(3, left - extH), left - 3);
+      final contRight = hScore(y, right + 3, math.min(w - 4, right + extH));
+      if (through(edge, contLeft, contRight)) return true;
+    }
+    return false;
   }
 
   /// Поиск документа в зоне рамки сканированием краёв: для каждой из четырёх
@@ -803,6 +867,14 @@ class _CameraScreenState extends State<CameraScreen>
     if (aspect < 0.5 || aspect > 2.4) return false;
     final double centerY = (topY + bottomY) / 2 / targetHeight;
     if (centerY < zoneTopF || centerY > zoneBottomF) return false;
+
+    // Края документа должны заканчиваться на углах: сквозные линии сцены
+    // (граница ковра, стык половиц) — не документ.
+    if (_rectHasThroughEdges(
+      gray, targetWidth, targetHeight, leftX, topY, rightX, bottomY,
+    )) {
+      return false;
+    }
 
     return true;
   }
