@@ -2345,8 +2345,8 @@ class _CameraScreenState extends State<CameraScreen>
 
     _featureScrollController.animateTo(
       constrainedOffset,
-      duration: const Duration(milliseconds: 500),
-      curve: Curves.easeInOut,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
     );
 
     _isInitialScrollDone = true;
@@ -2935,6 +2935,7 @@ class _CameraScreenState extends State<CameraScreen>
               }
 
               _cancelAutoCapture();
+              HapticFeedback.selectionClick();
               setState(() {
                 _selectedFeature = newFeature;
                 _pageMode = '1 страница';
@@ -3008,49 +3009,61 @@ class _CameraScreenState extends State<CameraScreen>
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeOut,
-                      width: isCompact ? 40 : 48,
-                      height: isCompact ? 40 : 48,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isSelected
-                            ? const Color(0xFF2CA5E0)
-                            : Colors.white.withValues(alpha: 0.14),
-                        boxShadow: isSelected
-                            ? [
-                                BoxShadow(
-                                  color: const Color(
-                                    0xFF2CA5E0,
-                                  ).withValues(alpha: 0.55),
-                                  blurRadius: 14,
-                                  spreadRadius: 1,
+                    // Выбранный кружок «подпрыгивает» (scale с overshoot),
+                    // невыбранные слегка ужаты — переключение читается как
+                    // живое перемещение фокуса, а не мгновенная перекраска.
+                    AnimatedScale(
+                      scale: isSelected ? 1.0 : 0.86,
+                      duration: const Duration(milliseconds: 280),
+                      curve: Curves.easeOutBack,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 280),
+                        curve: Curves.easeOut,
+                        width: isCompact ? 40 : 48,
+                        height: isCompact ? 40 : 48,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isSelected
+                              ? const Color(0xFF2CA5E0)
+                              : Colors.white.withValues(alpha: 0.14),
+                          boxShadow: isSelected
+                              ? [
+                                  BoxShadow(
+                                    color: const Color(
+                                      0xFF2CA5E0,
+                                    ).withValues(alpha: 0.55),
+                                    blurRadius: 14,
+                                    spreadRadius: 1,
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Center(
+                              child: AnimatedOpacity(
+                                duration: const Duration(milliseconds: 280),
+                                opacity: isSelected ? 1.0 : 0.72,
+                                child: Icon(
+                                  feature['icon'] ?? Icons.circle,
+                                  size: iconSize,
+                                  color: Colors.white,
                                 ),
-                              ]
-                            : null,
-                      ),
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Center(
-                            child: Icon(
-                              feature['icon'] ?? Icons.circle,
-                              size: iconSize,
-                              color: Colors.white,
-                            ),
-                          ),
-                          if (isPremiumFeature)
-                            Positioned(
-                              right: isCompact ? 6 : 8,
-                              top: isCompact ? 6 : 8,
-                              child: Icon(
-                                Icons.workspace_premium,
-                                size: isCompact ? 11 : 12,
-                                color: Colors.amber.shade300,
                               ),
                             ),
-                        ],
+                            if (isPremiumFeature)
+                              Positioned(
+                                right: isCompact ? 6 : 8,
+                                top: isCompact ? 6 : 8,
+                                child: Icon(
+                                  Icons.workspace_premium,
+                                  size: isCompact ? 11 : 12,
+                                  color: Colors.amber.shade300,
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -3058,11 +3071,9 @@ class _CameraScreenState extends State<CameraScreen>
                       height: 14,
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
-                        child: Text(
-                          _featureLabel(feature, l10n),
-                          maxLines: 1,
-                          textAlign: TextAlign.center,
-                          softWrap: false,
+                        child: AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 280),
+                          curve: Curves.easeOut,
                           style: TextStyle(
                             fontSize: fontSize,
                             height: 1.0,
@@ -3072,6 +3083,12 @@ class _CameraScreenState extends State<CameraScreen>
                             fontWeight: isSelected
                                 ? FontWeight.w700
                                 : FontWeight.w500,
+                          ),
+                          child: Text(
+                            _featureLabel(feature, l10n),
+                            maxLines: 1,
+                            textAlign: TextAlign.center,
+                            softWrap: false,
                           ),
                         ),
                       ),
