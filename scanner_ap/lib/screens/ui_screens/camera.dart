@@ -2351,7 +2351,7 @@ class _CameraScreenState extends State<CameraScreen>
 
     // Тайл ещё не смонтирован (первый кадр): прыжок по фиксированной ширине
     // слота, затем точная центровка через ensureVisible на следующем кадре.
-    const double leadingPadding = 6.0;
+    const double leadingPadding = 2.0;
     final double viewportWidth =
         _featureScrollController.position.viewportDimension;
     final double itemCenter = leadingPadding +
@@ -2900,12 +2900,13 @@ class _CameraScreenState extends State<CameraScreen>
   // считается позиция скользящей подсветки и центрирование скролла).
   static const double _kFeatureSlotWidth = 64;
   static const double _kFeaturePanelHeight = 64;
-  // Подсветка почти заполняет слот (равные тонкие отступы со всех сторон).
-  // Радиус концентричен скруглению самой панели: радиус панели (32) минус
-  // отступ подсветки (5) — торцы подсветки повторяют форму капсулы.
+  // Подсветка почти заполняет слот, отступы РАВНЫЕ со всех сторон (5px с
+  // учётом рамки капсулы): вертикально (64 - 2 рамка - 52)/2 = 5; сбоку у
+  // крайнего слота — паддинг ленты 2 + внутрислотовый отступ 3 = 5.
+  // Радиус концентричен скруглению панели (32 - 5 отступ ≈ 26).
   static const double _kFeatureGlowWidth = 58;
-  static const double _kFeatureGlowHeight = 54;
-  static const double _kFeatureGlowRadius = 27;
+  static const double _kFeatureGlowHeight = 52;
+  static const double _kFeatureGlowRadius = 26;
 
   Widget _buildFeatureSelector() {
     final l10n = AppLocalizations.of(context);
@@ -3111,7 +3112,7 @@ class _CameraScreenState extends State<CameraScreen>
                 child: SingleChildScrollView(
                   controller: _featureScrollController,
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
                   child: Stack(
                     children: [
                       // Подсветка «перетекает» к выбранной иконке: градиент,
@@ -3124,7 +3125,10 @@ class _CameraScreenState extends State<CameraScreen>
                         left: (selIndex < 0 ? 0 : selIndex) *
                                 _kFeatureSlotWidth +
                             (_kFeatureSlotWidth - _kFeatureGlowWidth) / 2,
-                        top: (_kFeaturePanelHeight - _kFeatureGlowHeight) / 2,
+                        // -2: рамка капсулы (1px сверху и снизу) съедает
+                        // высоту Stack — иначе подсветка смещена вниз на 1px.
+                        top: (_kFeaturePanelHeight - 2 - _kFeatureGlowHeight) /
+                            2,
                         width: _kFeatureGlowWidth,
                         height: _kFeatureGlowHeight,
                         child: AnimatedOpacity(
