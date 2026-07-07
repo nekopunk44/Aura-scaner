@@ -15,12 +15,14 @@ import 'package:path_provider/path_provider.dart';
 ///
 /// If confidence is low, the original file is returned unchanged.
 class PassportScanner {
-  static const int _procWidth = 600;
+  static const int _procWidth = 800;
   static const double _minAreaRatio = 0.05;
   static const double _maxAreaRatio = 0.99;
-  static const double _minRectangularity = 0.70;
-  static const double _minAspectRatio = 1.18;
-  static const double _maxAspectRatio = 1.90;
+  // Порог мягче, чем раньше (0.70): рука, держащая страницу, «портит»
+  // прямоугольность блоба сегментации, и обрезка отваливалась целиком.
+  static const double _minRectangularity = 0.64;
+  static const double _minAspectRatio = 1.10;
+  static const double _maxAspectRatio = 2.00;
 
   static Future<File> autoCrop(File input) async {
     SubjectSegmenter? segmenter;
@@ -90,51 +92,18 @@ class PassportScanner {
       kernel = cv.getStructuringElement(cv.MORPH_RECT, (11, 11));
       closed = cv.morphologyEx(maskMat, cv.MORPH_CLOSE, kernel);
 
-      final (contours, hierarchy) = cv.findContours(
-        closed,
-        cv.RETR_EXTERNAL,
-        cv.CHAIN_APPROX_SIMPLE,
-      );
-      hierarchy.dispose();
-
       final imageArea = (_procWidth * procHeight).toDouble();
-      List<List<double>>? bestQuad;
-      var bestArea = 0.0;
 
-      for (final contour in contours) {
-        final area = cv.contourArea(contour);
-        if (area < imageArea * _minAreaRatio ||
-            area > imageArea * _maxAreaRatio) {
-          continue;
-        }
+      // Попытка 1 — по маске сегментации (надёжно на контрастном фоне).
+      List<List<double>>? bestQuad = _bestQuadFromBinary(closed, imageArea);
+      final bool maskFound = bestQuad != null;
 
-        final rect = cv.minAreaRect(contour);
-        final width = rect.size.width;
-        final height = rect.size.height;
-        final rectArea = width * height;
+      // Попытка 2 (фолбэк) — по краям (Canny): спасает, когда сегментация
+      // склеила страницу с рукой или посчитала «объектом» что-то другое.
+      bestQuad ??= _bestQuadByEdges(small, imageArea);
 
-        if (rectArea >= 1) {
-          final rectangularity = area / rectArea;
-          final longer = math.max(width, height);
-          final shorter = math.min(width, height);
-          final ratio = shorter < 1 ? 0.0 : longer / shorter;
-
-          if (rectangularity >= _minRectangularity &&
-              ratio >= _minAspectRatio &&
-              ratio <= _maxAspectRatio &&
-              area > bestArea) {
-            final corners = rect.points;
-            bestArea = area;
-            bestQuad = corners
-                .map((point) => [point.x.toDouble(), point.y.toDouble()])
-                .toList();
-            corners.dispose();
-          }
-        }
-
-        rect.dispose();
-      }
-      contours.dispose();
+      debugPrint('PassportScanner: маска=${maskFound ? "✓" : "✗"} '
+          'края=${maskFound ? "—" : (bestQuad != null ? "✓" : "✗")}');
 
       if (bestQuad == null) {
         debugPrint('PassportScanner: no suitable quad found, fallback');
@@ -198,6 +167,92 @@ class PassportScanner {
           await tempSmall.delete();
         } catch (_) {}
       }
+    }
+  }
+
+  /// Лучший четырёхугольник из контуров по гейтам (площадь, прямоугольность,
+  /// соотношение сторон). Координаты — в пикселях уменьшенной копии.
+  static List<List<double>>? _bestQuad(
+    cv.VecVecPoint contours,
+    double imageArea,
+  ) {
+    List<List<double>>? bestQuad;
+    var bestArea = 0.0;
+    for (final contour in contours) {
+      final area = cv.contourArea(contour);
+      if (area < imageArea * _minAreaRatio ||
+          area > imageArea * _maxAreaRatio) {
+        continue;
+      }
+      final rect = cv.minAreaRect(contour);
+      final width = rect.size.width;
+      final height = rect.size.height;
+      final rectArea = width * height;
+      if (rectArea >= 1) {
+        final rectangularity = area / rectArea;
+        final longer = math.max(width, height);
+        final shorter = math.min(width, height);
+        final ratio = shorter < 1 ? 0.0 : longer / shorter;
+        if (rectangularity >= _minRectangularity &&
+            ratio >= _minAspectRatio &&
+            ratio <= _maxAspectRatio &&
+            area > bestArea) {
+          final corners = rect.points;
+          bestArea = area;
+          bestQuad =
+              corners.map((p) => [p.x.toDouble(), p.y.toDouble()]).toList();
+          corners.dispose();
+        }
+      }
+      rect.dispose();
+    }
+    return bestQuad;
+  }
+
+  /// Поиск страницы по бинарной маске (сегментация).
+  static List<List<double>>? _bestQuadFromBinary(
+    cv.Mat binary,
+    double imageArea,
+  ) {
+    final (contours, hierarchy) = cv.findContours(
+      binary,
+      cv.RETR_EXTERNAL,
+      cv.CHAIN_APPROX_SIMPLE,
+    );
+    hierarchy.dispose();
+    final quad = _bestQuad(contours, imageArea);
+    contours.dispose();
+    return quad;
+  }
+
+  /// Поиск страницы по краям (Canny) — фолбэк, когда сегментация склеила
+  /// страницу с рукой или выбрала «объектом» что-то другое.
+  static List<List<double>>? _bestQuadByEdges(cv.Mat small, double imageArea) {
+    cv.Mat? gray, blurred, edges, kernel, closed;
+    cv.VecVecPoint? contours;
+    try {
+      gray = cv.cvtColor(small, cv.COLOR_BGR2GRAY);
+      blurred = cv.gaussianBlur(gray, (5, 5), 0);
+      // Пороги ниже, чем у DocumentScanner: страница паспорта на светлом
+      // полу даёт слабые края (бел-на-светлом).
+      edges = cv.canny(blurred, 40.0, 130.0);
+      kernel = cv.getStructuringElement(cv.MORPH_RECT, (9, 9));
+      closed = cv.morphologyEx(edges, cv.MORPH_CLOSE, kernel);
+      final (cnts, hierarchy) = cv.findContours(
+        closed,
+        cv.RETR_EXTERNAL,
+        cv.CHAIN_APPROX_SIMPLE,
+      );
+      hierarchy.dispose();
+      contours = cnts;
+      return _bestQuad(cnts, imageArea);
+    } finally {
+      gray?.dispose();
+      blurred?.dispose();
+      edges?.dispose();
+      kernel?.dispose();
+      closed?.dispose();
+      contours?.dispose();
     }
   }
 
