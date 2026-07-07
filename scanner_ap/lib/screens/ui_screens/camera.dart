@@ -726,6 +726,12 @@ class _CameraScreenState extends State<CameraScreen>
     if (rectH < 12 || rectW < 12) return true;
     final extV = (rectH * 0.45).round();
     final extH = (rectW * 0.45).round();
+    // Базовый уровень градиентного шума сцены: на фактурном ковре даже
+    // пустой сегмент даёт заметный line-score. Продолжение засчитываем
+    // только если оно САМО является сильной линией, а не шумом фона —
+    // иначе настоящий документ на ковре бракуется из-за текстуры вокруг.
+    final double globalEdge = _globalEdgeMean(gray, w, h);
+    final double lineFloor = math.max(globalEdge * 1.55, 10.0);
 
     double vScore(int x, int y0, int y1) =>
         (y1 - y0 < 8) ? 0 : _verticalLineScore(gray, w, h, x, y0, y1);
@@ -734,7 +740,9 @@ class _CameraScreenState extends State<CameraScreen>
 
     bool through(double edgeScore, double contA, double contB) {
       if (edgeScore <= 0) return false;
-      return math.max(contA, contB) > edgeScore * 0.62;
+      final cont = math.max(contA, contB);
+      if (cont < lineFloor) return false; // шум фона, не линия
+      return cont > edgeScore * 0.75;
     }
 
     // Вертикальные края: есть ли продолжение выше top / ниже bottom.
