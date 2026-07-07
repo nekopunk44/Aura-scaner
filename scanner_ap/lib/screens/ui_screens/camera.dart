@@ -3450,24 +3450,15 @@ class _CameraScreenState extends State<CameraScreen>
                 ? _buildAspectCorrectPreview(_cameraController!)
                 : const ColoredBox(color: Colors.black),
           ),
-          // Оверлей режима меняется с кроссфейдом + лёгким сдвигом снизу,
-          // а не мгновенно: превью камеры при этом стабильно, поэтому
-          // анимируется только UI-слой (рамки, кнопки, подписи).
+          // Оверлей режима меняется ЛИНЕЙНЫМ кроссфейдом без сдвига:
+          // альфы исходящего и входящего слоёв в сумме дают 1, поэтому
+          // одинаковые части интерфейса (верхняя панель, нижний бар)
+          // во время перехода выглядят неподвижными — «экран не мигает»,
+          // плавно меняется только то, что реально отличается между
+          // режимами (рамка, подписи, правые кнопки).
           Positioned.fill(
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 260),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.015),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                ),
-              ),
+              duration: const Duration(milliseconds: 200),
               child: KeyedSubtree(
                 key: ValueKey<String>(_selectedFeature),
                 child: currentCameraView,
