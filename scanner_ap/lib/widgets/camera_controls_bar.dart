@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'camera_capture_button.dart';
 
@@ -27,36 +29,58 @@ class CameraControlsBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final safeBottom = MediaQuery.of(context).padding.bottom;
 
-    return Container(
-      padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + safeBottom),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.5),
-      ),
-      child: SizedBox(
-        height: 78,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: _interleaveWithGaps(leftActions),
-              ),
+    // Стеклянный бар: скруглённые верхние углы (низ прижат к краю экрана),
+    // blur-подложка + вертикальный градиент затемнения и тонкая световая
+    // линия сверху — вместо плоской чёрной плашки.
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + safeBottom),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.30),
+                Colors.black.withValues(alpha: 0.55),
+              ],
             ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: _interleaveWithGaps(rightActions),
-              ),
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.10),
+              width: 1,
             ),
-            CameraCaptureButton(
-              onTap: onCapture,
-              isBusy: isBusy,
-              label: captureLabel,
+          ),
+          child: SizedBox(
+            height: 78,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: _interleaveWithGaps(leftActions),
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: _interleaveWithGaps(rightActions),
+                  ),
+                ),
+                CameraCaptureButton(
+                  onTap: onCapture,
+                  isBusy: isBusy,
+                  label: captureLabel,
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -88,7 +112,10 @@ class CameraGalleryBar extends StatelessWidget {
     final enabled = onGallery != null;
     return Container(
       padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + safeBottom),
-      decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5)),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.5),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       child: SizedBox(
         height: 78,
         child: Center(
@@ -143,7 +170,11 @@ class CameraActionIcon extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: enabled ? 0.16 : 0.07),
+          color: Colors.white.withValues(alpha: enabled ? 0.14 : 0.07),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: enabled ? 0.22 : 0.10),
+            width: 1.1,
+          ),
         ),
         child: Icon(
           icon,

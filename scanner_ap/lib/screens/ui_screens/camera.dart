@@ -96,7 +96,7 @@ class _DocumentFrameSpec {
 }
 
 class _CameraScreenState extends State<CameraScreen>
-    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   static const MethodChannel _nativeBridgeChannel = MethodChannel(
     'com.aurascanner.app/native_bridge',
   );
@@ -164,6 +164,11 @@ class _CameraScreenState extends State<CameraScreen>
 
   final CaptureModeController captureModeController = CaptureModeController();
   late AnimationController _detectionAnimationController;
+  // Пульс свечения подсветки выбранного режима в селекторе.
+  late final AnimationController _selectorPulseCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  )..repeat(reverse: true);
 
   bool _isDocumentDetected = false;
   bool _isScanning = false;
@@ -263,6 +268,7 @@ class _CameraScreenState extends State<CameraScreen>
     captureModeController.detectionTimer = null;
     _cancelAutoCapture();
     _detectionAnimationController.dispose();
+    _selectorPulseCtrl.dispose();
     _photoQuad.dispose();
     super.dispose();
   }
@@ -2892,7 +2898,10 @@ class _CameraScreenState extends State<CameraScreen>
 
   // Ширина слота иконки в стеклянной панели (фиксированная — по ней же
   // считается позиция скользящей подсветки и центрирование скролла).
-  static const double _kFeatureSlotWidth = 56;
+  static const double _kFeatureSlotWidth = 64;
+  static const double _kFeaturePanelHeight = 64;
+  static const double _kFeatureGlowWidth = 56;
+  static const double _kFeatureGlowHeight = 50;
 
   Widget _buildFeatureSelector() {
     final l10n = AppLocalizations.of(context);
@@ -3008,13 +3017,13 @@ class _CameraScreenState extends State<CameraScreen>
         child: SizedBox(
           key: _featureKeys[index],
           width: _kFeatureSlotWidth,
-          height: 56,
+          height: _kFeaturePanelHeight,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
               Center(
                 child: AnimatedScale(
-                  scale: isSelected ? 1.0 : 0.88,
+                  scale: isSelected ? 1.0 : 0.86,
                   duration: const Duration(milliseconds: 320),
                   curve: Curves.easeOutBack,
                   child: AnimatedOpacity(
@@ -3022,7 +3031,7 @@ class _CameraScreenState extends State<CameraScreen>
                     opacity: isSelected ? 1.0 : 0.62,
                     child: Icon(
                       feature['icon'] as IconData? ?? Icons.circle,
-                      size: 22,
+                      size: 27,
                       color: Colors.white,
                     ),
                   ),
@@ -3030,7 +3039,7 @@ class _CameraScreenState extends State<CameraScreen>
               ),
               if (isPremiumFeature)
                 Positioned(
-                  right: 10,
+                  right: 11,
                   top: 8,
                   child: Icon(
                     Icons.workspace_premium,
@@ -3083,14 +3092,14 @@ class _CameraScreenState extends State<CameraScreen>
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(32),
             child: BackdropFilter(
               filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
               child: Container(
-                height: 56,
+                height: _kFeaturePanelHeight,
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.30),
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(32),
                   border: Border.all(
                     color: Colors.white.withValues(alpha: 0.16),
                   ),
@@ -3101,36 +3110,69 @@ class _CameraScreenState extends State<CameraScreen>
                   padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: Stack(
                     children: [
-                      // Подсветка «перетекает» к выбранной иконке.
+                      // Подсветка «перетекает» к выбранной иконке: градиент,
+                      // стеклянный блик сверху и пульсирующее свечение.
                       AnimatedPositioned(
                         duration: const Duration(milliseconds: 380),
                         curve: Curves.easeOutBack,
                         left: (selIndex < 0 ? 0 : selIndex) *
                                 _kFeatureSlotWidth +
-                            (_kFeatureSlotWidth - 44) / 2,
-                        top: 6,
-                        width: 44,
-                        height: 44,
+                            (_kFeatureSlotWidth - _kFeatureGlowWidth) / 2,
+                        top: (_kFeaturePanelHeight - _kFeatureGlowHeight) / 2,
+                        width: _kFeatureGlowWidth,
+                        height: _kFeatureGlowHeight,
                         child: AnimatedOpacity(
                           duration: const Duration(milliseconds: 200),
                           opacity: selIndex < 0 ? 0 : 1,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: const LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [Color(0xFF35B4F4), Color(0xFF1687D5)],
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFF2CA5E0)
-                                      .withValues(alpha: 0.55),
-                                  blurRadius: 14,
-                                  spreadRadius: 1,
+                          child: AnimatedBuilder(
+                            animation: _selectorPulseCtrl,
+                            builder: (context, _) {
+                              final pulse = Curves.easeInOut
+                                  .transform(_selectorPulseCtrl.value);
+                              return DecoratedBox(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(17),
+                                  gradient: const LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      Color(0xFF3FC0FF),
+                                      Color(0xFF1687D5),
+                                      Color(0xFF0F5FA8),
+                                    ],
+                                  ),
+                                  border: Border.all(
+                                    color: Colors.white
+                                        .withValues(alpha: 0.35),
+                                    width: 1.4,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF2CA5E0)
+                                          .withValues(
+                                              alpha: 0.40 + pulse * 0.30),
+                                      blurRadius: 12 + pulse * 10,
+                                      spreadRadius: 1 + pulse * 1.5,
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
+                                // Блик-линза: светлое пятно сверху-слева.
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(17),
+                                    gradient: const RadialGradient(
+                                      center: Alignment(-0.5, -0.6),
+                                      radius: 1.1,
+                                      colors: [
+                                        Color(0x59FFFFFF),
+                                        Color(0x00FFFFFF),
+                                      ],
+                                      stops: [0.0, 0.55],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ),
