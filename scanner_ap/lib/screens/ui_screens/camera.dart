@@ -1529,32 +1529,39 @@ class _CameraScreenState extends State<CameraScreen>
     return XFile(croppedFile.path);
   }
 
-  int get _passportTargetPageCount {
-    final match = RegExp(r'\d+').firstMatch(_pageMode);
-    final parsed = int.tryParse(match?.group(0) ?? '');
-    return (parsed ?? 1).clamp(1, 10);
-  }
+  /// Паспорт: свободное сканирование в буфер без выбора количества страниц.
+  /// Пользователь снимает до [_passportMaxPages] страниц, затем жмёт галочку.
+  static const int _passportMaxPages = 7;
 
-  String _passportPageModeLabel(int count) {
-    final mod10 = count % 10;
-    final mod100 = count % 100;
-    if (count == 1) return '1 страница';
-    if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) {
-      return '$count страницы';
+  String _passportOverlayLabel(AppLocalizations l10n) {
+    if (_passportBatch.isEmpty) {
+      return l10n.camPassportUpTo(_passportMaxPages);
     }
-    return '$count страниц';
+    return l10n.camPassportPages(_passportBatch.length);
   }
 
-  void _setPassportPageCount(int count) {
-    setState(() => _pageMode = _passportPageModeLabel(count));
-  }
-
-  String _passportOverlayLabel() {
-    final target = _passportTargetPageCount;
-    if (_passportBatch.isNotEmpty && _passportBatch.length < target) {
-      return '${_passportBatch.length + 1} из $target';
-    }
-    return _passportPageModeLabel(target);
+  /// «Готово» в режиме паспорта: открывает превью всех накопленных страниц.
+  Future<void> _finishPassportBatch() async {
+    if (_passportBatch.isEmpty || !mounted) return;
+    final readyFiles = List<XFile>.from(_passportBatch);
+    await _openPreview(
+      imageFiles: readyFiles,
+      isTwoPage: readyFiles.length > 1,
+      onRetake: () {
+        // «Переснять» = начать паспорт заново: чистим буфер и возвращаемся.
+        Navigator.pop(context);
+        _resetTwoPageState();
+        _startDocumentDetectionStream();
+      },
+      restartDetectionOnReturn: false,
+    );
+    if (!mounted) return;
+    _resetTwoPageState();
+    setState(() {
+      _isScanning = false;
+      captureModeController.isScanning = false;
+    });
+    _startDocumentDetectionStream();
   }
 
   /// Повторный запуск нативного скана из кнопки «Переснять». Откладываем на
@@ -1681,40 +1688,31 @@ class _CameraScreenState extends State<CameraScreen>
       List<XFile> scannedFiles;
 
       if (_selectedFeature == Feat.passport) {
-        final limit = _passportTargetPageCount;
-        scannedFiles = await _scanImagesWithNativeScanner(pageLimit: limit);
+        // Сканируем в буфер до свободного лимита; превью откроет галочка.
+        final remaining = _passportMaxPages - _passportBatch.length;
+        if (remaining <= 0) {
+          AppNotification.show(
+            context,
+            message: l10n.camMaxPages,
+            type: NotificationType.info,
+          );
+          return;
+        }
+        scannedFiles = await _scanImagesWithNativeScanner(pageLimit: remaining);
         if (scannedFiles.isEmpty || !mounted) return;
 
         final passportFiles = <XFile>[];
-        for (final scannedFile in scannedFiles.take(limit)) {
+        for (final scannedFile in scannedFiles.take(remaining)) {
           passportFiles.add(await _autoCropPassportXFile(scannedFile));
           if (!mounted) return;
         }
 
-        _passportBatch.addAll(passportFiles);
-
-        if (_passportBatch.length >= limit) {
-          final readyFiles = _passportBatch.take(limit).toList();
-          await _openPreview(
-            imageFiles: readyFiles,
-            isTwoPage: readyFiles.length > 1,
-            onRetake: () {
-              Navigator.pop(context);
-              _resetTwoPageState();
-              _restartNativeScan();
-            },
-            restartDetectionOnReturn: false,
-          );
-          _resetTwoPageState();
-          return;
-        }
-
+        setState(() => _passportBatch.addAll(passportFiles));
         AppNotification.show(
           context,
-          message: l10n.camPageNofM(_passportBatch.length + 1, limit),
+          message: l10n.camPageAdded(_passportBatch.length),
           type: NotificationType.success,
         );
-        _restartNativeScan();
         return;
       }
 
@@ -2018,24 +2016,23 @@ class _CameraScreenState extends State<CameraScreen>
       }
 
       if (_selectedFeature == Feat.passport) {
-        final passportImage = await _autoCropPassportXFile(file);
-        if (!mounted) return;
-        final targetPageCount = _passportTargetPageCount;
-        _passportBatch.add(passportImage);
-
-        if (_passportBatch.length >= targetPageCount) {
-          final readyFiles = List<XFile>.from(_passportBatch);
-          await _openPreview(
-            imageFiles: readyFiles,
-            isTwoPage: readyFiles.length > 1,
+        // Свободный буфер: страницы копятся до лимита, превью открывает
+        // пользователь галочкой (см. _finishPassportBatch).
+        if (_passportBatch.length >= _passportMaxPages) {
+          AppNotification.show(
+            context,
+            message: l10n.camMaxPages,
+            type: NotificationType.info,
           );
-
-          _resetTwoPageState();
           _isScanning = false;
           captureModeController.isScanning = false;
           _startDocumentDetectionStream();
           return;
         }
+
+        final passportImage = await _autoCropPassportXFile(file);
+        if (!mounted) return;
+        setState(() => _passportBatch.add(passportImage));
 
         _isScanning = false;
         captureModeController.isScanning = false;
@@ -2043,7 +2040,7 @@ class _CameraScreenState extends State<CameraScreen>
         _startDocumentDetectionStream();
         AppNotification.show(
           context,
-          message: l10n.camPageNofM(_passportBatch.length + 1, targetPageCount),
+          message: l10n.camPageAdded(_passportBatch.length),
           type: NotificationType.success,
         );
         return;
@@ -2221,31 +2218,25 @@ class _CameraScreenState extends State<CameraScreen>
     if (_selectedFeature == Feat.qrScanner) return;
 
     if (_selectedFeature == Feat.passport) {
-      final passportImage = await _autoCropPassportXFile(galleryImage);
-      if (!mounted) return;
-
-      _passportBatch.add(passportImage);
-      final targetPageCount = _passportTargetPageCount;
-
-      if (_passportBatch.length >= targetPageCount) {
-        final readyFiles = List<XFile>.from(_passportBatch);
-        await _openPreview(
-          imageFiles: readyFiles,
-          isTwoPage: readyFiles.length > 1,
+      if (_passportBatch.length >= _passportMaxPages) {
+        AppNotification.show(
+          context,
+          message: AppLocalizations.of(context).camMaxPages,
+          type: NotificationType.info,
         );
-        _resetTwoPageState();
+        _startDocumentDetectionStream();
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            AppLocalizations.of(
-              context,
-            ).camPageNofM(_passportBatch.length + 1, targetPageCount),
-          ),
-          duration: const Duration(seconds: 2),
-        ),
+      final passportImage = await _autoCropPassportXFile(galleryImage);
+      if (!mounted) return;
+
+      setState(() => _passportBatch.add(passportImage));
+      AppNotification.show(
+        context,
+        message:
+            AppLocalizations.of(context).camPageAdded(_passportBatch.length),
+        type: NotificationType.success,
       );
       _startDocumentDetectionStream();
       return;
@@ -3276,10 +3267,10 @@ class _CameraScreenState extends State<CameraScreen>
         captureModeController: captureModeController,
         isDocumentDetected: _isDocumentDetected,
         isScanning: _isScanning,
-        pageModeLabel: _passportOverlayLabel(),
-        pageCount: _passportTargetPageCount,
+        pageModeLabel: _passportOverlayLabel(AppLocalizations.of(context)),
+        capturedCount: _passportBatch.length,
         takePicture: _takePicture,
-        setPageCount: _setPassportPageCount,
+        onFinishBatch: _finishPassportBatch,
         resetTwoPageState: _resetTwoPageState,
         pickImageFromGallery: _pickImageFromGallery,
         setCaptureModeAuto: _setCaptureModeAutoInline,

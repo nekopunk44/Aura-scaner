@@ -679,6 +679,8 @@
   "camDocDetectedHint": "Document detected",
   "camPassportPages": "{count} p.",
   "@camPassportPages": {"placeholders": {"count": {"type": "int"}}},
+  "camPassportUpTo": "Up to {count} pages",
+  "@camPassportUpTo": {"placeholders": {"count": {"type": "int"}}},
   "translateCameraTitle": "Translation mode",
   "translateCameraHint": "Point the camera at text — translation will appear automatically",
   "translateTargetTitle": "Translate to",
