@@ -20,6 +20,7 @@
 //- [onScanCompleted] — колбэк после завершения сканирования
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
@@ -539,13 +540,18 @@ class _CameraScreenState extends State<CameraScreen>
         // тоже не мгновенно. Это убирает дрожь и ранние/ложные автоснимки.
         detected = _stabilizedDetection(quadFound);
       } else if (_isIdOrPassportFeature(featureName)) {
-        // Паспорт/ID: только реальный четырёхугольник с геометрической
-        // валидацией (аспект/позиция/размер — внутри _updatePhotoQuad) и
-        // покадровой стабилизацией. Старая эвристика линий по зонам рамки
-        // здесь не используется: она ждёт документ на всю ширину рамки и
-        // отсекает, например, вертикальную страницу паспорта, а на фактурном
-        // фоне (ковёр/пол), наоборот, давала ложные срабатывания.
-        detected = _stabilizedDetection(quadFound);
+        // Паспорт/ID: два независимых сигнала через ИЛИ, оба с геометрической
+        // валидацией (аспект/позиция/размер) + покадровая стабилизация:
+        //  1) реальный четырёхугольник из кандидатов контурного детектора
+        //     (внутри _updatePhotoQuad);
+        //  2) поиск четырёх краёв документа сканированием полос в зоне рамки —
+        //     работает, когда Canny не замыкает контур (край страницы
+        //     сливается с линиями пола).
+        // Старая эвристика фиксированных линий не используется: она давала
+        // ложные срабатывания на ковре и не находила вертикальную страницу.
+        final match = quadFound ||
+            _detectFramedDocumentBySearch(image, featureName);
+        detected = _stabilizedDetection(match);
       } else {
         detected = _detectDocumentContour(image, featureName: featureName);
       }
@@ -671,6 +677,121 @@ class _CameraScreenState extends State<CameraScreen>
     } else {
       _photoQuad.value = resolvedQuad;
     }
+    return true;
+  }
+
+  /// Поиск документа в зоне рамки сканированием краёв: для каждой из четырёх
+  /// сторон ищем ЛУЧШУЮ прямую линию градиента в полосе поиска (а не по
+  /// фиксированным позициям, как старая эвристика — она требовала документ
+  /// строго по периметру рамки). Затем валидируем прямоугольник геометрически.
+  /// Работает, когда контурный детектор не замыкает четырёхугольник (края
+  /// страницы сливаются с линиями пола).
+  bool _detectFramedDocumentBySearch(CameraImage image, String featureName) {
+    const int targetWidth = 120;
+    final int targetHeight = ((targetWidth * image.width) / image.height)
+        .round()
+        .clamp(150, 280);
+    final gray = _samplePortraitLuma(
+      image,
+      targetWidth: targetWidth,
+      targetHeight: targetHeight,
+    );
+    final globalEdge = _globalEdgeMean(gray, targetWidth, targetHeight);
+    if (globalEdge <= 0.4) return false;
+
+    final bool isPassport = featureName == Feat.passport;
+    final double zoneTopF = isPassport ? 0.10 : 0.16;
+    final double zoneBottomF = isPassport ? 0.62 : 0.66;
+    final int zoneTop = (zoneTopF * targetHeight).round();
+    final int zoneBottom = (zoneBottomF * targetHeight).round();
+    final int zoneH = zoneBottom - zoneTop;
+    if (zoneH < 20) return false;
+
+    (int, double) bestHorizontal(int from, int to, int x0, int x1) {
+      int bestY = -1;
+      double bestScore = -1;
+      for (int y = from; y <= to; y += 2) {
+        if (y < 3 || y > targetHeight - 4) continue;
+        final s = _horizontalLineScore(
+          gray, targetWidth, targetHeight, y, x0, x1,
+        );
+        if (s > bestScore) {
+          bestScore = s;
+          bestY = y;
+        }
+      }
+      return (bestY, bestScore);
+    }
+
+    (int, double) bestVertical(int from, int to, int y0, int y1) {
+      int bestX = -1;
+      double bestScore = -1;
+      for (int x = from; x <= to; x += 2) {
+        if (x < 3 || x > targetWidth - 4) continue;
+        final s = _verticalLineScore(
+          gray, targetWidth, targetHeight, x, y0, y1,
+        );
+        if (s > bestScore) {
+          bestScore = s;
+          bestX = x;
+        }
+      }
+      return (bestX, bestScore);
+    }
+
+    // Верхний край — в верхней половине зоны, нижний — в нижней.
+    final midX0 = (targetWidth * 0.22).round();
+    final midX1 = (targetWidth * 0.78).round();
+    final (topY, topScore) = bestHorizontal(
+      zoneTop - (zoneH * 0.15).round(),
+      zoneTop + (zoneH * 0.45).round(),
+      midX0,
+      midX1,
+    );
+    final (bottomY, bottomScore) = bestHorizontal(
+      zoneBottom - (zoneH * 0.45).round(),
+      zoneBottom + (zoneH * 0.15).round(),
+      midX0,
+      midX1,
+    );
+    if (topY < 0 || bottomY < 0 || bottomY - topY < zoneH * 0.35) return false;
+
+    // Боковые края — между найденными верхом и низом; полосы поиска широкие,
+    // чтобы находить и узкую вертикальную страницу, и разворот во всю рамку.
+    final (leftX, leftScore) = bestVertical(
+      (targetWidth * 0.04).round(),
+      (targetWidth * 0.48).round(),
+      topY + 2,
+      bottomY - 2,
+    );
+    final (rightX, rightScore) = bestVertical(
+      (targetWidth * 0.52).round(),
+      (targetWidth * 0.96).round(),
+      topY + 2,
+      bottomY - 2,
+    );
+    if (leftX < 0 || rightX < 0) return false;
+
+    // Все четыре края должны быть выраженными и заметно сильнее среднего
+    // градиента сцены (на фактурном ковре globalEdge высокий — порог растёт).
+    final double minScore = math.max(globalEdge * 1.7, 11.0);
+    if (topScore < minScore ||
+        bottomScore < minScore ||
+        leftScore < minScore ||
+        rightScore < minScore) {
+      return false;
+    }
+
+    // Геометрия: размеры и аспект документа (px квадратные — сэмплер
+    // сохраняет пропорции кадра), центр в зоне рамки.
+    final double w = (rightX - leftX).toDouble();
+    final double h = (bottomY - topY).toDouble();
+    if (w < targetWidth * 0.30 || h < targetHeight * 0.12) return false;
+    final double aspect = w / h;
+    if (aspect < 0.5 || aspect > 2.4) return false;
+    final double centerY = (topY + bottomY) / 2 / targetHeight;
+    if (centerY < zoneTopF || centerY > zoneBottomF) return false;
+
     return true;
   }
 
