@@ -2900,8 +2900,12 @@ class _CameraScreenState extends State<CameraScreen>
   // считается позиция скользящей подсветки и центрирование скролла).
   static const double _kFeatureSlotWidth = 64;
   static const double _kFeaturePanelHeight = 64;
-  static const double _kFeatureGlowWidth = 56;
-  static const double _kFeatureGlowHeight = 50;
+  // Подсветка почти заполняет слот (равные тонкие отступы со всех сторон).
+  // Радиус концентричен скруглению самой панели: радиус панели (32) минус
+  // отступ подсветки (5) — торцы подсветки повторяют форму капсулы.
+  static const double _kFeatureGlowWidth = 58;
+  static const double _kFeatureGlowHeight = 54;
+  static const double _kFeatureGlowRadius = 27;
 
   Widget _buildFeatureSelector() {
     final l10n = AppLocalizations.of(context);
@@ -3113,8 +3117,10 @@ class _CameraScreenState extends State<CameraScreen>
                       // Подсветка «перетекает» к выбранной иконке: градиент,
                       // стеклянный блик сверху и пульсирующее свечение.
                       AnimatedPositioned(
-                        duration: const Duration(milliseconds: 380),
-                        curve: Curves.easeOutBack,
+                        duration: const Duration(milliseconds: 320),
+                        // Без overshoot: подсветка встаёт точно в слот,
+                        // не «переезжая» соседнюю иконку.
+                        curve: Curves.easeOutCubic,
                         left: (selIndex < 0 ? 0 : selIndex) *
                                 _kFeatureSlotWidth +
                             (_kFeatureSlotWidth - _kFeatureGlowWidth) / 2,
@@ -3131,7 +3137,9 @@ class _CameraScreenState extends State<CameraScreen>
                                   .transform(_selectorPulseCtrl.value);
                               return DecoratedBox(
                                 decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(17),
+                                  borderRadius: BorderRadius.circular(
+                                    _kFeatureGlowRadius,
+                                  ),
                                   gradient: const LinearGradient(
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
@@ -3159,7 +3167,9 @@ class _CameraScreenState extends State<CameraScreen>
                                 // Блик-линза: светлое пятно сверху-слева.
                                 child: DecoratedBox(
                                   decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(17),
+                                    borderRadius: BorderRadius.circular(
+                                      _kFeatureGlowRadius,
+                                    ),
                                     gradient: const RadialGradient(
                                       center: Alignment(-0.5, -0.6),
                                       radius: 1.1,
