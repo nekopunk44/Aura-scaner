@@ -1534,10 +1534,12 @@ class _CameraScreenState extends State<CameraScreen>
   static const int _passportMaxPages = 7;
 
   String _passportOverlayLabel(AppLocalizations l10n) {
-    if (_passportBatch.isEmpty) {
-      return l10n.camPassportUpTo(_passportMaxPages);
+    // Подсказка называет СЛЕДУЮЩУЮ страницу по порядку: «Первая страница»,
+    // «Вторая страница»… Когда буфер полон — показываем итоговое количество.
+    if (_passportBatch.length >= _passportMaxPages) {
+      return l10n.camPassportPages(_passportBatch.length);
     }
-    return l10n.camPassportPages(_passportBatch.length);
+    return l10n.camPassportNextPage('${_passportBatch.length + 1}');
   }
 
   /// «Готово» в режиме паспорта: открывает превью всех накопленных страниц.
