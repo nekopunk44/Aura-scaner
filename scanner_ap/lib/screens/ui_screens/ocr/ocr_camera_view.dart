@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 
 import '../../../widgets/camera_controls_bar.dart';
+import '../../../widgets/document_guide_frame.dart';
 import '../../../l10n/app_localizations.dart';
 
 /// Камера режима OCR. Структура повторяет экран Паспорт: верхняя панель
@@ -110,41 +111,18 @@ class _OcrCameraViewState extends State<OcrCameraView> {
     }
 
     final l10n = AppLocalizations.of(context);
-    final size = MediaQuery.of(context).size;
 
     return Stack(
       children: [
-        // Рамка-видоискатель и подсказка под ней — единым блоком чуть выше
-        // центра, чтобы подпись гарантированно была ПОД рамкой с отступом
-        // и не перекрывала её границу.
-        Align(
-          alignment: const Alignment(0, -0.18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: size.width * 0.82,
-                height: size.height * 0.40,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.white, width: 2.0),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Text(
-                  l10n.ocrSelectPhoto,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.85),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
+        // Рамка-трафарет с затемнением и подписью — единый стиль с паспортом.
+        DocumentGuideFrame(
+          // Текстовый блок — почти квадратный вырез.
+          aspectRatio: 0.95,
+          widthFactor: 0.78,
+          verticalAlignment: -0.22,
+          detected: false,
+          icon: Icons.text_fields_outlined,
+          label: l10n.ocrSelectPhoto,
         ),
 
         Positioned(top: 0, left: 0, right: 0, child: _buildTopPanel()),

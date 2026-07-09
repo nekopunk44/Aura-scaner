@@ -3625,6 +3625,8 @@ class _CameraScreenState extends State<CameraScreen>
         featureTitle: AppLocalizations.of(context).ecoTitle,
         featureSubtitle: AppLocalizations.of(context).ecoCameraHint,
         overlayKind: CaptureStatusOverlayKind.eco,
+        frameIcon: Icons.eco_outlined,
+        frameHint: AppLocalizations.of(context).camFitPackagingInFrame,
       ),
       Feat.removeSpots: () => RemoveSpotsCameraView(
         cameraController: _cameraController,

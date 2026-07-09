@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../widgets/camera_controls_bar.dart';
 import '../../widgets/camera_mode_switch.dart';
+import '../../widgets/document_guide_frame.dart';
 import 'capture_modes.dart';
 
 class RestorePhotoCameraView extends StatelessWidget {
@@ -25,6 +26,8 @@ class RestorePhotoCameraView extends StatelessWidget {
     this.featureTitle,
     this.featureSubtitle,
     this.overlayKind = CaptureStatusOverlayKind.restorePhoto,
+    this.frameIcon = Icons.photo_outlined,
+    this.frameHint,
   });
 
   final CameraController? cameraController;
@@ -45,6 +48,10 @@ class RestorePhotoCameraView extends StatelessWidget {
   final String? featureTitle;
   final String? featureSubtitle;
   final CaptureStatusOverlayKind overlayKind;
+
+  /// Иконка-силуэт и подпись рамки-трафарета (для эко/лого — свои).
+  final IconData frameIcon;
+  final String? frameHint;
 
 
   Widget _buildTopPanel(AppLocalizations l10n) {
@@ -108,19 +115,19 @@ class RestorePhotoCameraView extends StatelessWidget {
     );
   }
 
-  Widget _buildPhotoFrameOverlay() {
+  Widget _buildPhotoFrameOverlay(AppLocalizations l10n) {
     final quadListenable = photoQuad;
     final aspect = previewAspect;
-    // Нет данных для живого контура — обычная фиксированная рамка-ориентир.
+    // Нет данных для живого контура — рамка-трафарет как у паспорта.
     if (quadListenable == null || aspect == null) {
-      return _buildStaticFrame();
+      return _guideFrame(l10n);
     }
     return Positioned.fill(
       child: ValueListenableBuilder<List<Offset>?>(
         valueListenable: quadListenable,
         builder: (context, quad, _) {
           if (quad == null || quad.length != 4) {
-            return _buildStaticFrame();
+            return _guideFrame(l10n);
           }
           return CustomPaint(
             painter: _PhotoQuadPainter(
@@ -134,28 +141,19 @@ class RestorePhotoCameraView extends StatelessWidget {
     );
   }
 
-  // Фиксированная рамка-ориентир: показывается, пока контур фото не найден.
-  Widget _buildStaticFrame() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final frameWidth = constraints.maxWidth * 0.85;
-        final frameHeight = constraints.maxHeight * 0.55;
-
-        return Align(
-          alignment: const Alignment(0, -0.40),
-          child: Container(
-            width: frameWidth,
-            height: frameHeight,
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: isDocumentDetected ? Colors.greenAccent : Colors.white,
-                width: 2,
-              ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      },
+  /// Единая рамка-трафарет (затемнение + уголки + силуэт + подпись) —
+  /// как у паспорта: и в авто- (пока контур не найден), и в ручном режиме.
+  Widget _guideFrame(AppLocalizations l10n) {
+    return DocumentGuideFrame(
+      // Портретное фото ~3:4.
+      aspectRatio: 0.75,
+      widthFactor: 0.72,
+      verticalAlignment: -0.22,
+      detected: isDocumentDetected,
+      icon: frameIcon,
+      label: isDocumentDetected
+          ? l10n.camDocDetectedHint
+          : (frameHint ?? l10n.camFitPhotoInFrame),
     );
   }
 
@@ -186,7 +184,11 @@ class RestorePhotoCameraView extends StatelessWidget {
 
     return Stack(
       children: [
-        if (isAutoMode) _buildPhotoFrameOverlay(),
+        // Авто: живой контур (фолбэк — трафарет). Ручной: тот же трафарет.
+        if (isAutoMode)
+          _buildPhotoFrameOverlay(l10n)
+        else
+          _guideFrame(l10n),
         Positioned.fill(
           child: captureModeController.buildStatusOverlay(
             isDocumentMode: true,

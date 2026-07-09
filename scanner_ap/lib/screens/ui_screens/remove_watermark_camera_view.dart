@@ -55,6 +55,7 @@ class RemoveWatermarkCameraView extends StatelessWidget {
       featureTitle: l10n.featRemoveWatermark,
       featureSubtitle: l10n.featRemoveWatermarkSub,
       overlayKind: CaptureStatusOverlayKind.removeWatermark,
+      frameIcon: Icons.auto_fix_off_outlined,
     );
   }
 }

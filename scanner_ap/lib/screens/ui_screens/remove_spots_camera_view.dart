@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../widgets/camera_controls_bar.dart';
 import '../../widgets/camera_mode_switch.dart';
+import '../../widgets/document_guide_frame.dart';
 import 'capture_modes.dart';
 
 class RemoveSpotsCameraView extends StatelessWidget {
@@ -94,27 +95,19 @@ class RemoveSpotsCameraView extends StatelessWidget {
     );
   }
 
-  Widget _buildPhotoFrameOverlay() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final frameWidth = constraints.maxWidth * 0.85;
-        final frameHeight = constraints.maxHeight * 0.55;
-
-        return Align(
-          alignment: const Alignment(0, -0.40),
-          child: Container(
-            width: frameWidth,
-            height: frameHeight,
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: isDocumentDetected ? Colors.greenAccent : Colors.white,
-                width: 2,
-              ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      },
+  /// Единая рамка-трафарет (затемнение + уголки + силуэт + подпись) —
+  /// как у паспорта: и в авто-, и в ручном режиме.
+  Widget _guideFrame(AppLocalizations l10n) {
+    return DocumentGuideFrame(
+      // Портретное фото ~3:4.
+      aspectRatio: 0.75,
+      widthFactor: 0.72,
+      verticalAlignment: -0.22,
+      detected: isDocumentDetected,
+      icon: Icons.cleaning_services_outlined,
+      label: isDocumentDetected
+          ? l10n.camDocDetectedHint
+          : l10n.camFitPhotoInFrame,
     );
   }
 
@@ -141,11 +134,11 @@ class RemoveSpotsCameraView extends StatelessWidget {
     }
 
     final l10n = AppLocalizations.of(context);
-    final isAutoMode = captureModeController.captureMode == 'Автоматически';
 
     return Stack(
       children: [
-        if (isAutoMode) _buildPhotoFrameOverlay(),
+        // Рамка-трафарет — в обоих режимах, как у паспорта.
+        _guideFrame(l10n),
         Positioned.fill(
           child: captureModeController.buildStatusOverlay(
             isDocumentMode: true,
