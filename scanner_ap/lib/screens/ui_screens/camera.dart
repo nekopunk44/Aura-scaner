@@ -783,9 +783,11 @@ class _CameraScreenState extends State<CameraScreen>
     final globalEdge = _globalEdgeMean(gray, targetWidth, targetHeight);
     if (globalEdge <= 0.4) return false;
 
+    // Рамки паспорта и ID-карты сидят одинаково (verticalAlignment -0.25),
+    // паспортная чуть выше из-за большей высоты (aspect 1.42 против 1.586).
     final bool isPassport = featureName == Feat.passport;
-    final double zoneTopF = isPassport ? 0.10 : 0.16;
-    final double zoneBottomF = isPassport ? 0.62 : 0.66;
+    final double zoneTopF = isPassport ? 0.16 : 0.16;
+    final double zoneBottomF = isPassport ? 0.68 : 0.66;
     final int zoneTop = (zoneTopF * targetHeight).round();
     final int zoneBottom = (zoneBottomF * targetHeight).round();
     final int zoneH = zoneBottom - zoneTop;
@@ -1311,11 +1313,12 @@ class _CameraScreenState extends State<CameraScreen>
         ];
       case Feat.passport:
       default:
-        // Рамка паспорта: верх ~0.20–0.22 H, низ ~0.48–0.51 H.
+        // Рамка паспорта (verticalAlignment -0.25, как у ID-карты):
+        // верх ~0.26–0.28 H, низ ~0.54–0.57 H.
         return const [
-          _DocumentFrameSpec(left: 0.08, right: 0.92, top: 0.20, bottom: 0.49),
-          _DocumentFrameSpec(left: 0.06, right: 0.94, top: 0.17, bottom: 0.53),
-          _DocumentFrameSpec(left: 0.10, right: 0.90, top: 0.23, bottom: 0.46),
+          _DocumentFrameSpec(left: 0.08, right: 0.92, top: 0.26, bottom: 0.56),
+          _DocumentFrameSpec(left: 0.06, right: 0.94, top: 0.23, bottom: 0.60),
+          _DocumentFrameSpec(left: 0.10, right: 0.90, top: 0.29, bottom: 0.53),
         ];
     }
   }

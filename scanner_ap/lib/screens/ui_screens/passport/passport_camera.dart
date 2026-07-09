@@ -141,12 +141,12 @@ class PassportCameraView extends StatelessWidget {
   }
 
   Widget _buildDocumentFrameOverlay(AppLocalizations l10n) {
-    // Разворот паспорта ~125×88 мм → aspect 1.42, рамка выше центра,
-    // чтобы не пересекаться с нижним баром и селектором режимов.
+    // Разворот паспорта ~125×88 мм → aspect 1.42. Вертикальное положение
+    // совпадает с рамкой ID-карты (-0.25) — единая посадка во всех режимах.
     return DocumentGuideFrame(
       aspectRatio: 1.42,
       widthFactor: 0.85,
-      verticalAlignment: -0.42,
+      verticalAlignment: -0.25,
       detected: isDocumentDetected,
       icon: Icons.menu_book_outlined,
       label: isDocumentDetected
