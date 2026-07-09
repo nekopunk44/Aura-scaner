@@ -759,6 +759,7 @@
   "editSaveChanges": "Save changes",
   "editIdCardTitle": "Edit ID Card",
   "editIdCardSaveBothSides": "Save both sides",
+  "actionEdit": "Edit",
   "editCount": "Edit ({count})",
   "@editCount": {"placeholders": {"count": {"type": "int"}}},
 

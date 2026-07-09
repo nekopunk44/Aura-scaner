@@ -1005,6 +1005,7 @@
   "editSaveChanges": "Сохранить изменения",
   "editIdCardTitle": "Редактирование Удостоверения",
   "editIdCardSaveBothSides": "Сохранить обе стороны",
+  "actionEdit": "Редактировать",
   "editCount": "Редактировать ({count})",
   "@editCount": {"placeholders": {"count": {"type": "int"}}},
 
