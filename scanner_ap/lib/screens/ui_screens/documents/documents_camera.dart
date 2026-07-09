@@ -138,44 +138,36 @@ class MultiPageDocumentView extends StatelessWidget {
     );
   }
 
-  Widget _buildDocumentFrameOverlay(double cameraHeightLimit) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final double frameWidth = constraints.maxWidth * 0.78;
-        final double frameHeight = cameraHeightLimit * 0.60;
-
-        // Рамка детекции
-        return Align(
-          alignment: const Alignment(0, -0.15),
-          child: Container(
-            width: frameWidth,
-            height: frameHeight,
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: isDocumentDetected ? Colors.greenAccent : Colors.white,
-                width: 2.0,
-              ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      },
+  /// Единая рамка-трафарет листа (затемнение + уголки + подпись) — она же
+  /// в ручном режиме и как фолбэк в авто, пока живой контур не найден:
+  /// оба режима выглядят одинаково.
+  Widget _guideFrame(AppLocalizations l10n) {
+    return DocumentGuideFrame(
+      // Лист A4 портретом: 210/297.
+      aspectRatio: 0.71,
+      widthFactor: 0.62,
+      verticalAlignment: -0.25,
+      detected: isDocumentDetected,
+      icon: Icons.description_outlined,
+      label: isDocumentDetected
+          ? l10n.camDocDetectedHint
+          : l10n.camFitDocInFrame,
     );
   }
 
-  // Живой контур листа (или фиксированная рамка-фолбэк, пока контур не найден).
-  Widget _buildDetectionOverlay(double cameraHeightLimit, Size size) {
+  // Живой контур листа (или рамка-трафарет, пока контур не найден).
+  Widget _buildDetectionOverlay(AppLocalizations l10n) {
     final ql = photoQuad;
     final aspect = previewAspect;
     if (ql == null || aspect == null) {
-      return _fixedFrame(cameraHeightLimit, size);
+      return _guideFrame(l10n);
     }
     return Positioned.fill(
       child: ValueListenableBuilder<List<Offset>?>(
         valueListenable: ql,
         builder: (context, quad, _) {
           if (quad == null || quad.length != 4) {
-            return _fixedFrame(cameraHeightLimit, size);
+            return _guideFrame(l10n);
           }
           return CustomPaint(
             painter: _DocQuadPainter(
@@ -185,17 +177,6 @@ class MultiPageDocumentView extends StatelessWidget {
             ),
           );
         },
-      ),
-    );
-  }
-
-  Widget _fixedFrame(double cameraHeightLimit, Size size) {
-    return Align(
-      alignment: const Alignment(0, -0.75),
-      child: SizedBox(
-        height: cameraHeightLimit,
-        width: size.width,
-        child: _buildDocumentFrameOverlay(cameraHeightLimit),
       ),
     );
   }
@@ -288,20 +269,12 @@ class MultiPageDocumentView extends StatelessWidget {
       color: Colors.transparent,
       child: Stack(
         children: [
-          // Авто: живой контур листа. Ручной: рамка-трафарет с затемнением
-          // вокруг выреза — как у паспорта/ID, чтобы было видно куда класть.
+          // Авто: живой контур листа (фолбэк — рамка-трафарет).
+          // Ручной: та же рамка-трафарет — режимы выглядят одинаково.
           if (isAutoMode)
-            _buildDetectionOverlay(cameraHeightLimit, size)
+            _buildDetectionOverlay(l10n)
           else
-            DocumentGuideFrame(
-              // Лист A4 портретом: 210/297.
-              aspectRatio: 0.71,
-              widthFactor: 0.62,
-              verticalAlignment: -0.25,
-              detected: isDocumentDetected,
-              icon: Icons.description_outlined,
-              label: l10n.camFitDocInFrame,
-            ),
+            _guideFrame(l10n),
 
           Align(
             alignment: const Alignment(0, -0.05),
