@@ -188,14 +188,62 @@ class _TranslationModelsScreenState extends State<TranslationModelsScreen> {
 
     return Scaffold(
       backgroundColor: scaffoldBg,
-      appBar: AppBar(
-        title: Text(
-          l10n.settingsTranslateModels,
-          style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
+      // Шапка со скруглёнными нижними углами — как на экране настроек.
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(64),
+        child: Container(
+          decoration: BoxDecoration(
+            color: appBarBg,
+            borderRadius: const BorderRadius.only(
+              bottomLeft: Radius.circular(24),
+              bottomRight: Radius.circular(24),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.06),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: SizedBox(
+              height: 64,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Text(
+                    l10n.settingsTranslateModels,
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Positioned(
+                    left: 8,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () => Navigator.pop(context),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Icon(
+                            Icons.arrow_back_ios_new,
+                            size: 20,
+                            color: textColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
-        backgroundColor: appBarBg,
-        iconTheme: IconThemeData(color: textColor),
-        elevation: 0,
       ),
       body: _loading
           ? const Center(
@@ -204,38 +252,6 @@ class _TranslationModelsScreenState extends State<TranslationModelsScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // Инфо-баннер: как работают модели.
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2CA5E0)
-                        .withValues(alpha: isDark ? 0.12 : 0.08),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: const Color(0xFF2CA5E0).withValues(alpha: 0.35),
-                    ),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.info_outline,
-                          color: Color(0xFF2CA5E0), size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          l10n.tmInfoBanner,
-                          style: TextStyle(
-                            fontSize: 13,
-                            height: 1.4,
-                            color: textColor.withValues(alpha: 0.85),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
-
                 _sectionHeader(
                   '${l10n.tmDownloadedSection} (${downloadedCodes.length})',
                   subColor,
