@@ -95,6 +95,34 @@ class _DocumentFrameSpec {
   final double bottom;
 }
 
+/// Затемнение кадра вокруг окна QR-рамки: весь экран заливается
+/// полупрозрачным чёрным, а само окно (скруглённый прямоугольник)
+/// остаётся прозрачным — взгляд фокусируется на зоне сканирования.
+class _QrDimPainter extends CustomPainter {
+  const _QrDimPainter({required this.hole, required this.cornerRadius});
+
+  final Rect hole;
+  final double cornerRadius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..addRect(Offset.zero & size)
+      ..addRRect(
+        RRect.fromRectAndRadius(hole, Radius.circular(cornerRadius)),
+      )
+      ..fillType = PathFillType.evenOdd;
+    canvas.drawPath(
+      path,
+      Paint()..color = Colors.black.withValues(alpha: 0.55),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_QrDimPainter oldDelegate) =>
+      oldDelegate.hole != hole || oldDelegate.cornerRadius != cornerRadius;
+}
+
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin {
   static const MethodChannel _nativeBridgeChannel = MethodChannel(
@@ -168,6 +196,11 @@ class _CameraScreenState extends State<CameraScreen>
   late final AnimationController _selectorPulseCtrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1600),
+  )..repeat(reverse: true);
+  // Бегущая линия сканирования в рамке QR (вверх-вниз).
+  late final AnimationController _qrScanLineCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2200),
   )..repeat(reverse: true);
 
   bool _isDocumentDetected = false;
@@ -269,6 +302,7 @@ class _CameraScreenState extends State<CameraScreen>
     _cancelAutoCapture();
     _detectionAnimationController.dispose();
     _selectorPulseCtrl.dispose();
+    _qrScanLineCtrl.dispose();
     _photoQuad.dispose();
     super.dispose();
   }
@@ -2812,24 +2846,101 @@ class _CameraScreenState extends State<CameraScreen>
     final l10n = AppLocalizations.of(context);
     // Превью камеры рисует общий persistentCameraPreview под этим оверлеем
     // (камера теперь не пересоздаётся при входе в QR — нет мерцания).
+    //
+    // Геометрия рамки считается явно (а не через Align), потому что то же
+    // окно нужно вырезать из слоя затемнения и в нём же гонять линию
+    // сканирования. Позиция повторяет прежний Align(0, -0.25).
+    final Size screen = MediaQuery.of(context).size;
+    final double frameSide = screen.width * 0.66;
+    final Rect frameRect = Rect.fromLTWH(
+      (screen.width - frameSide) / 2,
+      (screen.height - frameSide) * 0.375,
+      frameSide,
+      frameSide,
+    );
+    final bool qrFound = _qrCode != null;
+
     return Stack(
       children: [
-        // Рамка-видоискатель в верхней половине (как на экране Паспорт),
-        // чтобы не перекрывалась нижней плашкой и селектором режимов.
-        Align(
-          alignment: const Alignment(0, -0.25),
-          child: Container(
-            width: MediaQuery.of(context).size.width * 0.66,
-            height: MediaQuery.of(context).size.width * 0.66,
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: _qrCode != null ? Colors.greenAccent : Colors.white,
-                width: 3,
-              ),
-              borderRadius: BorderRadius.circular(16),
+        // Затемнение всего кадра, кроме окна рамки.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: _QrDimPainter(hole: frameRect, cornerRadius: 16),
             ),
           ),
         ),
+
+        // Рамка-видоискатель: белая в поиске, зелёная когда QR найден.
+        Positioned.fromRect(
+          rect: frameRect,
+          child: IgnorePointer(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: qrFound ? Colors.greenAccent : Colors.white,
+                  width: 3,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: qrFound
+                    ? [
+                        BoxShadow(
+                          color: Colors.greenAccent.withValues(alpha: 0.45),
+                          blurRadius: 18,
+                          spreadRadius: 1,
+                        ),
+                      ]
+                    : null,
+              ),
+            ),
+          ),
+        ),
+
+        // Бегущая линия сканирования — пока код не найден.
+        if (!qrFound)
+          Positioned.fromRect(
+            rect: frameRect.deflate(8),
+            child: IgnorePointer(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: AnimatedBuilder(
+                  animation: _qrScanLineCtrl,
+                  builder: (context, _) {
+                    final t = Curves.easeInOut
+                        .transform(_qrScanLineCtrl.value);
+                    return Align(
+                      alignment: Alignment(0, t * 2 - 1),
+                      child: Container(
+                        height: 2.6,
+                        margin: const EdgeInsets.symmetric(horizontal: 6),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0x0035B4F4),
+                              const Color(0xFF35B4F4),
+                              Colors.white.withValues(alpha: 0.9),
+                              const Color(0xFF35B4F4),
+                              const Color(0x0035B4F4),
+                            ],
+                            stops: const [0.0, 0.2, 0.5, 0.8, 1.0],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF35B4F4)
+                                  .withValues(alpha: 0.55),
+                              blurRadius: 12,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
 
         // Подсказка прямо под рамкой.
         Align(

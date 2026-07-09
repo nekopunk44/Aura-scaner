@@ -275,39 +275,19 @@ class _TranslateCameraState extends State<TranslateCamera> {
     return _translator;
   }
 
+  /// Автоопределённый BCP-код → язык ML Kit. Поддерживаются ВСЕ ~59 языков
+  /// on-device перевода (румынский, украинский, нидерландский и т.д.) —
+  /// раньше карта знала только 13, и, например, румынский текст молча
+  /// переводился «как английский».
   TranslateLanguage? _mapToTranslateLang(String code) {
-    switch (code.toLowerCase().split('-')[0]) {
-      case 'ru':
-      case 'be':
-      case 'uk':
-        return TranslateLanguage.russian;
-      case 'en':
-        return TranslateLanguage.english;
-      case 'es':
-        return TranslateLanguage.spanish;
-      case 'fr':
-        return TranslateLanguage.french;
-      case 'de':
-        return TranslateLanguage.german;
-      case 'it':
-        return TranslateLanguage.italian;
-      case 'pt':
-        return TranslateLanguage.portuguese;
-      case 'pl':
-        return TranslateLanguage.polish;
-      case 'tr':
-        return TranslateLanguage.turkish;
-      case 'ar':
-        return TranslateLanguage.arabic;
-      case 'zh':
-        return TranslateLanguage.chinese;
-      case 'ja':
-        return TranslateLanguage.japanese;
-      case 'ko':
-        return TranslateLanguage.korean;
-      default:
-        return null;
+    final base = code.toLowerCase().split('-')[0];
+    if (base.isEmpty || base == 'und') return null;
+    // Языки без собственной модели → ближайший родственный.
+    if (base == 'be') return TranslateLanguage.russian;
+    for (final lang in TranslateLanguage.values) {
+      if (lang.bcpCode == base) return lang;
     }
+    return null;
   }
 
   // ------------------------------------------------------------------
