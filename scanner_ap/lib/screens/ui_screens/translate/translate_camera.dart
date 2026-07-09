@@ -780,87 +780,48 @@ class _TranslateCameraState extends State<TranslateCamera> {
     );
   }
 
+  // Переключатель Авто/Ручн. — точно такой же, как в остальных режимах
+  // камеры (белая пилюля с чёрным текстом на полупрозрачной капсуле).
   Widget _buildModeSwitch(AppLocalizations l10n) {
-    const switchWidth = 164.0;
-    const switchHeight = 44.0;
-    const thumbWidth = (switchWidth - 8) / 2;
-
     return Container(
-      width: switchWidth,
-      height: switchHeight,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.28),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+        color: Colors.white12,
+        borderRadius: BorderRadius.circular(20),
       ),
-      child: Stack(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          AnimatedAlign(
-            alignment: _isAutoMode
-                ? Alignment.centerLeft
-                : Alignment.centerRight,
-            duration: const Duration(milliseconds: 280),
-            curve: Curves.easeOutCubic,
-            child: Container(
-              width: thumbWidth,
-              height: switchHeight - 8,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF5BC8FF), Color(0xFF168DDB)],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF2CA5E0).withValues(alpha: 0.35),
-                    blurRadius: 14,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-            ),
+          _buildModeSegment(
+            l10n.camAutoLabel,
+            _isAutoMode,
+            _setTranslateAutoMode,
           ),
-          Row(
-            children: [
-              _buildModeSwitchLabel(
-                l10n.camAutoLabel,
-                _isAutoMode,
-                _setTranslateAutoMode,
-              ),
-              _buildModeSwitchLabel(
-                l10n.camManualLabel,
-                _isManualMode,
-                _setTranslateManualMode,
-              ),
-            ],
+          _buildModeSegment(
+            l10n.camManualLabel,
+            _isManualMode,
+            _setTranslateManualMode,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildModeSwitchLabel(String label, bool active, VoidCallback onTap) {
-    return Expanded(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Center(
-          child: AnimatedScale(
-            scale: active ? 1.0 : 0.94,
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
-              style: TextStyle(
-                color: active ? Colors.white : Colors.white70,
-                fontSize: 13,
-                fontWeight: active ? FontWeight.w800 : FontWeight.w600,
-              ),
-              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
+  Widget _buildModeSegment(String label, bool active, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? Colors.black : Colors.white,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
