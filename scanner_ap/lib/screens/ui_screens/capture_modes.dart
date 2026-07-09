@@ -204,7 +204,9 @@ class CaptureModeController {
     required CaptureStatusOverlayKind overlayKind,
     AppLocalizations? l10n,
   }) {
-    final visible = isDocumentMode && captureMode == 'Автоматически';
+    // Карточка показывается и в авто-, и в ручном режиме: пользователь
+    // всегда видит режим и номер страницы (раньше в ручном её не было).
+    final visible = isDocumentMode;
     final layout = _overlayLayoutFor(overlayKind);
 
     late final String title;

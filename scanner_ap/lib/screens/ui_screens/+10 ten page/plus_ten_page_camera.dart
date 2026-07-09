@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
+import '../../../widgets/document_guide_frame.dart';
 import '../../../l10n/app_localizations.dart';
 
 
@@ -130,31 +131,19 @@ class UnlimitedDocumentView extends StatelessWidget {
     );
   }
 
-  Widget _buildDocumentFrameOverlay(double cameraHeightLimit) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        
-        final double frameWidth = constraints.maxWidth * 0.78;
-        
-        final double frameHeight = cameraHeightLimit * 0.60;
-
-        // Рамка детекции
-        return Align(
-          // Центр рамку внутри видоискателя
-          alignment: const Alignment(0, -0.15),
-          child: Container(
-            width: frameWidth,
-            height: frameHeight,
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: isDocumentDetected ? Colors.greenAccent : Colors.white,
-                width: 2.0,
-              ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      },
+  /// Единая рамка-трафарет листа (затемнение + уголки + подпись) —
+  /// показывается и в авто-, и в ручном режиме, как у паспорта/документа.
+  Widget _guideFrame(AppLocalizations l10n) {
+    return DocumentGuideFrame(
+      // Лист A4 портретом: 210/297.
+      aspectRatio: 0.71,
+      widthFactor: 0.62,
+      verticalAlignment: -0.25,
+      detected: isDocumentDetected,
+      icon: Icons.description_outlined,
+      label: isDocumentDetected
+          ? l10n.camDocDetectedHint
+          : l10n.camFitDocInFrame,
     );
   }
 
@@ -230,24 +219,14 @@ class UnlimitedDocumentView extends StatelessWidget {
 
     final double cameraHeightLimit = size.height * 0.85;
 
-    final bool isAutoMode = (captureModeController as dynamic).captureMode == 'Автоматически';
-
     final String pageStatus = l10n.pageLabel(currentBatchPageCount + 1);
 
     return Container(
       color: Colors.transparent,
       child: Stack(
         children: [
-          // 2. Рамка детекции
-          if (isAutoMode)
-            Align(
-              alignment: const Alignment(0, -0.75),
-              child: SizedBox(
-                height: cameraHeightLimit,
-                width: size.width,
-                child: _buildDocumentFrameOverlay(cameraHeightLimit),
-              ),
-            ),
+          // 2. Рамка-трафарет — в обоих режимах, единый стиль с паспортом.
+          _guideFrame(l10n),
 
           // 3. Оверлей статуса
           Align(
