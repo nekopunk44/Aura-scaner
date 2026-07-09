@@ -86,7 +86,11 @@ class MultiPageDocumentView extends StatelessWidget {
           children: [
             GestureDetector(
               onTap: onBack,
-              child: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+              child: const Icon(
+                Icons.arrow_back,
+                color: Colors.white,
+                size: 28,
+              ),
             ),
 
             Container(
@@ -97,8 +101,16 @@ class MultiPageDocumentView extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  _buildTopSegment(l10n.camAutoLabel, currentMode == "Автоматически", setCaptureModeAuto),
-                  _buildTopSegment(l10n.camManualLabel, currentMode == "Вручную", setCaptureModeManual),
+                  _buildTopSegment(
+                    l10n.camAutoLabel,
+                    currentMode == "Автоматически",
+                    setCaptureModeAuto,
+                  ),
+                  _buildTopSegment(
+                    l10n.camManualLabel,
+                    currentMode == "Вручную",
+                    setCaptureModeManual,
+                  ),
                 ],
               ),
             ),
@@ -110,7 +122,8 @@ class MultiPageDocumentView extends StatelessWidget {
                 GestureDetector(
                   onTap: () async {
                     if (cameraController != null) {
-                      bool flashOn = cameraController!.value.flashMode == FlashMode.torch;
+                      bool flashOn =
+                          cameraController!.value.flashMode == FlashMode.torch;
                       await cameraController!.setFlashMode(
                         flashOn ? FlashMode.off : FlashMode.torch,
                       );
@@ -128,7 +141,11 @@ class MultiPageDocumentView extends StatelessWidget {
                 const SizedBox(width: 12),
                 GestureDetector(
                   onTap: onSettings,
-                  child: const Icon(Icons.settings, color: Colors.white, size: 26),
+                  child: const Icon(
+                    Icons.settings,
+                    color: Colors.white,
+                    size: 26,
+                  ),
                 ),
               ],
             ),
@@ -143,10 +160,11 @@ class MultiPageDocumentView extends StatelessWidget {
   /// оба режима выглядят одинаково.
   Widget _guideFrame(AppLocalizations l10n) {
     return DocumentGuideFrame(
-      // Лист A4 портретом: 210/297.
+      // Лист A4 портретом: 210/297. Рамка оставляет больше воздуха сверху
+      // под статус-карточку и снизу под подпись/селектор режима.
       aspectRatio: 0.71,
-      widthFactor: 0.62,
-      verticalAlignment: -0.25,
+      widthFactor: 0.66,
+      verticalAlignment: -0.22,
       detected: isDocumentDetected,
       icon: Icons.description_outlined,
       label: isDocumentDetected
@@ -184,8 +202,11 @@ class MultiPageDocumentView extends StatelessWidget {
   Widget _buildBottomBar(BuildContext context) {
     const bool isDocumentMode = true;
 
-    final bool canSnap = (captureModeController as dynamic)
-        .canTakePicture(isDocumentMode: isDocumentMode) as bool;
+    final bool canSnap =
+        (captureModeController as dynamic).canTakePicture(
+              isDocumentMode: isDocumentMode,
+            )
+            as bool;
 
     final bool isBatchActive = currentBatchPageCount > 0;
     final bool canAddMore = currentBatchPageCount < maxPages;
@@ -221,15 +242,14 @@ class MultiPageDocumentView extends StatelessWidget {
   Widget build(BuildContext context) {
     if (cameraController == null || !cameraController!.value.isInitialized) {
       return const Center(
-          child: CircularProgressIndicator(color: Colors.white));
+        child: CircularProgressIndicator(color: Colors.white),
+      );
     }
 
     final l10n = AppLocalizations.of(context);
-    final size = MediaQuery.of(context).size;
 
-    final double cameraHeightLimit = size.height * 0.85;
-
-    final bool isAutoMode = (captureModeController as dynamic).captureMode == 'Автоматически';
+    final bool isAutoMode =
+        (captureModeController as dynamic).captureMode == 'Автоматически';
     final String pageStatus = currentBatchPageCount < maxPages
         ? l10n.camPageNofM(currentBatchPageCount + 1, maxPages)
         : l10n.camMaxPagesReached(maxPages);
@@ -240,32 +260,23 @@ class MultiPageDocumentView extends StatelessWidget {
         children: [
           // Авто: живой контур листа (фолбэк — рамка-трафарет).
           // Ручной: та же рамка-трафарет — режимы выглядят одинаково.
-          if (isAutoMode)
-            _buildDetectionOverlay(l10n)
-          else
-            _guideFrame(l10n),
+          if (isAutoMode) _buildDetectionOverlay(l10n) else _guideFrame(l10n),
 
-          Align(
-            alignment: const Alignment(0, -0.05),
-            child: SizedBox(
-              height: cameraHeightLimit,
-              width: size.width,
-              child: (captureModeController as dynamic).buildStatusOverlay(
-                isDocumentMode: true,
-                pageMode: pageStatus,
-                featureName: Feat.document,
-                overlayKind: CaptureStatusOverlayKind.document,
-                l10n: l10n,
-              ) as Widget,
-            ),
+          // Статус-карточка позиционируется от верха экрана (как у паспорта),
+          // а не от смещённого бокса — предсказуемо встаёт над рамкой.
+          Positioned.fill(
+            child:
+                (captureModeController as dynamic).buildStatusOverlay(
+                      isDocumentMode: true,
+                      pageMode: pageStatus,
+                      featureName: Feat.document,
+                      overlayKind: CaptureStatusOverlayKind.document,
+                      l10n: l10n,
+                    )
+                    as Widget,
           ),
 
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: _buildTopPanel(l10n),
-          ),
+          Positioned(top: 0, left: 0, right: 0, child: _buildTopPanel(l10n)),
 
           Positioned(
             bottom: 0,
@@ -321,8 +332,9 @@ class _DocQuadPainter extends CustomPainter {
       Paint()..color = Colors.black.withValues(alpha: 0.35),
     );
 
-    final Color color =
-        active ? const Color(0xFF22C55E) : const Color(0xFF2CA5E0);
+    final Color color = active
+        ? const Color(0xFF22C55E)
+        : const Color(0xFF2CA5E0);
     canvas.drawPath(
       path,
       Paint()

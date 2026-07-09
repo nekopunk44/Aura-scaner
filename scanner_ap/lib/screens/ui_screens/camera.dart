@@ -108,9 +108,7 @@ class _QrDimPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final path = Path()
       ..addRect(Offset.zero & size)
-      ..addRRect(
-        RRect.fromRectAndRadius(hole, Radius.circular(cornerRadius)),
-      )
+      ..addRRect(RRect.fromRectAndRadius(hole, Radius.circular(cornerRadius)))
       ..fillType = PathFillType.evenOdd;
     canvas.drawPath(
       path,
@@ -185,8 +183,10 @@ class _CameraScreenState extends State<CameraScreen>
   // Ключи пилюль селектора: ширина выбранной пилюли отличается от остальных,
   // поэтому центрирование делаем через Scrollable.ensureVisible, а не
   // арифметикой фиксированной ширины тайла.
-  late final List<GlobalKey> _featureKeys =
-      List.generate(_features.length, (_) => GlobalKey());
+  late final List<GlobalKey> _featureKeys = List.generate(
+    _features.length,
+    (_) => GlobalKey(),
+  );
   late String _selectedFeature;
   String _pageMode = '1 страница';
 
@@ -383,7 +383,8 @@ class _CameraScreenState extends State<CameraScreen>
     if (!mounted) return;
     if (_selectedFeature == Feat.qrScanner) {
       unawaited(_startBarcodeScanning());
-    } else if (_selectedFeature != Feat.translate && _selectedFeature != Feat.ocr) {
+    } else if (_selectedFeature != Feat.translate &&
+        _selectedFeature != Feat.ocr) {
       _startDocumentDetectionStream();
     }
   }
@@ -466,11 +467,20 @@ class _CameraScreenState extends State<CameraScreen>
       captureModeController.isScanning = false;
     });
 
-    _startDocumentDetectionStream();
+    if (_selectedFeature != Feat.translate && _selectedFeature != Feat.ocr) {
+      _startDocumentDetectionStream();
+    } else {
+      unawaited(_stopLiveDocumentDetection());
+    }
   }
 
   void _startDocumentDetectionStream() {
-    if (_selectedFeature == Feat.qrScanner) return;
+    if (_selectedFeature == Feat.qrScanner ||
+        _selectedFeature == Feat.translate ||
+        _selectedFeature == Feat.ocr) {
+      unawaited(_stopLiveDocumentDetection());
+      return;
+    }
 
     final feature = _features.firstWhere(
       (f) => f['name'] == _selectedFeature,
@@ -595,8 +605,8 @@ class _CameraScreenState extends State<CameraScreen>
         //     сливается с линиями пола).
         // Старая эвристика фиксированных линий не используется: она давала
         // ложные срабатывания на ковре и не находила вертикальную страницу.
-        final match = quadFound ||
-            _detectFramedDocumentBySearch(image, featureName);
+        final match =
+            quadFound || _detectFramedDocumentBySearch(image, featureName);
         detected = _stabilizedDetection(match);
       } else {
         detected = _detectDocumentContour(image, featureName: featureName);
@@ -693,8 +703,13 @@ class _CameraScreenState extends State<CameraScreen>
         final bboxTop = ys.reduce(math.min).round();
         final bboxBottom = ys.reduce(math.max).round();
         if (_rectHasThroughEdges(
-          gray, targetWidth, targetHeight,
-          bboxLeft, bboxTop, bboxRight, bboxBottom,
+          gray,
+          targetWidth,
+          targetHeight,
+          bboxLeft,
+          bboxTop,
+          bboxRight,
+          bboxBottom,
         )) {
           continue;
         }
@@ -835,7 +850,12 @@ class _CameraScreenState extends State<CameraScreen>
       for (int y = from; y <= to; y += 2) {
         if (y < 3 || y > targetHeight - 4) continue;
         final s = _horizontalLineScore(
-          gray, targetWidth, targetHeight, y, x0, x1,
+          gray,
+          targetWidth,
+          targetHeight,
+          y,
+          x0,
+          x1,
         );
         if (s > bestScore) {
           bestScore = s;
@@ -851,7 +871,12 @@ class _CameraScreenState extends State<CameraScreen>
       for (int x = from; x <= to; x += 2) {
         if (x < 3 || x > targetWidth - 4) continue;
         final s = _verticalLineScore(
-          gray, targetWidth, targetHeight, x, y0, y1,
+          gray,
+          targetWidth,
+          targetHeight,
+          x,
+          y0,
+          y1,
         );
         if (s > bestScore) {
           bestScore = s;
@@ -917,7 +942,13 @@ class _CameraScreenState extends State<CameraScreen>
     // Края документа должны заканчиваться на углах: сквозные линии сцены
     // (граница ковра, стык половиц) — не документ.
     if (_rectHasThroughEdges(
-      gray, targetWidth, targetHeight, leftX, topY, rightX, bottomY,
+      gray,
+      targetWidth,
+      targetHeight,
+      leftX,
+      topY,
+      rightX,
+      bottomY,
     )) {
       return false;
     }
@@ -1050,8 +1081,7 @@ class _CameraScreenState extends State<CameraScreen>
   // Временно отключён: ложно блокировал автоснимок лицевой стороны.
   // ignore: unused_element
   String? _idSideWarningForFrame(CameraImage image) {
-    if (_selectedFeature != Feat.idCard ||
-        _currentSide != 'Лицевая') {
+    if (_selectedFeature != Feat.idCard || _currentSide != 'Лицевая') {
       return null;
     }
 
@@ -1342,10 +1372,12 @@ class _CameraScreenState extends State<CameraScreen>
         ];
       case Feat.document:
       case Feat.plus10Pages:
+        // Рамка листа (widthFactor 0.66, alignment -0.22):
+        // верх ~0.23 H, низ ~0.65 H.
         return const [
-          _DocumentFrameSpec(left: 0.11, right: 0.89, top: 0.12, bottom: 0.62),
-          _DocumentFrameSpec(left: 0.08, right: 0.92, top: 0.08, bottom: 0.70),
-          _DocumentFrameSpec(left: 0.06, right: 0.94, top: 0.06, bottom: 0.80),
+          _DocumentFrameSpec(left: 0.17, right: 0.83, top: 0.23, bottom: 0.65),
+          _DocumentFrameSpec(left: 0.13, right: 0.87, top: 0.18, bottom: 0.70),
+          _DocumentFrameSpec(left: 0.20, right: 0.80, top: 0.28, bottom: 0.60),
         ];
       case Feat.passport:
       default:
@@ -2355,8 +2387,9 @@ class _CameraScreenState extends State<CameraScreen>
       setState(() => _passportBatch.add(passportImage));
       AppNotification.show(
         context,
-        message:
-            AppLocalizations.of(context).camPageAdded(_passportBatch.length),
+        message: AppLocalizations.of(
+          context,
+        ).camPageAdded(_passportBatch.length),
         type: NotificationType.success,
       );
       _startDocumentDetectionStream();
@@ -2466,9 +2499,8 @@ class _CameraScreenState extends State<CameraScreen>
     const double leadingPadding = 2.0;
     final double viewportWidth =
         _featureScrollController.position.viewportDimension;
-    final double itemCenter = leadingPadding +
-        index * _kFeatureSlotWidth +
-        _kFeatureSlotWidth / 2;
+    final double itemCenter =
+        leadingPadding + index * _kFeatureSlotWidth + _kFeatureSlotWidth / 2;
     final double targetOffset = itemCenter - (viewportWidth / 2);
 
     final maxOffset = _featureScrollController.position.maxScrollExtent;
@@ -2774,21 +2806,36 @@ class _CameraScreenState extends State<CameraScreen>
 
   String _featureLabel(Map<String, dynamic> feature, AppLocalizations l10n) {
     switch (feature['name'] as String) {
-      case Feat.passport: return l10n.camChipPassport;
-      case Feat.idCard: return l10n.camChipIdCard;
-      case Feat.document: return l10n.camChipDocument;
-      case Feat.qrScanner: return l10n.camChipQr;
-      case Feat.plus10Pages: return l10n.camChip10Pages;
-      case Feat.translate: return l10n.camChipTranslate;
-      case Feat.signature: return l10n.camChipSignature;
-      case Feat.restorePhoto: return l10n.camChipRestore;
-      case Feat.removeSpots: return l10n.camChipRemoveSpots;
-      case Feat.highlight: return l10n.camChipHighlight;
-      case Feat.ocr: return l10n.camChipOcr;
-      case Feat.removeWatermark: return l10n.camChipNoWatermark;
-      case Feat.addPassword: return l10n.camChipPassword;
-      case Feat.eco: return l10n.camChipEco;
-      default: return (feature['label'] ?? feature['name']) as String;
+      case Feat.passport:
+        return l10n.camChipPassport;
+      case Feat.idCard:
+        return l10n.camChipIdCard;
+      case Feat.document:
+        return l10n.camChipDocument;
+      case Feat.qrScanner:
+        return l10n.camChipQr;
+      case Feat.plus10Pages:
+        return l10n.camChip10Pages;
+      case Feat.translate:
+        return l10n.camChipTranslate;
+      case Feat.signature:
+        return l10n.camChipSignature;
+      case Feat.restorePhoto:
+        return l10n.camChipRestore;
+      case Feat.removeSpots:
+        return l10n.camChipRemoveSpots;
+      case Feat.highlight:
+        return l10n.camChipHighlight;
+      case Feat.ocr:
+        return l10n.camChipOcr;
+      case Feat.removeWatermark:
+        return l10n.camChipNoWatermark;
+      case Feat.addPassword:
+        return l10n.camChipPassword;
+      case Feat.eco:
+        return l10n.camChipEco;
+      default:
+        return (feature['label'] ?? feature['name']) as String;
     }
   }
 
@@ -2909,8 +2956,7 @@ class _CameraScreenState extends State<CameraScreen>
                 child: AnimatedBuilder(
                   animation: _qrScanLineCtrl,
                   builder: (context, _) {
-                    final t = Curves.easeInOut
-                        .transform(_qrScanLineCtrl.value);
+                    final t = Curves.easeInOut.transform(_qrScanLineCtrl.value);
                     return Align(
                       alignment: Alignment(0, t * 2 - 1),
                       child: Container(
@@ -2929,8 +2975,9 @@ class _CameraScreenState extends State<CameraScreen>
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF35B4F4)
-                                  .withValues(alpha: 0.55),
+                              color: const Color(
+                                0xFF35B4F4,
+                              ).withValues(alpha: 0.55),
                               blurRadius: 12,
                               spreadRadius: 1,
                             ),
@@ -3099,8 +3146,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   Widget _buildFeatureSelector() {
     final l10n = AppLocalizations.of(context);
-    final selIndex =
-        _features.indexWhere((f) => f['name'] == _selectedFeature);
+    final selIndex = _features.indexWhere((f) => f['name'] == _selectedFeature);
 
     Widget buildItem(int index) {
       final feature = _features[index];
@@ -3109,105 +3155,105 @@ class _CameraScreenState extends State<CameraScreen>
       final isPremiumFeature = _isPremiumFeatureName(newFeature);
 
       return GestureDetector(
-            onTap: () {
-              if (newFeature == Feat.importDocs) {
-                final cameraContext = context;
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (importerContext) => DocumentImporter(
-                      initialPath: _importedDocumentPath,
+        onTap: () {
+          if (newFeature == Feat.importDocs) {
+            final cameraContext = context;
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (importerContext) => DocumentImporter(
+                  initialPath: _importedDocumentPath,
 
-                      onConfirm: (selectedPath) {
-                        Navigator.pop(importerContext);
-                        widget.onScanCompleted?.call(selectedPath);
-                        Navigator.pop(cameraContext, selectedPath);
-                      },
-                      onBack: () {
-                        Navigator.pop(importerContext);
-                      },
-                    ),
-                  ),
-                );
-                return;
-              }
+                  onConfirm: (selectedPath) {
+                    Navigator.pop(importerContext);
+                    widget.onScanCompleted?.call(selectedPath);
+                    Navigator.pop(cameraContext, selectedPath);
+                  },
+                  onBack: () {
+                    Navigator.pop(importerContext);
+                  },
+                ),
+              ),
+            );
+            return;
+          }
 
-              if (!_guardPremiumFeatureSelection(newFeature)) {
-                return;
-              }
+          if (!_guardPremiumFeatureSelection(newFeature)) {
+            return;
+          }
 
-              if (_openToolFeature(feature)) {
-                return;
-              }
+          if (_openToolFeature(feature)) {
+            return;
+          }
 
-              _cancelAutoCapture();
-              HapticFeedback.selectionClick();
-              setState(() {
-                _selectedFeature = newFeature;
-                _pageMode = '1 страница';
-                _resetTwoPageState();
-                _resetIdCardState();
-                _resetMultiPageState();
+          _cancelAutoCapture();
+          HapticFeedback.selectionClick();
+          setState(() {
+            _selectedFeature = newFeature;
+            _pageMode = '1 страница';
+            _resetTwoPageState();
+            _resetIdCardState();
+            _resetMultiPageState();
 
-                if (_selectedFeature != Feat.qrScanner) {
-                  _qrCode = null;
+            if (_selectedFeature != Feat.qrScanner) {
+              _qrCode = null;
+            }
+          });
+
+          if (newFeature == Feat.qrScanner) {
+            // Камеру НЕ пересоздаём — запускаем сканирование штрихкодов
+            // на уже работающем контроллере (нет мерцания). Детекцию
+            // документа выключаем.
+            captureModeController.detectionTimer?.cancel();
+            captureModeController.resetDetectionState();
+            setState(() => _isDocumentDetected = false);
+            unawaited(_stopLiveDocumentDetection());
+
+            if (_cameraController == null) {
+              unawaited(
+                _initializeCamera().then((_) {
+                  if (mounted && _selectedFeature == Feat.qrScanner) {
+                    _startBarcodeScanning();
+                  }
+                }),
+              );
+            } else {
+              // Отложенно: предыдущий вью (напр. живой перевод) диспозится
+              // только ПОСЛЕ кроссфейда AnimatedSwitcher (~260мс), и его
+              // dispose останавливает стрим. Стартуем сканер после этого.
+              Future.delayed(const Duration(milliseconds: 350), () {
+                if (mounted && _selectedFeature == Feat.qrScanner) {
+                  _startBarcodeScanning();
                 }
               });
+            }
+          } else {
+            // Уходим из QR — останавливаем стрим, иначе takePicture()
+            // в документных режимах конфликтует с активным image-stream.
+            unawaited(_stopBarcodeScanning());
 
-              if (newFeature == Feat.qrScanner) {
-                // Камеру НЕ пересоздаём — запускаем сканирование штрихкодов
-                // на уже работающем контроллере (нет мерцания). Детекцию
-                // документа выключаем.
-                captureModeController.detectionTimer?.cancel();
-                captureModeController.resetDetectionState();
-                setState(() => _isDocumentDetected = false);
-                unawaited(_stopLiveDocumentDetection());
+            if (_cameraController == null) {
+              unawaited(_initializeCamera());
+            }
 
-                if (_cameraController == null) {
-                  unawaited(
-                    _initializeCamera().then((_) {
-                      if (mounted && _selectedFeature == Feat.qrScanner) {
-                        _startBarcodeScanning();
-                      }
-                    }),
-                  );
-                } else {
-                  // Отложенно: предыдущий вью (напр. живой перевод) диспозится
-                  // только ПОСЛЕ кроссфейда AnimatedSwitcher (~260мс), и его
-                  // dispose останавливает стрим. Стартуем сканер после этого.
-                  Future.delayed(const Duration(milliseconds: 350), () {
-                    if (mounted && _selectedFeature == Feat.qrScanner) {
-                      _startBarcodeScanning();
-                    }
-                  });
-                }
-              } else {
-                // Уходим из QR — останавливаем стрим, иначе takePicture()
-                // в документных режимах конфликтует с активным image-stream.
-                unawaited(_stopBarcodeScanning());
+            if (newFeature != Feat.translate && newFeature != Feat.ocr) {
+              Future.delayed(
+                const Duration(milliseconds: 500),
+                _startDocumentDetectionStream,
+              );
+            } else {
+              captureModeController.resetDetectionState();
+              setState(() => _isDocumentDetected = false);
+              unawaited(_stopLiveDocumentDetection());
+            }
+          }
 
-                if (_cameraController == null) {
-                  unawaited(_initializeCamera());
-                }
-
-                if (newFeature != Feat.translate && newFeature != Feat.ocr) {
-                  Future.delayed(
-                    const Duration(milliseconds: 500),
-                    _startDocumentDetectionStream,
-                  );
-                } else {
-                  captureModeController.resetDetectionState();
-                  setState(() => _isDocumentDetected = false);
-                  unawaited(_stopLiveDocumentDetection());
-                }
-              }
-
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) {
-                  _scrollToSelectedFeature();
-                }
-              });
-            },
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _scrollToSelectedFeature();
+            }
+          });
+        },
         child: SizedBox(
           key: _featureKeys[index],
           width: _kFeatureSlotWidth,
@@ -3311,12 +3357,13 @@ class _CameraScreenState extends State<CameraScreen>
                         // Без overshoot: подсветка встаёт точно в слот,
                         // не «переезжая» соседнюю иконку.
                         curve: Curves.easeOutCubic,
-                        left: (selIndex < 0 ? 0 : selIndex) *
-                                _kFeatureSlotWidth +
+                        left:
+                            (selIndex < 0 ? 0 : selIndex) * _kFeatureSlotWidth +
                             (_kFeatureSlotWidth - _kFeatureGlowWidth) / 2,
                         // -2: рамка капсулы (1px сверху и снизу) съедает
                         // высоту Stack — иначе подсветка смещена вниз на 1px.
-                        top: (_kFeaturePanelHeight - 2 - _kFeatureGlowHeight) /
+                        top:
+                            (_kFeaturePanelHeight - 2 - _kFeatureGlowHeight) /
                             2,
                         width: _kFeatureGlowWidth,
                         height: _kFeatureGlowHeight,
@@ -3326,8 +3373,9 @@ class _CameraScreenState extends State<CameraScreen>
                           child: AnimatedBuilder(
                             animation: _selectorPulseCtrl,
                             builder: (context, _) {
-                              final pulse = Curves.easeInOut
-                                  .transform(_selectorPulseCtrl.value);
+                              final pulse = Curves.easeInOut.transform(
+                                _selectorPulseCtrl.value,
+                              );
                               return DecoratedBox(
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(
@@ -3343,15 +3391,14 @@ class _CameraScreenState extends State<CameraScreen>
                                     ],
                                   ),
                                   border: Border.all(
-                                    color: Colors.white
-                                        .withValues(alpha: 0.35),
+                                    color: Colors.white.withValues(alpha: 0.35),
                                     width: 1.4,
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: const Color(0xFF2CA5E0)
-                                          .withValues(
-                                              alpha: 0.40 + pulse * 0.30),
+                                      color: const Color(
+                                        0xFF2CA5E0,
+                                      ).withValues(alpha: 0.40 + pulse * 0.30),
                                       blurRadius: 12 + pulse * 10,
                                       spreadRadius: 1 + pulse * 1.5,
                                     ),
@@ -3622,15 +3669,14 @@ class _CameraScreenState extends State<CameraScreen>
     // исключён — отдельный плагин рисовал своё превью).
     final bool showPersistentPreview =
         _isCameraInitialized && _cameraController != null;
-    final bool isTranslateSelected = _selectedFeature == Feat.translate;
     final bool isQrSelected = _selectedFeature == Feat.qrScanner;
+    final bool isTranslateSelected = _selectedFeature == Feat.translate;
     // В QR нет нижнего бара с затвором — лента фильтров плавно съезжает
     // вниз (над историей сканов, если она есть) и так же плавно
     // возвращается при выборе другого режима.
-    final double selectorBottom = MediaQuery.of(context).padding.bottom +
-        (isQrSelected
-            ? (_qrHistory.isNotEmpty ? 78.0 : 28.0)
-            : (isTranslateSelected ? 104.0 : 122.0));
+    final double selectorBottom =
+        MediaQuery.of(context).padding.bottom +
+        (isQrSelected ? (_qrHistory.isNotEmpty ? 78.0 : 28.0) : 122.0);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -3654,13 +3700,15 @@ class _CameraScreenState extends State<CameraScreen>
           // плавно меняется только то, что реально отличается между
           // режимами (рамка, подписи, правые кнопки).
           Positioned.fill(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: KeyedSubtree(
-                key: ValueKey<String>(_selectedFeature),
-                child: currentCameraView,
-              ),
-            ),
+            child: isTranslateSelected
+                ? currentCameraView
+                : AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: KeyedSubtree(
+                      key: ValueKey<String>(_selectedFeature),
+                      child: currentCameraView,
+                    ),
+                  ),
           ),
           AnimatedPositioned(
             // CameraControlsBar (child-view bottom-bar) уже включает
@@ -3679,4 +3727,3 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 }
-

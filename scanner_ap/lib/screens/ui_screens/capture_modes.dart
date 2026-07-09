@@ -132,20 +132,20 @@ class CaptureModeController {
           maxWidth: 246,
           icon: Icons.badge_outlined,
         );
-      // Документ и пакетный документ: карточка НАД рамкой-трафаретом
-      // (верх рамки ~0.22 H экрана) и строго по центру — не наезжает
-      // на вырез и не липнет к правому краю.
+      // Документ и пакетный документ: оверлей теперь Positioned.fill
+      // (отсчёт от верха экрана). Карточка между верхней панелью
+      // (заканчивается ~100px) и верхом рамки (~0.21 H) — по центру.
       case CaptureStatusOverlayKind.document:
         return const _StatusOverlayLayout(
           alignment: Alignment.topCenter,
-          padding: EdgeInsets.fromLTRB(24, 72, 24, 0),
+          padding: EdgeInsets.fromLTRB(24, 64, 24, 0),
           maxWidth: 248,
           icon: Icons.description_outlined,
         );
       case CaptureStatusOverlayKind.batchDocument:
         return const _StatusOverlayLayout(
           alignment: Alignment.topCenter,
-          padding: EdgeInsets.fromLTRB(24, 72, 24, 0),
+          padding: EdgeInsets.fromLTRB(24, 64, 24, 0),
           maxWidth: 252,
           icon: Icons.layers_outlined,
         );
