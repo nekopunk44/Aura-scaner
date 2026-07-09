@@ -25,6 +25,7 @@ import 'main_screen/remote_documents_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'session_management_screen.dart';
 import 'signature/home_screen.dart' as signature;
+import 'translate/translation_models_screen.dart';
 
 bool _isSyntheticEmail(String email) =>
     email.startsWith('tg_') || email.contains('@telegram') || email.contains('@telegr');
@@ -830,6 +831,19 @@ class _SettingsScreenState extends State<SettingsScreen>
                           title: l10n.settingsLanguage,
                           subtitle: _languageName(l10n),
                           onTap: _showLanguageDialog,
+                          isDark: isDark,
+                        ),
+                        _SettingsTile(
+                          icon: Icons.translate,
+                          iconColor: Colors.deepPurple,
+                          title: l10n.settingsTranslateModels,
+                          subtitle: l10n.settingsTranslateModelsSub,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const TranslationModelsScreen(),
+                            ),
+                          ),
                           isDark: isDark,
                         ),
                       ],
