@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import '../../../l10n/app_localizations.dart';
 import '../../../widgets/camera_capture_button.dart';
 import '../../../widgets/camera_controls_bar.dart';
+import '../../../widgets/camera_mode_switch.dart';
 import '../../../widgets/document_guide_frame.dart';
 
 import 'apis/recognition_api.dart';
@@ -780,51 +781,14 @@ class _TranslateCameraState extends State<TranslateCamera> {
     );
   }
 
-  // Переключатель Авто/Ручн. — точно такой же, как в остальных режимах
-  // камеры (белая пилюля с чёрным текстом на полупрозрачной капсуле).
+  // Переключатель Авто/Ручн. — общий виджет всех режимов камеры.
   Widget _buildModeSwitch(AppLocalizations l10n) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Colors.white12,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildModeSegment(
-            l10n.camAutoLabel,
-            _isAutoMode,
-            _setTranslateAutoMode,
-          ),
-          _buildModeSegment(
-            l10n.camManualLabel,
-            _isManualMode,
-            _setTranslateManualMode,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildModeSegment(String label, bool active, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? Colors.black : Colors.white,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
+    return CameraModeSwitch(
+      autoLabel: l10n.camAutoLabel,
+      manualLabel: l10n.camManualLabel,
+      isAuto: _isAutoMode,
+      onAuto: _setTranslateAutoMode,
+      onManual: _setTranslateManualMode,
     );
   }
 

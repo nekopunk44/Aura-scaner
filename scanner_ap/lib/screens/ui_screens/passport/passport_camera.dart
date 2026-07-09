@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import '../camera_features.dart';
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
+import '../../../widgets/camera_mode_switch.dart';
 import '../../../widgets/document_guide_frame.dart';
 import '../../../l10n/app_localizations.dart';
 
@@ -47,27 +48,6 @@ class PassportCameraView extends StatelessWidget {
   final void Function() onSettings;
 
  
-  Widget _buildTopSegment(String label, bool active, Function() onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? Colors.black : Colors.white,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildTopPanel(AppLocalizations l10n) {
     final String currentMode = captureModeController.captureMode;
 
@@ -84,26 +64,12 @@ class PassportCameraView extends StatelessWidget {
             ),
 
             // Сегментированная кнопка режимов
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.white12,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                children: [
-                  _buildTopSegment(l10n.camAutoLabel, currentMode == "Автоматически", () {
-                    if (currentMode != "Автоматически") {
-                      setCaptureModeAuto();
-                    }
-                  }),
-                  _buildTopSegment(l10n.camManualLabel, currentMode == "Вручную", () {
-                    if (currentMode != "Вручную") {
-                      setCaptureModeManual();
-                    }
-                  }),
-                ],
-              ),
+            CameraModeSwitch(
+              autoLabel: l10n.camAutoLabel,
+              manualLabel: l10n.camManualLabel,
+              isAuto: currentMode == "Автоматически",
+              onAuto: setCaptureModeAuto,
+              onManual: setCaptureModeManual,
             ),
 
             // Фонарик + настройки
