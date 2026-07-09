@@ -929,6 +929,7 @@
   "@camPassportUpTo": {"placeholders": {"count": {"type": "int"}}},
   "camPassportNextPage": "{ordinal, select, 1{Первая страница} 2{Вторая страница} 3{Третья страница} 4{Четвёртая страница} 5{Пятая страница} 6{Шестая страница} 7{Седьмая страница} other{Страница {ordinal}}}",
   "@camPassportNextPage": {"placeholders": {"ordinal": {"type": "String"}}},
+  "camFitDocInFrame": "Поместите документ в рамку",
   "previewTitle": "Предпросмотр",
   "previewPagesCount": "{count} стр.",
   "@previewPagesCount": {"placeholders": {"count": {"type": "int"}}},

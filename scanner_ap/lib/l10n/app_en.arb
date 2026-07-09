@@ -683,6 +683,7 @@
   "@camPassportUpTo": {"placeholders": {"count": {"type": "int"}}},
   "camPassportNextPage": "{ordinal, select, 1{First page} 2{Second page} 3{Third page} 4{Fourth page} 5{Fifth page} 6{Sixth page} 7{Seventh page} other{Page {ordinal}}}",
   "@camPassportNextPage": {"placeholders": {"ordinal": {"type": "String"}}},
+  "camFitDocInFrame": "Fit the document in the frame",
   "previewTitle": "Preview",
   "previewPagesCount": "{count} p.",
   "@previewPagesCount": {"placeholders": {"count": {"type": "int"}}},

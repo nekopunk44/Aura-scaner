@@ -667,11 +667,13 @@ class _CameraScreenState extends State<CameraScreen>
       targetWidth: targetWidth,
       targetHeight: targetHeight,
     );
-    // Паспортные страницы — светлые/«пустоватые», как лист документа.
-    // Для паспорта/ID берём ВСЕХ кандидатов и выбираем похожего на документ:
-    // самый большой прямоугольник сцены — часто пол/ковёр, а не документ.
+    // Паспортные страницы и листы документов — светлые/«пустоватые».
+    // Берём ВСЕХ кандидатов и выбираем похожего на документ (а не первый
+    // попавшийся): самый большой прямоугольник сцены — часто пол/ковёр.
+    // Документ идёт по тому же строгому пути, что и паспорт/ID: рамочные
+    // проверки + фильтр сквозных линий убирают «странные» автоснимки.
     List<Offset>? quad;
-    if (isIdPass) {
+    if (isIdPass || isDoc) {
       final candidates = detectPhotoQuads(
         gray,
         targetWidth,
@@ -3621,6 +3623,14 @@ class _CameraScreenState extends State<CameraScreen>
     final bool showPersistentPreview =
         _isCameraInitialized && _cameraController != null;
     final bool isTranslateSelected = _selectedFeature == Feat.translate;
+    final bool isQrSelected = _selectedFeature == Feat.qrScanner;
+    // В QR нет нижнего бара с затвором — лента фильтров плавно съезжает
+    // вниз (над историей сканов, если она есть) и так же плавно
+    // возвращается при выборе другого режима.
+    final double selectorBottom = MediaQuery.of(context).padding.bottom +
+        (isQrSelected
+            ? (_qrHistory.isNotEmpty ? 78.0 : 28.0)
+            : (isTranslateSelected ? 104.0 : 122.0));
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -3652,13 +3662,14 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
           ),
-          Positioned(
+          AnimatedPositioned(
             // CameraControlsBar (child-view bottom-bar) уже включает
             // SafeArea и сам встаёт на bottom:0. Стеклянная панель висит над
-            // ним с чётким зазором; тёмной полосы-подложки на всю ширину
-            // больше нет — капсула сама даёт фон (blur + затемнение).
-            bottom: MediaQuery.of(context).padding.bottom +
-                (isTranslateSelected ? 104 : 122),
+            // ним с чётким зазором; при переходе в QR (нет бара с затвором)
+            // лента плавно съезжает вниз и обратно.
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOutCubic,
+            bottom: selectorBottom,
             left: 0,
             right: 0,
             child: _buildFeatureSelector(),

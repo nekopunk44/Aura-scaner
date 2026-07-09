@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import '../camera_features.dart';
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
+import '../../../widgets/document_guide_frame.dart';
 import '../../../l10n/app_localizations.dart';
 
 class MultiPageDocumentView extends StatelessWidget {
@@ -287,7 +288,20 @@ class MultiPageDocumentView extends StatelessWidget {
       color: Colors.transparent,
       child: Stack(
         children: [
-          if (isAutoMode) _buildDetectionOverlay(cameraHeightLimit, size),
+          // Авто: живой контур листа. Ручной: рамка-трафарет с затемнением
+          // вокруг выреза — как у паспорта/ID, чтобы было видно куда класть.
+          if (isAutoMode)
+            _buildDetectionOverlay(cameraHeightLimit, size)
+          else
+            DocumentGuideFrame(
+              // Лист A4 портретом: 210/297.
+              aspectRatio: 0.71,
+              widthFactor: 0.62,
+              verticalAlignment: -0.25,
+              detected: isDocumentDetected,
+              icon: Icons.description_outlined,
+              label: l10n.camFitDocInFrame,
+            ),
 
           Align(
             alignment: const Alignment(0, -0.05),
