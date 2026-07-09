@@ -152,10 +152,6 @@ class IdCardCameraView extends StatelessWidget {
       onCapture: canSnap ? takePicture : null,
       leftActions: [
         CameraActionIcon(
-          icon: Icons.refresh,
-          onTap: isScanning ? null : setCaptureModeAuto,
-        ),
-        CameraActionIcon(
           icon: Icons.photo_library_outlined,
           onTap: isScanning ? null : pickImageFromGallery,
         ),

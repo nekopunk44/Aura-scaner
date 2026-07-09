@@ -2,14 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'dart:io';
+import 'dart:ui' as ui;
 import '../../../l10n/app_localizations.dart';
+import '../../../widgets/camera_capture_button.dart';
+import '../../../widgets/camera_controls_bar.dart';
+import '../../../widgets/document_guide_frame.dart';
 
 import 'apis/recognition_api.dart';
 import 'apis/translation_api.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 import 'package:google_mlkit_language_id/google_mlkit_language_id.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 /// Экран перевода с ЖИВЫМ переводом прямо в камере: наводишь на текст в
 /// рамке — перевод появляется на экране в реальном времени (без кнопки).
@@ -65,13 +71,22 @@ class _TranslateCameraState extends State<TranslateCamera> {
   bool _busy = false;
   bool _downloadingModels = false;
   bool _targetInitialized = false;
+  bool _manualTranslateMode = false;
   DateTime _lastRun = DateTime.fromMillisecondsSinceEpoch(0);
   String _lastRecognized = '';
 
-  final TextRecognizer _recognizer =
-      TextRecognizer(script: TextRecognitionScript.latin);
-  final LanguageIdentifier _langId =
-      LanguageIdentifier(confidenceThreshold: 0.4);
+  /// «Липкий» исходный язык: последний УВЕРЕННО определённый BCP-код.
+  /// Короткие надписи (одно слово на обложке) идентификатор часто не
+  /// распознаёт — тогда используем язык, определённый на предыдущих,
+  /// более длинных кадрах, вместо молчаливого фолбэка на английский.
+  String? _stickySourceLang;
+
+  final TextRecognizer _recognizer = TextRecognizer(
+    script: TextRecognitionScript.latin,
+  );
+  final LanguageIdentifier _langId = LanguageIdentifier(
+    confidenceThreshold: 0.4,
+  );
   final OnDeviceTranslatorModelManager _modelManager =
       OnDeviceTranslatorModelManager();
   OnDeviceTranslator? _translator;
@@ -105,12 +120,23 @@ class _TranslateCameraState extends State<TranslateCamera> {
     'ko': '한국어',
   };
 
+  bool get _isAutoMode => !_manualTranslateMode;
+
+  bool get _isManualMode => _manualTranslateMode;
+
+  bool get _shouldShowFrameStatus =>
+      _downloadingModels ||
+      _isProcessing ||
+      (_isAutoMode && (_liveTranslation == null || _liveTranslation!.isEmpty));
+
   @override
   void initState() {
     super.initState();
     // Старт после первого кадра — чтобы предыдущий стрим (напр. QR) успел
     // остановиться при переключении режима.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _startLiveStream());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _syncLiveStreamWithMode(),
+    );
   }
 
   @override
@@ -135,7 +161,9 @@ class _TranslateCameraState extends State<TranslateCamera> {
       _streaming = false;
       _busy = false;
       _lastRecognized = '';
-      WidgetsBinding.instance.addPostFrameCallback((_) => _startLiveStream());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _syncLiveStreamWithMode(),
+      );
     }
   }
 
@@ -152,9 +180,19 @@ class _TranslateCameraState extends State<TranslateCamera> {
   // Живой стрим
   // ------------------------------------------------------------------
 
+  void _syncLiveStreamWithMode() {
+    if (_isAutoMode) {
+      _startLiveStream();
+    } else {
+      _stopLiveStream();
+    }
+  }
+
   Future<void> _startLiveStream() async {
     final c = widget.cameraController;
-    if (c == null || !c.value.isInitialized || _streaming) return;
+    if (!_isAutoMode || c == null || !c.value.isInitialized || _streaming) {
+      return;
+    }
     // Если контроллер ещё занят предыдущим стримом — подождём и попробуем.
     if (c.value.isStreamingImages) {
       await Future.delayed(const Duration(milliseconds: 350));
@@ -181,7 +219,7 @@ class _TranslateCameraState extends State<TranslateCamera> {
   }
 
   Future<void> _processFrame(CameraImage image) async {
-    if (_busy || !mounted || _isProcessing) return;
+    if (!_isAutoMode || _busy || !mounted || _isProcessing) return;
     final now = DateTime.now();
     if (now.difference(_lastRun).inMilliseconds < 600) return;
     _busy = true;
@@ -206,40 +244,87 @@ class _TranslateCameraState extends State<TranslateCamera> {
       if (text == _lastRecognized) return;
       _lastRecognized = text;
 
-      String srcCode;
-      try {
-        srcCode = await _langId.identifyLanguage(text);
-      } catch (_) {
-        srcCode = 'und';
-      }
-      final source = _mapToTranslateLang(srcCode) ?? TranslateLanguage.english;
-      final target =
-          _mapToTranslateLang(_targetLang) ?? TranslateLanguage.russian;
-
-      if (source == target) {
-        if (mounted) {
-          setState(() {
-            _liveTranslation = text;
-            _detectedSourceLang = source.bcpCode;
-          });
-        }
-        return;
-      }
-
-      final translator = await _ensureTranslator(source, target);
-      if (translator == null) return;
-      final translated = await translator.translateText(text);
-      if (mounted) {
-        setState(() {
-          _liveTranslation = translated;
-          _detectedSourceLang = source.bcpCode;
-        });
-      }
+      await _translateRecognizedText(text);
     } catch (e) {
       debugPrint('Перевод: ошибка кадра: $e');
     } finally {
       _busy = false;
     }
+  }
+
+  Future<void> _translateRecognizedText(
+    String recognizedText, {
+    bool finishProcessing = false,
+  }) async {
+    final text = recognizedText.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (text.length < 2) {
+      if (finishProcessing && mounted) {
+        setState(() => _isProcessing = false);
+      }
+      return;
+    }
+
+    final source = await _identifySourceLanguage(text);
+    final target =
+        _mapToTranslateLang(_targetLang) ?? TranslateLanguage.russian;
+
+    if (source == null) {
+      // Язык не определён (и липкого нет) — показываем распознанный текст
+      // БЕЗ перевода. Раньше здесь молча подставлялся английский, и
+      // «PAŞAPORT» превращался в бессмысленный перевод «Порт».
+      if (mounted) {
+        setState(() {
+          _liveTranslation = text;
+          _detectedSourceLang = null;
+          if (finishProcessing) _isProcessing = false;
+        });
+      }
+      return;
+    }
+
+    String translated = text;
+    if (source != target) {
+      final translator = await _ensureTranslator(source, target);
+      if (translator == null) {
+        if (finishProcessing && mounted) {
+          setState(() => _isProcessing = false);
+        }
+        return;
+      }
+      translated = await translator.translateText(text);
+    }
+
+    if (mounted) {
+      setState(() {
+        _liveTranslation = translated;
+        _detectedSourceLang = source.bcpCode;
+        if (finishProcessing) _isProcessing = false;
+      });
+    }
+  }
+
+  /// Определяет исходный язык по списку кандидатов ML Kit: берём первого
+  /// достаточно уверенного (>= 0.5) из поддерживаемых переводом. При
+  /// неудаче — «липкий» язык с предыдущих уверенных кадров, а если и его
+  /// нет — null (вызывающий покажет оригинал без перевода).
+  Future<TranslateLanguage?> _identifySourceLanguage(String text) async {
+    try {
+      final candidates = await _langId.identifyPossibleLanguages(text);
+      for (final candidate in candidates) {
+        if (candidate.languageTag == 'und') continue;
+        if (candidate.confidence < 0.5) continue;
+        final lang = _mapToTranslateLang(candidate.languageTag);
+        if (lang != null) {
+          _stickySourceLang = candidate.languageTag;
+          return lang;
+        }
+      }
+    } catch (e) {
+      debugPrint('Перевод: ошибка определения языка: $e');
+    }
+    final sticky = _stickySourceLang;
+    if (sticky != null) return _mapToTranslateLang(sticky);
+    return null;
   }
 
   Future<OnDeviceTranslator?> _ensureTranslator(
@@ -428,8 +513,9 @@ class _TranslateCameraState extends State<TranslateCamera> {
                           color: selected
                               ? const Color(0xFF2CA5E0)
                               : Colors.white,
-                          fontWeight:
-                              selected ? FontWeight.bold : FontWeight.normal,
+                          fontWeight: selected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                         ),
                       ),
                       trailing: selected
@@ -468,8 +554,9 @@ class _TranslateCameraState extends State<TranslateCamera> {
       });
 
       final ImagePicker picker = ImagePicker();
-      final XFile? galleryImage =
-          await picker.pickImage(source: ImageSource.gallery);
+      final XFile? galleryImage = await picker.pickImage(
+        source: ImageSource.gallery,
+      );
 
       if (!mounted) return;
       if (galleryImage == null) {
@@ -517,191 +604,457 @@ class _TranslateCameraState extends State<TranslateCamera> {
     }
   }
 
+  Future<void> _captureFrameAndTranslate() async {
+    final l10n = AppLocalizations.of(context);
+    if (_isProcessing) return;
+
+    try {
+      await _stopLiveStream();
+      if (!mounted) return;
+
+      setState(() {
+        _isProcessing = true;
+        _shownText = null;
+        _liveTranslation = null;
+        _detectedSourceLang = null;
+      });
+
+      final shot = await widget.takePicture();
+      if (shot == null) {
+        if (mounted) setState(() => _isProcessing = false);
+        return;
+      }
+
+      final cropped = await _cropImageToTranslateFrame(shot);
+      final recognizedText = await RecognitionApi.recognizeText(
+        InputImage.fromFile(File(cropped.path)),
+      );
+
+      if (!mounted) return;
+      if (recognizedText == null || recognizedText.trim().isEmpty) {
+        setState(() {
+          _liveTranslation = l10n.translateNoText;
+          _detectedSourceLang = null;
+          _isProcessing = false;
+        });
+        return;
+      }
+
+      await _translateRecognizedText(recognizedText, finishProcessing: true);
+    } catch (e) {
+      debugPrint('Перевод: ошибка ручного снимка: $e');
+      if (!mounted) return;
+      setState(() {
+        _liveTranslation = l10n.translateFailed;
+        _detectedSourceLang = null;
+        _isProcessing = false;
+      });
+    }
+  }
+
+  Future<XFile> _cropImageToTranslateFrame(XFile file) async {
+    try {
+      final bytes = await File(file.path).readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return file;
+
+      final source = img.bakeOrientation(decoded);
+      const aspectRatio = 1.42;
+      const widthFactor = 0.85;
+      const verticalAlignment = -0.25;
+
+      final cropWidth = (source.width * widthFactor)
+          .round()
+          .clamp(1, source.width)
+          .toInt();
+      final frameHeight = cropWidth / aspectRatio;
+      final cropHeight = frameHeight.round().clamp(1, source.height).toInt();
+      final centerY =
+          source.height / 2 +
+          verticalAlignment * (source.height / 2 - cropHeight / 2);
+      final x = ((source.width - cropWidth) / 2)
+          .round()
+          .clamp(0, source.width - cropWidth)
+          .toInt();
+      final y = (centerY - cropHeight / 2)
+          .round()
+          .clamp(0, source.height - cropHeight)
+          .toInt();
+
+      final cropped = img.copyCrop(
+        source,
+        x: x,
+        y: y,
+        width: cropWidth,
+        height: cropHeight,
+      );
+      final dir = await getTemporaryDirectory();
+      final out = File(
+        '${dir.path}/translate_frame_${DateTime.now().microsecondsSinceEpoch}.jpg',
+      );
+      await out.writeAsBytes(img.encodeJpg(cropped, quality: 94));
+      return XFile(out.path);
+    } catch (e) {
+      debugPrint('Перевод: ошибка crop по рамке: $e');
+      return file;
+    }
+  }
+
   // ------------------------------------------------------------------
   // build
   // ------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
+    return Material(
+      type: MaterialType.transparency,
+      child: Stack(
         children: [
-          // Рамка наведения + живой перевод под ней.
-          Align(
-            alignment: const Alignment(0, -0.12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: size.width * 0.84,
-                  height: size.height * 0.34,
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: _liveTranslation != null
-                          ? const Color(0xFF2CA5E0)
-                          : Colors.white,
-                      width: 2,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _buildLivePanel(),
-              ],
-            ),
+          // Рамка наведения + живой статус под ней.
+          Positioned.fill(child: _buildFrameAndLivePanel()),
+
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _buildTopPanel(AppLocalizations.of(context)),
           ),
 
-          // Кнопка Назад
           Positioned(
-            top: 50,
-            left: 20,
-            child: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white, size: 30),
-              onPressed: () => widget.onBack(),
-            ),
-          ),
-
-          // Фонарик + настройки
-          Positioned(
-            top: 50,
-            right: 12,
-            child: Row(
-              children: [
-                IconButton(
-                  icon: Icon(
-                    _flashOn ? Icons.flash_on : Icons.flash_off,
-                    color: Colors.white,
-                    size: 26,
-                  ),
-                  onPressed: _toggleFlash,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.settings, color: Colors.white, size: 26),
-                  onPressed: () => widget.onSettings(),
-                ),
-              ],
-            ),
-          ),
-
-          // Заголовок + подсказка
-          Positioned(
-            top: 96,
+            top: 108,
             left: 0,
             right: 0,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Builder(builder: (context) {
-                final l10n = AppLocalizations.of(context);
-                return Column(
-                  children: [
-                    Text(
-                      l10n.translateCameraTitle,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      l10n.translateCameraHint,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white70, fontSize: 14),
-                    ),
-                  ],
-                );
-              }),
-            ),
-          ),
-
-          // Нижний бар: галерея (слева) + выбор языка (справа).
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: EdgeInsets.fromLTRB(
-                24, 20, 24, 20 + MediaQuery.of(context).padding.bottom,
-              ),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withValues(alpha: 0.2),
-                    Colors.black.withValues(alpha: 0.6),
-                  ],
-                ),
-              ),
-              child: SizedBox(
-                height: 56,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    GestureDetector(
-                      onTap: _isProcessing ? null : _pickImageAndTranslate,
-                      child: Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(26),
-                          border: Border.all(
-                            color: _isProcessing ? Colors.grey : Colors.white,
-                            width: 2,
-                          ),
-                        ),
-                        child: Icon(
-                          Icons.photo_library,
-                          color: _isProcessing ? Colors.grey : Colors.white,
-                          size: 26,
+              child: Builder(
+                builder: (context) {
+                  final l10n = AppLocalizations.of(context);
+                  return Column(
+                    children: [
+                      Text(
+                        l10n.translateCameraTitle,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ),
-                    GestureDetector(
-                      onTap: _showLanguagePicker,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.4)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.language,
-                                color: Colors.white, size: 18),
-                            const SizedBox(width: 6),
-                            Text(
-                              _languages[_targetLang] ?? _targetLang,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const Icon(Icons.arrow_drop_down,
-                                color: Colors.white, size: 18),
-                          ],
+                      const SizedBox(height: 6),
+                      Text(
+                        _isAutoMode
+                            ? l10n.translateCameraHint
+                            : l10n.translateManualHint,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
 
-          // Модальное окно результата из галереи.
+          _buildTranslationResultCard(),
+          Positioned(bottom: 0, left: 0, right: 0, child: _buildBottomBar()),
+
           if (_shownText != null) _buildGalleryResult(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildModeSwitch(AppLocalizations l10n) {
+    const switchWidth = 164.0;
+    const switchHeight = 44.0;
+    const thumbWidth = (switchWidth - 8) / 2;
+
+    return Container(
+      width: switchWidth,
+      height: switchHeight,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.28),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+      ),
+      child: Stack(
+        children: [
+          AnimatedAlign(
+            alignment: _isAutoMode
+                ? Alignment.centerLeft
+                : Alignment.centerRight,
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic,
+            child: Container(
+              width: thumbWidth,
+              height: switchHeight - 8,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF5BC8FF), Color(0xFF168DDB)],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF2CA5E0).withValues(alpha: 0.35),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              _buildModeSwitchLabel(
+                l10n.camAutoLabel,
+                _isAutoMode,
+                _setTranslateAutoMode,
+              ),
+              _buildModeSwitchLabel(
+                l10n.camManualLabel,
+                _isManualMode,
+                _setTranslateManualMode,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeSwitchLabel(String label, bool active, VoidCallback onTap) {
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Center(
+          child: AnimatedScale(
+            scale: active ? 1.0 : 0.94,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              style: TextStyle(
+                color: active ? Colors.white : Colors.white70,
+                fontSize: 13,
+                fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+              ),
+              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopPanel(AppLocalizations l10n) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            GestureDetector(
+              onTap: () => widget.onBack(),
+              child: const Icon(
+                Icons.arrow_back,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+            _buildModeSwitch(l10n),
+            Row(
+              children: [
+                GestureDetector(
+                  onTap: _toggleFlash,
+                  child: Icon(
+                    _flashOn ? Icons.flash_on : Icons.flash_off,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () => widget.onSettings(),
+                  child: const Icon(
+                    Icons.settings,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _setTranslateAutoMode() {
+    if (_isAutoMode) return;
+    widget.setCaptureModeAuto();
+    setState(() {
+      _manualTranslateMode = false;
+      _lastRecognized = '';
+      _liveTranslation = null;
+      _detectedSourceLang = null;
+      _isProcessing = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _syncLiveStreamWithMode(),
+    );
+  }
+
+  void _setTranslateManualMode() {
+    if (_isManualMode) return;
+    widget.setCaptureModeManual();
+    _stopLiveStream();
+    setState(() {
+      _manualTranslateMode = true;
+      _lastRecognized = '';
+      _liveTranslation = null;
+      _detectedSourceLang = null;
+      _isProcessing = false;
+    });
+  }
+
+  Widget _buildFrameAndLivePanel() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const aspectRatio = 1.42;
+        const widthFactor = 0.85;
+        const verticalAlignment = -0.25;
+
+        final w = constraints.maxWidth;
+        final h = constraints.maxHeight;
+        final frameWidth = w * widthFactor;
+        final frameHeight = frameWidth / aspectRatio;
+        final centerY = h / 2 + verticalAlignment * (h / 2 - frameHeight / 2);
+        final rect = Rect.fromCenter(
+          center: Offset(w / 2, centerY),
+          width: frameWidth,
+          height: frameHeight,
+        );
+
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: DocumentGuideFrame(
+                aspectRatio: aspectRatio,
+                widthFactor: widthFactor,
+                verticalAlignment: verticalAlignment,
+                detected: false,
+              ),
+            ),
+            if (_shouldShowFrameStatus)
+              Positioned(
+                left: 24,
+                right: 24,
+                top: rect.bottom + 14,
+                child: Center(child: _buildLivePanel()),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildBottomBar() {
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + safeBottom),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.30),
+                Colors.black.withValues(alpha: 0.55),
+              ],
+            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.10),
+              width: 1,
+            ),
+          ),
+          child: SizedBox(
+            height: 78,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: CameraActionIcon(
+                    icon: Icons.photo_library_outlined,
+                    onTap: _isProcessing ? null : _pickImageAndTranslate,
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _buildLanguageButton(),
+                ),
+                if (_isManualMode)
+                  CameraCaptureButton(
+                    onTap: _isProcessing ? null : _captureFrameAndTranslate,
+                    isBusy: _isProcessing,
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLanguageButton() {
+    return GestureDetector(
+      onTap: _showLanguagePicker,
+      child: Container(
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(23),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.28),
+            width: 1.1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.language, color: Colors.white, size: 18),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 120),
+              child: Text(
+                _languages[_targetLang] ?? _targetLang,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+            const Icon(Icons.arrow_drop_down, color: Colors.white, size: 18),
+          ],
+        ),
       ),
     );
   }
@@ -721,8 +1074,12 @@ class _TranslateCameraState extends State<TranslateCamera> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(
-              width: 16, height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
             ),
             const SizedBox(width: 12),
             Flexible(
@@ -738,7 +1095,7 @@ class _TranslateCameraState extends State<TranslateCamera> {
 
     // Текста в рамке пока нет — статус-подсказка, чтобы было понятно,
     // что режим работает и «ищет».
-    if (_liveTranslation == null || _liveTranslation!.isEmpty) {
+    if (_isProcessing) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         decoration: BoxDecoration(
@@ -749,9 +1106,40 @@ class _TranslateCameraState extends State<TranslateCamera> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(
-              width: 12, height: 12,
+              width: 12,
+              height: 12,
               child: CircularProgressIndicator(
-                strokeWidth: 1.6, color: Colors.white54,
+                strokeWidth: 1.6,
+                color: Colors.white54,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              l10n.translateProcessing,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_isAutoMode &&
+        (_liveTranslation == null || _liveTranslation!.isEmpty)) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.6,
+                color: Colors.white54,
               ),
             ),
             const SizedBox(width: 10),
@@ -777,7 +1165,9 @@ class _TranslateCameraState extends State<TranslateCamera> {
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF2CA5E0).withValues(alpha: 0.6)),
+        border: Border.all(
+          color: const Color(0xFF2CA5E0).withValues(alpha: 0.6),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -788,8 +1178,9 @@ class _TranslateCameraState extends State<TranslateCamera> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
               color: const Color(0xFF2CA5E0).withValues(alpha: 0.16),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(11)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(11),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -806,8 +1197,11 @@ class _TranslateCameraState extends State<TranslateCamera> {
                 ),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 6),
-                  child: Icon(Icons.arrow_forward_rounded,
-                      size: 13, color: Color(0xFF7CC7F0)),
+                  child: Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 13,
+                    color: Color(0xFF7CC7F0),
+                  ),
                 ),
                 Text(
                   targetLabel,
@@ -837,6 +1231,105 @@ class _TranslateCameraState extends State<TranslateCamera> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTranslationResultCard() {
+    final text = _liveTranslation;
+    if (text == null || text.isEmpty) return const SizedBox.shrink();
+
+    final l10n = AppLocalizations.of(context);
+    final srcLabel = _detectedSourceLang == null
+        ? l10n.translateSourceAuto
+        : _detectedSourceLang!.toUpperCase();
+    final targetLabel = _targetLang.toUpperCase();
+
+    return Positioned(
+      left: 32,
+      right: 32,
+      bottom: MediaQuery.of(context).padding.bottom + 220,
+      child: Container(
+        constraints: const BoxConstraints(maxHeight: 168),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.80),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFF2CA5E0).withValues(alpha: 0.75),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.30),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2CA5E0).withValues(alpha: 0.18),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(11),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    srcLabel,
+                    style: const TextStyle(
+                      color: Color(0xFF7CC7F0),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 13,
+                      color: Color(0xFF7CC7F0),
+                    ),
+                  ),
+                  Text(
+                    targetLabel,
+                    style: const TextStyle(
+                      color: Color(0xFF7CC7F0),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Text(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
