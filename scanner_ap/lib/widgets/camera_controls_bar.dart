@@ -186,6 +186,94 @@ class CameraActionIcon extends StatelessWidget {
   }
 }
 
+/// Круглая кнопка-галочка «Готово» с бейджем количества страниц.
+/// Неактивна (приглушена), пока в буфере нет ни одной страницы.
+/// Единый стиль для паспорта, документа и «+10 страниц».
+class CameraFinishButton extends StatelessWidget {
+  final int count;
+  final VoidCallback? onTap;
+
+  const CameraFinishButton({
+    super.key,
+    required this.count,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: enabled
+                  ? const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF35D07F), Color(0xFF1FA463)],
+                    )
+                  : null,
+              color: enabled ? null : Colors.white.withValues(alpha: 0.07),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: enabled ? 0.30 : 0.10),
+                width: 1.1,
+              ),
+              boxShadow: enabled
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFF26C060).withValues(alpha: 0.45),
+                        blurRadius: 14,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Icon(
+              Icons.check_rounded,
+              color: enabled ? Colors.white : Colors.white38,
+              size: 24,
+            ),
+          ),
+          if (count > 0)
+            Positioned(
+              right: -4,
+              top: -4,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2CA5E0),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.2),
+                ),
+                child: Center(
+                  child: Text(
+                    '$count',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      height: 1.0,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Пилюля «1 → 2» / «Лицевая» — текстовая action-кнопка для правого слота.
 class CameraActionPill extends StatelessWidget {
   final String label;

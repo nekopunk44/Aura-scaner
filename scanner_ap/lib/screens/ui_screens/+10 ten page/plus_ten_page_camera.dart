@@ -167,38 +167,10 @@ class UnlimitedDocumentView extends StatelessWidget {
         ),
       ],
       rightActions: [
-        GestureDetector(
+        // Галочка «Готово» с бейджем количества — единый стиль с паспортом.
+        CameraFinishButton(
+          count: currentBatchPageCount,
           onTap: isBatchActive ? onFinishBatch : null,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            height: 46,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(23),
-              color: isBatchActive
-                  ? const Color(0xFF2CA5E0)
-                  : Colors.white.withValues(alpha: 0.08),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.check,
-                  color: isBatchActive ? Colors.white : Colors.white38,
-                  size: 18,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  AppLocalizations.of(context).camDoneBatch(currentBatchPageCount),
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: isBatchActive ? Colors.white : Colors.white38,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
         ),
       ],
     );
