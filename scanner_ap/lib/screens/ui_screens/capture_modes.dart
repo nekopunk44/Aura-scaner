@@ -238,7 +238,8 @@ class CaptureModeController {
       key: ValueKey('overlay-$title-$subtitle'),
       borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+        // Sigma умеренная: blur считается на каждом кадре превью камеры.
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
         child: Container(
           constraints: BoxConstraints(maxWidth: layout.maxWidth),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

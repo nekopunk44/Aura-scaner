@@ -209,7 +209,9 @@ class _CameraScreenState extends State<CameraScreen>
   // контуром, чтобы не реагировать на дрожь и не снимать раньше времени.
   int _quadFoundFrames = 0;
   int _quadLostFrames = 0;
-  static const int _kQuadStable = 4; // подряд кадров с контуром → «найден»
+  // Обработка идёт ~6 кадров/сек (каждый 5-й кадр стрима): 3 стабильных
+  // кадра ≈ 0.5 с до «найден» — компенсирует более редкую обработку.
+  static const int _kQuadStable = 3; // подряд кадров с контуром → «найден»
   static const int _kQuadLost = 3; // подряд кадров без контура → «потерян»
   // После первого кадра в многошаговом документном потоке ждём, пока
   // документ уберут из кадра, прежде чем авто-снимать следующую сторону
@@ -569,7 +571,9 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
 
-    _documentFrameCounter = (_documentFrameCounter + 1) % 3;
+    // Каждый 5-й кадр (~6 обработок/сек при 30 fps): анализ идёт на
+    // UI-потоке, и более частая обработка давала заметный лаг превью.
+    _documentFrameCounter = (_documentFrameCounter + 1) % 5;
     if (_documentFrameCounter != 0) return;
 
     final featureName = _selectedFeature;
@@ -3334,7 +3338,9 @@ class _CameraScreenState extends State<CameraScreen>
           child: ClipRRect(
             borderRadius: BorderRadius.circular(32),
             child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              // Sigma умеренная: blur считается на каждом кадре превью,
+              // высокие значения дают заметный лаг камеры на слабых GPU.
+              filter: ui.ImageFilter.blur(sigmaX: 9, sigmaY: 9),
               child: Container(
                 height: _kFeaturePanelHeight,
                 decoration: BoxDecoration(
@@ -3530,7 +3536,10 @@ class _CameraScreenState extends State<CameraScreen>
         isScanning: _isScanning,
         currentSide: _currentSide,
         takePicture: _takePicture,
-        resetIdCardState: _resetIdCardState,
+        resetIdCardState: () {
+          setState(_resetIdCardState);
+          _startDocumentDetectionStream();
+        },
         pickImageFromGallery: _pickImageFromGallery,
         setCaptureModeAuto: _setCaptureModeAutoInline,
         setCaptureModeManual: _setCaptureModeManual,

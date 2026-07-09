@@ -35,7 +35,8 @@ class CameraControlsBar extends StatelessWidget {
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        // Sigma умеренная: blur считается на каждом кадре превью камеры.
+        filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
           padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + safeBottom),
           decoration: BoxDecoration(

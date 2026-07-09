@@ -161,11 +161,14 @@ class IdCardCameraView extends StatelessWidget {
         ),
       ],
       rightActions: [
-        CameraActionPill(
-          label: currentSide == 'Лицевая'
-              ? AppLocalizations.of(context).camIdFront
-              : AppLocalizations.of(context).camIdBack,
-          onTap: null,
+        // Отмена: сбрасывает уже снятые стороны (активна, когда лицевая
+        // снята и идёт съёмка обратной). Текущая сторона видна в
+        // статус-карточке сверху, отдельная пилюля не нужна.
+        CameraActionIcon(
+          icon: Icons.close_rounded,
+          onTap: (currentSide != 'Лицевая' && !isScanning)
+              ? resetIdCardState
+              : null,
         ),
       ],
     );
