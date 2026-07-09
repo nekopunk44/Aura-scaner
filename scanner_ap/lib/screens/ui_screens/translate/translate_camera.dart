@@ -342,12 +342,25 @@ class _TranslateCameraState extends State<TranslateCamera> {
       for (final lang in [source, target]) {
         if (!await _modelManager.isModelDownloaded(lang.bcpCode)) {
           if (mounted) setState(() => _downloadingModels = true);
-          await _modelManager.downloadModel(lang.bcpCode);
+          // isWifiRequired по умолчанию true: на мобильном интернете
+          // загрузка не падала, а бесконечно ждала Wi-Fi — «вечная
+          // загрузка моделей». Качаем по любой сети + страховочный таймаут.
+          await _modelManager
+              .downloadModel(lang.bcpCode, isWifiRequired: false)
+              .timeout(const Duration(seconds: 90));
         }
       }
     } catch (e) {
       debugPrint('Перевод: ошибка загрузки моделей: $e');
-      if (mounted) setState(() => _downloadingModels = false);
+      if (mounted) {
+        final l10n = AppLocalizations.of(context);
+        setState(() {
+          _downloadingModels = false;
+          // Показываем внятную ошибку вместо молчаливого зависания.
+          _liveTranslation = l10n.translateFailed;
+          _detectedSourceLang = null;
+        });
+      }
       return null;
     }
     if (mounted) setState(() => _downloadingModels = false);
