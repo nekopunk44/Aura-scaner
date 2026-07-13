@@ -110,6 +110,8 @@ class PassportCameraView extends StatelessWidget {
     // Разворот паспорта ~125×88 мм → aspect 1.42. Вертикальное положение
     // совпадает с рамкой ID-карты (-0.25) — единая посадка во всех режимах.
     return DocumentGuideFrame(
+      // Затемнение рисует общий слой камеры (морф между режимами).
+      drawScrim: false,
       aspectRatio: 1.42,
       widthFactor: 0.85,
       verticalAlignment: -0.25,

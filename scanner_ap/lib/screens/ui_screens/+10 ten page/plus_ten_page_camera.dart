@@ -117,6 +117,8 @@ class UnlimitedDocumentView extends StatelessWidget {
   /// показывается и в авто-, и в ручном режиме, как у паспорта/документа.
   Widget _guideFrame(AppLocalizations l10n) {
     return DocumentGuideFrame(
+      // Затемнение рисует общий слой камеры (морф между режимами).
+      drawScrim: false,
       // Лист A4 портретом: 210/297. Рамка оставляет больше воздуха сверху
       // под статус-карточку и снизу под подпись/селектор режима.
       aspectRatio: 0.71,

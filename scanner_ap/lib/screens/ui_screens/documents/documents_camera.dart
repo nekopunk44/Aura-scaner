@@ -127,6 +127,8 @@ class MultiPageDocumentView extends StatelessWidget {
   /// оба режима выглядят одинаково.
   Widget _guideFrame(AppLocalizations l10n) {
     return DocumentGuideFrame(
+      // Затемнение рисует общий слой камеры (морф между режимами).
+      drawScrim: false,
       // Лист A4 портретом: 210/297. Рамка оставляет больше воздуха сверху
       // под статус-карточку и снизу под подпись/селектор режима.
       aspectRatio: 0.71,
@@ -296,7 +298,7 @@ class _DocQuadPainter extends CustomPainter {
     );
     canvas.drawPath(
       outside,
-      Paint()..color = Colors.black.withValues(alpha: 0.35),
+      Paint()..color = Colors.black.withValues(alpha: 0.18),
     );
 
     final Color color = active

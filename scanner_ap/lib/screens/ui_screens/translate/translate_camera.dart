@@ -885,6 +885,8 @@ class _TranslateCameraState extends State<TranslateCamera> {
           children: [
             Positioned.fill(
               child: DocumentGuideFrame(
+                // Затемнение рисует общий слой камеры (морф между режимами).
+                drawScrim: false,
                 aspectRatio: aspectRatio,
                 widthFactor: widthFactor,
                 verticalAlignment: verticalAlignment,

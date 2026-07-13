@@ -145,6 +145,8 @@ class RestorePhotoCameraView extends StatelessWidget {
   /// как у паспорта: и в авто- (пока контур не найден), и в ручном режиме.
   Widget _guideFrame(AppLocalizations l10n) {
     return DocumentGuideFrame(
+      // Затемнение рисует общий слой камеры (морф между режимами).
+      drawScrim: false,
       // Портретное фото ~3:4.
       aspectRatio: 0.75,
       widthFactor: 0.72,
@@ -251,7 +253,8 @@ class _PhotoQuadPainter extends CustomPainter {
     );
     canvas.drawPath(
       outside,
-      Paint()..color = Colors.black.withValues(alpha: 0.35),
+      // Мягче прежнего (0.35): базовое затемнение уже даёт общий слой.
+      Paint()..color = Colors.black.withValues(alpha: 0.18),
     );
 
     final Color color = active

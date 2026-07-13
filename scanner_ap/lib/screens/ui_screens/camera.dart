@@ -95,30 +95,37 @@ class _DocumentFrameSpec {
   final double bottom;
 }
 
-/// Затемнение кадра вокруг окна QR-рамки: весь экран заливается
-/// полупрозрачным чёрным, а само окно (скруглённый прямоугольник)
-/// остаётся прозрачным — взгляд фокусируется на зоне сканирования.
-class _QrDimPainter extends CustomPainter {
-  const _QrDimPainter({required this.hole, required this.cornerRadius});
+/// Геометрия выреза рамки режима (для общего слоя затемнения).
+/// Значения ДОЛЖНЫ совпадать с параметрами DocumentGuideFrame в вью режима.
+class _CutoutSpec {
+  const _CutoutSpec(this.aspect, this.widthFactor, this.verticalAlignment);
 
-  final Rect hole;
-  final double cornerRadius;
+  final double aspect;
+  final double widthFactor;
+  final double verticalAlignment;
+}
+
+/// Затемнение вокруг выреза рамки для общего постоянного слоя камеры.
+class _CutoutScrimPainter extends CustomPainter {
+  const _CutoutScrimPainter({required this.cutout});
+
+  final Rect cutout;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..addRect(Offset.zero & size)
-      ..addRRect(RRect.fromRectAndRadius(hole, Radius.circular(cornerRadius)))
-      ..fillType = PathFillType.evenOdd;
+    final outer = Path()..addRect(Offset.zero & size);
+    final inner = Path()
+      ..addRRect(RRect.fromRectAndRadius(cutout, const Radius.circular(14)));
+    final scrim = Path.combine(PathOperation.difference, outer, inner);
     canvas.drawPath(
-      path,
-      Paint()..color = Colors.black.withValues(alpha: 0.55),
+      scrim,
+      Paint()..color = Colors.black.withValues(alpha: 0.45),
     );
   }
 
   @override
-  bool shouldRepaint(_QrDimPainter oldDelegate) =>
-      oldDelegate.hole != hole || oldDelegate.cornerRadius != cornerRadius;
+  bool shouldRepaint(_CutoutScrimPainter oldDelegate) =>
+      oldDelegate.cutout != cutout;
 }
 
 class _CameraScreenState extends State<CameraScreen>
@@ -126,6 +133,22 @@ class _CameraScreenState extends State<CameraScreen>
   static const MethodChannel _nativeBridgeChannel = MethodChannel(
     'com.aurascanner.app/native_bridge',
   );
+
+  // Вырезы затемнения по режимам — синхронизированы с DocumentGuideFrame
+  // соответствующих вью (аспект, доля ширины, вертикальное выравнивание).
+  static const Map<String, _CutoutSpec> _cutoutSpecs = {
+    Feat.passport: _CutoutSpec(1.42, 0.85, -0.25),
+    Feat.idCard: _CutoutSpec(1.586, 0.85, -0.25),
+    Feat.document: _CutoutSpec(0.71, 0.72, -0.22),
+    Feat.plus10Pages: _CutoutSpec(0.71, 0.72, -0.22),
+    Feat.restorePhoto: _CutoutSpec(0.75, 0.72, -0.22),
+    Feat.eco: _CutoutSpec(0.75, 0.72, -0.22),
+    Feat.removeWatermark: _CutoutSpec(0.75, 0.72, -0.22),
+    Feat.removeSpots: _CutoutSpec(0.75, 0.72, -0.22),
+    Feat.ocr: _CutoutSpec(0.95, 0.78, -0.22),
+    Feat.translate: _CutoutSpec(1.42, 0.85, -0.25),
+    Feat.qrScanner: _CutoutSpec(1.0, 0.66, -0.25),
+  };
   static const Set<String> _premiumFeatureNames = {
     Feat.plus10Pages,
     Feat.restorePhoto,
@@ -2915,14 +2938,8 @@ class _CameraScreenState extends State<CameraScreen>
 
     return Stack(
       children: [
-        // Затемнение всего кадра, кроме окна рамки.
-        Positioned.fill(
-          child: IgnorePointer(
-            child: CustomPaint(
-              painter: _QrDimPainter(hole: frameRect, cornerRadius: 16),
-            ),
-          ),
-        ),
+        // Затемнение вокруг окна рисует общий постоянный слой камеры
+        // (вырез морфится между режимами и не мигает при переключении).
 
         // Рамка-видоискатель: белая в поиске, зелёная когда QR найден.
         Positioned.fromRect(
@@ -3704,6 +3721,41 @@ class _CameraScreenState extends State<CameraScreen>
                 ? _buildAspectCorrectPreview(_cameraController!)
                 : const ColoredBox(color: Colors.black),
           ),
+          // ПОСТОЯННЫЙ слой затемнения вокруг рамки: не участвует в
+          // кроссфейде режимов, поэтому не мигает при переключении — вырез
+          // плавно МОРФИТСЯ из формы рамки одного режима в форму другого.
+          // Сами рамки (уголки/подписи) рисуются в пофильтровых оверлеях
+          // с drawScrim: false.
+          if (_cutoutSpecs.containsKey(_selectedFeature))
+            Positioned.fill(
+              child: IgnorePointer(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final spec = _cutoutSpecs[_selectedFeature]!;
+                    final w = constraints.maxWidth;
+                    final h = constraints.maxHeight;
+                    final frameW = w * spec.widthFactor;
+                    final frameH = frameW / spec.aspect;
+                    final centerY =
+                        h / 2 + spec.verticalAlignment * (h / 2 - frameH / 2);
+                    final rect = Rect.fromCenter(
+                      center: Offset(w / 2, centerY),
+                      width: frameW,
+                      height: frameH,
+                    );
+                    return TweenAnimationBuilder<Rect?>(
+                      tween: RectTween(end: rect),
+                      duration: const Duration(milliseconds: 320),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, animated, _) => CustomPaint(
+                        painter:
+                            _CutoutScrimPainter(cutout: animated ?? rect),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
           // Оверлей режима меняется ЛИНЕЙНЫМ кроссфейдом без сдвига:
           // альфы исходящего и входящего слоёв в сумме дают 1, поэтому
           // одинаковые части интерфейса (верхняя панель, нижний бар)

@@ -116,6 +116,8 @@ class _OcrCameraViewState extends State<OcrCameraView> {
       children: [
         // Рамка-трафарет с затемнением и подписью — единый стиль с паспортом.
         DocumentGuideFrame(
+          // Затемнение рисует общий слой камеры (морф между режимами).
+          drawScrim: false,
           // Текстовый блок — почти квадратный вырез.
           aspectRatio: 0.95,
           widthFactor: 0.78,

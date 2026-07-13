@@ -101,6 +101,8 @@ class IdCardCameraView extends StatelessWidget {
   Widget _buildDocumentFrameOverlay(AppLocalizations l10n) {
     // ID-1 карта: 85.6 × 53.98 мм → aspect 1.586.
     return DocumentGuideFrame(
+      // Затемнение рисует общий слой камеры (морф между режимами).
+      drawScrim: false,
       aspectRatio: 1.586,
       widthFactor: 0.85,
       verticalAlignment: -0.25,

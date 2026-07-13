@@ -99,6 +99,8 @@ class RemoveSpotsCameraView extends StatelessWidget {
   /// как у паспорта: и в авто-, и в ручном режиме.
   Widget _guideFrame(AppLocalizations l10n) {
     return DocumentGuideFrame(
+      // Затемнение рисует общий слой камеры (морф между режимами).
+      drawScrim: false,
       // Портретное фото ~3:4.
       aspectRatio: 0.75,
       widthFactor: 0.72,

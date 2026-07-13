@@ -26,6 +26,11 @@ class DocumentGuideFrame extends StatelessWidget {
   /// Иконка-силуэт по центру выреза (подсказка что снимать).
   final IconData? icon;
 
+  /// Рисовать ли затемнение вокруг выреза. Внутри камеры затемнение
+  /// рисует ОБЩИЙ постоянный слой (вырез плавно морфится между режимами
+  /// и не мигает при переключении) — там передаётся false.
+  final bool drawScrim;
+
   const DocumentGuideFrame({
     super.key,
     required this.aspectRatio,
@@ -34,6 +39,7 @@ class DocumentGuideFrame extends StatelessWidget {
     this.detected = false,
     this.label,
     this.icon,
+    this.drawScrim = true,
   });
 
   @override
@@ -58,11 +64,12 @@ class DocumentGuideFrame extends StatelessWidget {
           child: Stack(
             children: [
               // Затемнение вокруг выреза
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _ScrimPainter(cutout: rect),
+              if (drawScrim)
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _ScrimPainter(cutout: rect),
+                  ),
                 ),
-              ),
               // Уголки-скобки
               Positioned.fill(
                 child: AnimatedContainer(
