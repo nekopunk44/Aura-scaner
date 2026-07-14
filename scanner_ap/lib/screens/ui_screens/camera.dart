@@ -3317,13 +3317,35 @@ class _CameraScreenState extends State<CameraScreen>
                 ),
               ),
               if (isPremiumFeature)
+                // Компактный бейдж-кружок целиком внутри слота: не
+                // обрезается краем капсулы и читается поверх подсветки.
                 Positioned(
-                  right: 11,
-                  top: 8,
-                  child: Icon(
-                    Icons.workspace_premium,
-                    size: 11,
-                    color: Colors.amber.shade300,
+                  right: 7,
+                  top: 6,
+                  child: Container(
+                    width: 15,
+                    height: 15,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFFFFD54F), Color(0xFFFF9800)],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.35),
+                          blurRadius: 3,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.star_rounded,
+                      size: 10,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
             ],
