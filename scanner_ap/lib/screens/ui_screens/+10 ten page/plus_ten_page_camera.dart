@@ -3,7 +3,6 @@ import 'package:camera/camera.dart';
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
 import '../../../widgets/camera_mode_switch.dart';
-import '../../../widgets/document_guide_frame.dart';
 import '../../../l10n/app_localizations.dart';
 
 class UnlimitedDocumentView extends StatelessWidget {
@@ -113,25 +112,6 @@ class UnlimitedDocumentView extends StatelessWidget {
     );
   }
 
-  /// Единая рамка-трафарет листа (затемнение + уголки + подпись) —
-  /// показывается и в авто-, и в ручном режиме, как у паспорта/документа.
-  Widget _guideFrame(AppLocalizations l10n) {
-    return DocumentGuideFrame(
-      // Затемнение рисует общий слой камеры (морф между режимами).
-      drawScrim: false,
-      // Лист A4 портретом: 210/297. Рамка оставляет больше воздуха сверху
-      // под статус-карточку и снизу под подпись/селектор режима.
-      aspectRatio: 0.71,
-      widthFactor: 0.66,
-      verticalAlignment: -0.22,
-      detected: isDocumentDetected,
-      icon: Icons.description_outlined,
-      label: isDocumentDetected
-          ? l10n.camDocDetectedHint
-          : l10n.camFitDocInFrame,
-    );
-  }
-
   Widget _buildBottomBar(BuildContext context) {
     const bool isDocumentMode = true;
     final bool canSnap =
@@ -183,8 +163,7 @@ class UnlimitedDocumentView extends StatelessWidget {
       color: Colors.transparent,
       child: Stack(
         children: [
-          // 2. Рамка-трафарет — в обоих режимах, единый стиль с паспортом.
-          _guideFrame(l10n),
+          // Рамку-трафарет рисует общий постоянный слой камеры.
 
           // 3. Оверлей статуса — от верха экрана (как у паспорта),
           // предсказуемо встаёт над рамкой.

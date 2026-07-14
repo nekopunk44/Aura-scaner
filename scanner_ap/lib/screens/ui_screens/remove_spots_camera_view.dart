@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../widgets/camera_controls_bar.dart';
 import '../../widgets/camera_mode_switch.dart';
-import '../../widgets/document_guide_frame.dart';
 import 'capture_modes.dart';
 
 class RemoveSpotsCameraView extends StatelessWidget {
@@ -97,22 +96,6 @@ class RemoveSpotsCameraView extends StatelessWidget {
 
   /// Единая рамка-трафарет (затемнение + уголки + силуэт + подпись) —
   /// как у паспорта: и в авто-, и в ручном режиме.
-  Widget _guideFrame(AppLocalizations l10n) {
-    return DocumentGuideFrame(
-      // Затемнение рисует общий слой камеры (морф между режимами).
-      drawScrim: false,
-      // Портретное фото ~3:4.
-      aspectRatio: 0.75,
-      widthFactor: 0.72,
-      verticalAlignment: -0.22,
-      detected: isDocumentDetected,
-      icon: Icons.cleaning_services_outlined,
-      label: isDocumentDetected
-          ? l10n.camDocDetectedHint
-          : l10n.camFitPhotoInFrame,
-    );
-  }
-
   Widget _buildBottomBar(BuildContext context) {
     return CameraControlsBar(
       leftActions: [
@@ -139,8 +122,7 @@ class RemoveSpotsCameraView extends StatelessWidget {
 
     return Stack(
       children: [
-        // Рамка-трафарет — в обоих режимах, как у паспорта.
-        _guideFrame(l10n),
+        // Рамку-трафарет рисует общий постоянный слой камеры.
         Positioned.fill(
           child: captureModeController.buildStatusOverlay(
             isDocumentMode: true,

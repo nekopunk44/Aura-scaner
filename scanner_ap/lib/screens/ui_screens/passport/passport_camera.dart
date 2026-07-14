@@ -5,7 +5,6 @@ import '../camera_features.dart';
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
 import '../../../widgets/camera_mode_switch.dart';
-import '../../../widgets/document_guide_frame.dart';
 import '../../../l10n/app_localizations.dart';
 
 class PassportCameraView extends StatelessWidget {
@@ -106,23 +105,6 @@ class PassportCameraView extends StatelessWidget {
     );
   }
 
-  Widget _buildDocumentFrameOverlay(AppLocalizations l10n) {
-    // Разворот паспорта ~125×88 мм → aspect 1.42. Вертикальное положение
-    // совпадает с рамкой ID-карты (-0.25) — единая посадка во всех режимах.
-    return DocumentGuideFrame(
-      // Затемнение рисует общий слой камеры (морф между режимами).
-      drawScrim: false,
-      aspectRatio: 1.42,
-      widthFactor: 0.85,
-      verticalAlignment: -0.25,
-      detected: isDocumentDetected,
-      icon: Icons.menu_book_outlined,
-      label: isDocumentDetected
-          ? l10n.camDocDetectedHint
-          : l10n.camFitPassportInFrame,
-    );
-  }
-
   Widget _buildBottomBar(BuildContext context) {
     const bool isDocumentMode = true;
     final bool canSnap =
@@ -162,9 +144,7 @@ class PassportCameraView extends StatelessWidget {
 
     return Stack(
       children: [
-        // Рамка-трафарет показывается всегда — и в авто-, и в ручном режиме.
-        _buildDocumentFrameOverlay(AppLocalizations.of(context)),
-
+        // Рамку-трафарет рисует общий постоянный слой камеры.
         Positioned.fill(
           child: captureModeController.buildStatusOverlay(
             isDocumentMode: true,

@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 
 import '../../../widgets/camera_controls_bar.dart';
-import '../../../widgets/document_guide_frame.dart';
-import '../../../l10n/app_localizations.dart';
 
 /// Камера режима OCR. Структура повторяет экран Паспорт: верхняя панель
 /// (назад / фонарик / настройки), рамка-видоискатель по центру и нижний
@@ -110,22 +108,9 @@ class _OcrCameraViewState extends State<OcrCameraView> {
       return const Center(child: CircularProgressIndicator(color: Colors.white));
     }
 
-    final l10n = AppLocalizations.of(context);
-
     return Stack(
       children: [
-        // Рамка-трафарет с затемнением и подписью — единый стиль с паспортом.
-        DocumentGuideFrame(
-          // Затемнение рисует общий слой камеры (морф между режимами).
-          drawScrim: false,
-          // Текстовый блок — почти квадратный вырез.
-          aspectRatio: 0.95,
-          widthFactor: 0.78,
-          verticalAlignment: -0.22,
-          detected: false,
-          icon: Icons.text_fields_outlined,
-          label: l10n.ocrSelectPhoto,
-        ),
+        // Рамку-трафарет (с подписью) рисует общий постоянный слой камеры.
 
         Positioned(top: 0, left: 0, right: 0, child: _buildTopPanel()),
         Positioned(bottom: 0, left: 0, right: 0, child: _buildBottomBar()),

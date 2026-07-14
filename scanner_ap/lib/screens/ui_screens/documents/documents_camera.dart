@@ -5,7 +5,6 @@ import '../camera_features.dart';
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
 import '../../../widgets/camera_mode_switch.dart';
-import '../../../widgets/document_guide_frame.dart';
 import '../../../l10n/app_localizations.dart';
 
 class MultiPageDocumentView extends StatelessWidget {
@@ -122,39 +121,19 @@ class MultiPageDocumentView extends StatelessWidget {
     );
   }
 
-  /// Единая рамка-трафарет листа (затемнение + уголки + подпись) — она же
-  /// в ручном режиме и как фолбэк в авто, пока живой контур не найден:
-  /// оба режима выглядят одинаково.
-  Widget _guideFrame(AppLocalizations l10n) {
-    return DocumentGuideFrame(
-      // Затемнение рисует общий слой камеры (морф между режимами).
-      drawScrim: false,
-      // Лист A4 портретом: 210/297. Рамка оставляет больше воздуха сверху
-      // под статус-карточку и снизу под подпись/селектор режима.
-      aspectRatio: 0.71,
-      widthFactor: 0.66,
-      verticalAlignment: -0.22,
-      detected: isDocumentDetected,
-      icon: Icons.description_outlined,
-      label: isDocumentDetected
-          ? l10n.camDocDetectedHint
-          : l10n.camFitDocInFrame,
-    );
-  }
-
-  // Живой контур листа (или рамка-трафарет, пока контур не найден).
-  Widget _buildDetectionOverlay(AppLocalizations l10n) {
+  // Живой контур листа в авто-режиме (рамку-трафарет рисует общий слой).
+  Widget _buildDetectionOverlay() {
     final ql = photoQuad;
     final aspect = previewAspect;
     if (ql == null || aspect == null) {
-      return _guideFrame(l10n);
+      return const SizedBox.shrink();
     }
     return Positioned.fill(
       child: ValueListenableBuilder<List<Offset>?>(
         valueListenable: ql,
         builder: (context, quad, _) {
           if (quad == null || quad.length != 4) {
-            return _guideFrame(l10n);
+            return const SizedBox.shrink();
           }
           return CustomPaint(
             painter: _DocQuadPainter(
@@ -227,9 +206,9 @@ class MultiPageDocumentView extends StatelessWidget {
       color: Colors.transparent,
       child: Stack(
         children: [
-          // Авто: живой контур листа (фолбэк — рамка-трафарет).
-          // Ручной: та же рамка-трафарет — режимы выглядят одинаково.
-          if (isAutoMode) _buildDetectionOverlay(l10n) else _guideFrame(l10n),
+          // Рамку-трафарет рисует общий слой камеры; здесь — только
+          // живой контур листа в авто-режиме.
+          if (isAutoMode) _buildDetectionOverlay(),
 
           // Статус-карточка позиционируется от верха экрана (как у паспорта),
           // а не от смещённого бокса — предсказуемо встаёт над рамкой.

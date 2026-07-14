@@ -75,7 +75,7 @@ class DocumentGuideFrame extends StatelessWidget {
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   child: CustomPaint(
-                    painter: _CornerBracketsPainter(
+                    painter: CornerBracketsPainter(
                       cutout: rect,
                       color: accent,
                     ),
@@ -160,10 +160,10 @@ class _ScrimPainter extends CustomPainter {
       oldDelegate.cutout != cutout;
 }
 
-class _CornerBracketsPainter extends CustomPainter {
+class CornerBracketsPainter extends CustomPainter {
   final Rect cutout;
   final Color color;
-  const _CornerBracketsPainter({required this.cutout, required this.color});
+  const CornerBracketsPainter({required this.cutout, required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -216,6 +216,6 @@ class _CornerBracketsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_CornerBracketsPainter oldDelegate) =>
+  bool shouldRepaint(CornerBracketsPainter oldDelegate) =>
       oldDelegate.cutout != cutout || oldDelegate.color != color;
 }

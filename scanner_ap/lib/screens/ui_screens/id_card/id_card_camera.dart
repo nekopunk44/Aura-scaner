@@ -7,7 +7,6 @@ import '../camera_features.dart';
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
 import '../../../widgets/camera_mode_switch.dart';
-import '../../../widgets/document_guide_frame.dart';
 import '../../../l10n/app_localizations.dart';
 
 class IdCardCameraView extends StatelessWidget {
@@ -98,20 +97,6 @@ class IdCardCameraView extends StatelessWidget {
     );
   }
 
-  Widget _buildDocumentFrameOverlay(AppLocalizations l10n) {
-    // ID-1 карта: 85.6 × 53.98 мм → aspect 1.586.
-    return DocumentGuideFrame(
-      // Затемнение рисует общий слой камеры (морф между режимами).
-      drawScrim: false,
-      aspectRatio: 1.586,
-      widthFactor: 0.85,
-      verticalAlignment: -0.25,
-      detected: isDocumentDetected,
-      icon: Icons.badge_outlined,
-      label: isDocumentDetected ? l10n.camDocDetectedHint : l10n.camFitIdInFrame,
-    );
-  }
-
   Widget _buildBottomBar(BuildContext context) {
     const bool isDocumentMode = true;
     final bool canSnap = captureModeController.canTakePicture(isDocumentMode: isDocumentMode);
@@ -146,10 +131,7 @@ class IdCardCameraView extends StatelessWidget {
 
     return Stack(
       children: [
-        // Рамка-трафарет показывается всегда — и в авто-, и в ручном режиме:
-        // пользователь должен видеть, куда положить карту.
-        _buildDocumentFrameOverlay(AppLocalizations.of(context)),
-
+        // Рамку-трафарет рисует общий постоянный слой камеры.
         Positioned.fill(
           child: captureModeController.buildStatusOverlay(
             isDocumentMode: true,

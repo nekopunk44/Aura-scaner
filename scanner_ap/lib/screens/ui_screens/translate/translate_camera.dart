@@ -7,7 +7,6 @@ import '../../../l10n/app_localizations.dart';
 import '../../../widgets/camera_capture_button.dart';
 import '../../../widgets/camera_controls_bar.dart';
 import '../../../widgets/camera_mode_switch.dart';
-import '../../../widgets/document_guide_frame.dart';
 
 import 'apis/recognition_api.dart';
 import 'apis/translation_api.dart';
@@ -883,16 +882,7 @@ class _TranslateCameraState extends State<TranslateCamera> {
 
         return Stack(
           children: [
-            Positioned.fill(
-              child: DocumentGuideFrame(
-                // Затемнение рисует общий слой камеры (морф между режимами).
-                drawScrim: false,
-                aspectRatio: aspectRatio,
-                widthFactor: widthFactor,
-                verticalAlignment: verticalAlignment,
-                detected: false,
-              ),
-            ),
+            // Рамку-трафарет рисует общий постоянный слой камеры.
             if (_shouldShowFrameStatus)
               Positioned(
                 left: 24,

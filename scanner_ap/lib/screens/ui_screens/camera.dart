@@ -48,6 +48,7 @@ import 'ocr/ocr_screen.dart';
 import 'ocr/ocr_camera_view.dart';
 import 'remove_spots_camera_view.dart';
 import 'remove_watermark_camera_view.dart';
+import '../../widgets/document_guide_frame.dart' show CornerBracketsPainter;
 import 'restore_photo_camera_view.dart';
 import 'restore_photo_screen.dart';
 import 'signature/home_screen.dart' as sig;
@@ -95,14 +96,23 @@ class _DocumentFrameSpec {
   final double bottom;
 }
 
-/// Геометрия выреза рамки режима (для общего слоя затемнения).
-/// Значения ДОЛЖНЫ совпадать с параметрами DocumentGuideFrame в вью режима.
+/// Геометрия выреза рамки режима для ОБЩЕГО постоянного слоя рамки:
+/// затемнение, уголки, силуэт и подпись рисуются в одном месте и морфятся
+/// между режимами — рассинхрон затемнения и уголков невозможен.
 class _CutoutSpec {
-  const _CutoutSpec(this.aspect, this.widthFactor, this.verticalAlignment);
+  const _CutoutSpec(
+    this.aspect,
+    this.widthFactor,
+    this.verticalAlignment, {
+    this.brackets = true,
+  });
 
   final double aspect;
   final double widthFactor;
   final double verticalAlignment;
+
+  /// Рисовать ли уголки-скобки (у QR своя сплошная рамка в оверлее).
+  final bool brackets;
 }
 
 /// Затемнение вокруг выреза рамки для общего постоянного слоя камеры.
@@ -147,8 +157,62 @@ class _CameraScreenState extends State<CameraScreen>
     Feat.removeSpots: _CutoutSpec(0.75, 0.72, -0.22),
     Feat.ocr: _CutoutSpec(0.95, 0.78, -0.22),
     Feat.translate: _CutoutSpec(1.42, 0.85, -0.25),
-    Feat.qrScanner: _CutoutSpec(1.0, 0.66, -0.25),
+    Feat.qrScanner: _CutoutSpec(1.0, 0.66, -0.25, brackets: false),
   };
+
+  /// Иконка-силуэт по центру выреза (null — без силуэта).
+  IconData? _frameIconFor(String feature) {
+    switch (feature) {
+      case Feat.passport:
+        return Icons.menu_book_outlined;
+      case Feat.idCard:
+        return Icons.badge_outlined;
+      case Feat.document:
+      case Feat.plus10Pages:
+        return Icons.description_outlined;
+      case Feat.restorePhoto:
+        return Icons.photo_outlined;
+      case Feat.eco:
+        return Icons.eco_outlined;
+      case Feat.removeWatermark:
+        return Icons.auto_fix_off_outlined;
+      case Feat.removeSpots:
+        return Icons.cleaning_services_outlined;
+      case Feat.ocr:
+        return Icons.text_fields_outlined;
+      default:
+        return null; // перевод, QR — без силуэта
+    }
+  }
+
+  /// Подпись под рамкой (null — без подписи; у перевода и QR свои панели).
+  String? _frameHintFor(String feature, AppLocalizations l10n) {
+    switch (feature) {
+      case Feat.passport:
+        return l10n.camFitPassportInFrame;
+      case Feat.idCard:
+        return l10n.camFitIdInFrame;
+      case Feat.document:
+      case Feat.plus10Pages:
+        return l10n.camFitDocInFrame;
+      case Feat.restorePhoto:
+      case Feat.removeWatermark:
+      case Feat.removeSpots:
+        return l10n.camFitPhotoInFrame;
+      case Feat.eco:
+        return l10n.camFitPackagingInFrame;
+      case Feat.ocr:
+        return l10n.ocrSelectPhoto;
+      default:
+        return null;
+    }
+  }
+
+  /// Реагирует ли рамка режима на детекцию (зелёные уголки/подпись).
+  bool _frameDetectable(String feature) =>
+      feature != Feat.ocr &&
+      feature != Feat.translate &&
+      feature != Feat.qrScanner;
   static const Set<String> _premiumFeatureNames = {
     Feat.plus10Pages,
     Feat.restorePhoto,
@@ -3642,8 +3706,6 @@ class _CameraScreenState extends State<CameraScreen>
         featureTitle: AppLocalizations.of(context).ecoTitle,
         featureSubtitle: AppLocalizations.of(context).ecoCameraHint,
         overlayKind: CaptureStatusOverlayKind.eco,
-        frameIcon: Icons.eco_outlined,
-        frameHint: AppLocalizations.of(context).camFitPackagingInFrame,
       ),
       Feat.removeSpots: () => RemoveSpotsCameraView(
         cameraController: _cameraController,
@@ -3721,17 +3783,18 @@ class _CameraScreenState extends State<CameraScreen>
                 ? _buildAspectCorrectPreview(_cameraController!)
                 : const ColoredBox(color: Colors.black),
           ),
-          // ПОСТОЯННЫЙ слой затемнения вокруг рамки: не участвует в
-          // кроссфейде режимов, поэтому не мигает при переключении — вырез
-          // плавно МОРФИТСЯ из формы рамки одного режима в форму другого.
-          // Сами рамки (уголки/подписи) рисуются в пофильтровых оверлеях
-          // с drawScrim: false.
+          // ПОСТОЯННЫЙ слой рамки: затемнение, уголки, силуэт и подпись
+          // рисуются здесь (а не в пофильтровых оверлеях), поэтому не мигают
+          // при переключении — рамка плавно МОРФИТСЯ из формы одного режима
+          // в форму другого, и рассинхрон затемнения с уголками невозможен.
           if (_cutoutSpecs.containsKey(_selectedFeature))
             Positioned.fill(
               child: IgnorePointer(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final spec = _cutoutSpecs[_selectedFeature]!;
+                    final l10n = AppLocalizations.of(context);
+                    final feature = _selectedFeature;
+                    final spec = _cutoutSpecs[feature]!;
                     final w = constraints.maxWidth;
                     final h = constraints.maxHeight;
                     final frameW = w * spec.widthFactor;
@@ -3743,14 +3806,89 @@ class _CameraScreenState extends State<CameraScreen>
                       width: frameW,
                       height: frameH,
                     );
+                    final detected =
+                        _frameDetectable(feature) && _isDocumentDetected;
+                    final accent = detected
+                        ? const Color(0xFF35D07F)
+                        : Colors.white;
+                    final icon = _frameIconFor(feature);
+                    final hintText = detected
+                        ? l10n.camDocDetectedHint
+                        : _frameHintFor(feature, l10n);
                     return TweenAnimationBuilder<Rect?>(
                       tween: RectTween(end: rect),
                       duration: const Duration(milliseconds: 320),
                       curve: Curves.easeOutCubic,
-                      builder: (context, animated, _) => CustomPaint(
-                        painter:
-                            _CutoutScrimPainter(cutout: animated ?? rect),
-                      ),
+                      builder: (context, animated, _) {
+                        final r = animated ?? rect;
+                        return Stack(
+                          children: [
+                            Positioned.fill(
+                              child: CustomPaint(
+                                painter: _CutoutScrimPainter(cutout: r),
+                              ),
+                            ),
+                            if (spec.brackets)
+                              Positioned.fill(
+                                child: CustomPaint(
+                                  painter: CornerBracketsPainter(
+                                    cutout: r,
+                                    color: accent,
+                                  ),
+                                ),
+                              ),
+                            if (icon != null)
+                              Positioned.fromRect(
+                                rect: r,
+                                child: Center(
+                                  child: Icon(
+                                    icon,
+                                    size: r.height * 0.42,
+                                    color:
+                                        Colors.white.withValues(alpha: 0.14),
+                                  ),
+                                ),
+                              ),
+                            if (hintText != null)
+                              Positioned(
+                                left: 24,
+                                right: 24,
+                                top: r.bottom + 14,
+                                child: Center(
+                                  child: AnimatedSwitcher(
+                                    duration:
+                                        const Duration(milliseconds: 200),
+                                    child: Container(
+                                      key: ValueKey<String>(hintText),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 7,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black
+                                            .withValues(alpha: 0.45),
+                                        borderRadius:
+                                            BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        hintText,
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: detected
+                                              ? const Color(0xFF35D07F)
+                                              : Colors.white
+                                                  .withValues(alpha: 0.9),
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
                     );
                   },
                 ),
