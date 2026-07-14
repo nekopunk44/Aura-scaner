@@ -3801,11 +3801,40 @@ class _CameraScreenState extends State<CameraScreen>
                     final frameH = frameW / spec.aspect;
                     final centerY =
                         h / 2 + spec.verticalAlignment * (h / 2 - frameH / 2);
-                    final rect = Rect.fromCenter(
+                    Rect rect = Rect.fromCenter(
                       center: Offset(w / 2, centerY),
                       width: frameW,
                       height: frameH,
                     );
+                    // На компактных экранах рамка может налезать на
+                    // статус-карточку сверху или прижимать подпись к ленте
+                    // фильтров снизу. Зажимаем её в доступную зону: сначала
+                    // сдвиг, затем пропорциональное сжатие (аспект
+                    // сохраняется). QR не трогаем — его рамка рисуется в
+                    // собственном оверлее по своей формуле.
+                    if (spec.brackets) {
+                      const double topLimit = 196;
+                      final double bottomLimit = h -
+                          MediaQuery.of(context).padding.bottom -
+                          274;
+                      if (rect.top < topLimit) {
+                        rect = rect.shift(Offset(0, topLimit - rect.top));
+                      }
+                      if (rect.bottom > bottomLimit) {
+                        final double maxH = bottomLimit - topLimit;
+                        if (rect.height > maxH && maxH > 40) {
+                          rect = Rect.fromCenter(
+                            center: Offset(w / 2, topLimit + maxH / 2),
+                            width: maxH * spec.aspect,
+                            height: maxH,
+                          );
+                        } else {
+                          rect = rect.shift(
+                            Offset(0, bottomLimit - rect.bottom),
+                          );
+                        }
+                      }
+                    }
                     final detected =
                         _frameDetectable(feature) && _isDocumentDetected;
                     final accent = detected
