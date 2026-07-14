@@ -416,11 +416,16 @@ class _AutoHideCard extends StatefulWidget {
 
 class _AutoHideCardState extends State<_AutoHideCard> {
   Timer? _timer;
-  bool _shown = true;
+  // Первый кадр — скрыта: при переключении фильтра карточка плавно
+  // ВЪЕЗЖАЕТ (fade + slide сверху), а не возникает мгновенно.
+  bool _shown = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _shown = true);
+    });
     _arm();
   }
 
@@ -454,10 +459,12 @@ class _AutoHideCardState extends State<_AutoHideCard> {
     return AnimatedSlide(
       offset: visible ? Offset.zero : const Offset(0, -0.3),
       duration: const Duration(milliseconds: 380),
-      curve: Curves.easeInCubic,
+      // Вход — с замедлением в конце, уход — с ускорением в начале.
+      curve: visible ? Curves.easeOutCubic : Curves.easeInCubic,
       child: AnimatedOpacity(
         opacity: visible ? 1 : 0,
         duration: const Duration(milliseconds: 380),
+        curve: visible ? Curves.easeOutCubic : Curves.easeInCubic,
         child: widget.child,
       ),
     );
