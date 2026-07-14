@@ -3458,7 +3458,12 @@ class _CameraScreenState extends State<CameraScreen>
                   child: NotificationListener<ScrollEndNotification>(
                     onNotification: (notification) {
                       if (notification.metrics.axis == Axis.horizontal) {
-                        _snapFeatureScroll();
+                        // Отложенно: в момент ScrollEnd позиция ещё
+                        // завершает баллистику, и синхронный animateTo из
+                        // колбэка молча проглатывается переходом в idle.
+                        Future(() {
+                          if (mounted) _snapFeatureScroll();
+                        });
                       }
                       return false;
                     },
