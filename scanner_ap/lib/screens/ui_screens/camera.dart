@@ -3183,6 +3183,41 @@ class _CameraScreenState extends State<CameraScreen>
   static const double _kFeatureGlowHeight = 52;
   static const double _kFeatureGlowRadius = 26;
 
+  /// Идёт ли программная докрутка ленты (защита от повторного снапа).
+  bool _isSnapAnimating = false;
+
+  /// «Магнит»: после отпускания ленты докручивает её так, чтобы ближайший
+  /// к центру слот встал ровно по центру вьюпорта.
+  void _snapFeatureScroll() {
+    if (_isSnapAnimating || !_featureScrollController.hasClients) return;
+    final pos = _featureScrollController.position;
+    final double viewport = pos.viewportDimension;
+    const double pad = 2.0; // горизонтальный паддинг ленты
+    final double current = pos.pixels;
+
+    final double centerOffset = current + viewport / 2 - pad;
+    int index = ((centerOffset - _kFeatureSlotWidth / 2) / _kFeatureSlotWidth)
+        .round();
+    index = index.clamp(0, _features.length - 1);
+
+    final double target =
+        (pad +
+                index * _kFeatureSlotWidth +
+                _kFeatureSlotWidth / 2 -
+                viewport / 2)
+            .clamp(pos.minScrollExtent, pos.maxScrollExtent);
+    if ((target - current).abs() < 1) return;
+
+    _isSnapAnimating = true;
+    _featureScrollController
+        .animateTo(
+          target,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        )
+        .whenComplete(() => _isSnapAnimating = false);
+  }
+
   Widget _buildFeatureSelector() {
     final l10n = AppLocalizations.of(context);
     final selIndex = _features.indexWhere((f) => f['name'] == _selectedFeature);
@@ -3302,12 +3337,12 @@ class _CameraScreenState extends State<CameraScreen>
             children: [
               Center(
                 child: AnimatedScale(
-                  scale: isSelected ? 1.0 : 0.86,
+                  scale: isSelected ? 1.0 : 0.9,
                   duration: const Duration(milliseconds: 320),
                   curve: Curves.easeOutBack,
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 250),
-                    opacity: isSelected ? 1.0 : 0.62,
+                    opacity: isSelected ? 1.0 : 0.78,
                     child: Icon(
                       feature['icon'] as IconData? ?? Icons.circle,
                       size: 27,
@@ -3392,110 +3427,138 @@ class _CameraScreenState extends State<CameraScreen>
         // скользящая градиентная подсветка под выбранной.
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(32),
-            child: BackdropFilter(
-              // Sigma умеренная: blur считается на каждом кадре превью,
-              // высокие значения дают заметный лаг камеры на слабых GPU.
-              filter: ui.ImageFilter.blur(sigmaX: 9, sigmaY: 9),
-              child: Container(
-                height: _kFeaturePanelHeight,
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.30),
-                  borderRadius: BorderRadius.circular(32),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.16),
-                  ),
+          // Тень — на внешнем контейнере (внутри ClipRRect она бы обрезалась):
+          // капсула заметнее отделяется от превью.
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(32),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
                 ),
-                child: SingleChildScrollView(
-                  controller: _featureScrollController,
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Stack(
-                    children: [
-                      // Подсветка «перетекает» к выбранной иконке: градиент,
-                      // стеклянный блик сверху и пульсирующее свечение.
-                      AnimatedPositioned(
-                        duration: const Duration(milliseconds: 320),
-                        // Без overshoot: подсветка встаёт точно в слот,
-                        // не «переезжая» соседнюю иконку.
-                        curve: Curves.easeOutCubic,
-                        left:
-                            (selIndex < 0 ? 0 : selIndex) * _kFeatureSlotWidth +
-                            (_kFeatureSlotWidth - _kFeatureGlowWidth) / 2,
-                        // -2: рамка капсулы (1px сверху и снизу) съедает
-                        // высоту Stack — иначе подсветка смещена вниз на 1px.
-                        top:
-                            (_kFeaturePanelHeight - 2 - _kFeatureGlowHeight) /
-                            2,
-                        width: _kFeatureGlowWidth,
-                        height: _kFeatureGlowHeight,
-                        child: AnimatedOpacity(
-                          duration: const Duration(milliseconds: 200),
-                          opacity: selIndex < 0 ? 0 : 1,
-                          child: AnimatedBuilder(
-                            animation: _selectorPulseCtrl,
-                            builder: (context, _) {
-                              final pulse = Curves.easeInOut.transform(
-                                _selectorPulseCtrl.value,
-                              );
-                              return DecoratedBox(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(
-                                    _kFeatureGlowRadius,
-                                  ),
-                                  gradient: const LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: [
-                                      Color(0xFF3FC0FF),
-                                      Color(0xFF1687D5),
-                                      Color(0xFF0F5FA8),
-                                    ],
-                                  ),
-                                  border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.35),
-                                    width: 1.4,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(
-                                        0xFF2CA5E0,
-                                      ).withValues(alpha: 0.40 + pulse * 0.30),
-                                      blurRadius: 12 + pulse * 10,
-                                      spreadRadius: 1 + pulse * 1.5,
-                                    ),
-                                  ],
-                                ),
-                                // Блик-линза: светлое пятно сверху-слева.
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(
-                                      _kFeatureGlowRadius,
-                                    ),
-                                    gradient: const RadialGradient(
-                                      center: Alignment(-0.5, -0.6),
-                                      radius: 1.1,
-                                      colors: [
-                                        Color(0x59FFFFFF),
-                                        Color(0x00FFFFFF),
-                                      ],
-                                      stops: [0.0, 0.55],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                      Row(
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(32),
+              child: BackdropFilter(
+                // Sigma умеренная: blur считается на каждом кадре превью,
+                // высокие значения дают заметный лаг камеры на слабых GPU.
+                filter: ui.ImageFilter.blur(sigmaX: 9, sigmaY: 9),
+                child: Container(
+                  height: _kFeaturePanelHeight,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(32),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.26),
+                    ),
+                  ),
+                  child: NotificationListener<ScrollEndNotification>(
+                    onNotification: (notification) {
+                      if (notification.metrics.axis == Axis.horizontal) {
+                        _snapFeatureScroll();
+                      }
+                      return false;
+                    },
+                    child: SingleChildScrollView(
+                      controller: _featureScrollController,
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Stack(
                         children: [
-                          for (var i = 0; i < _features.length; i++)
-                            buildItem(i),
+                          // Подсветка «перетекает» к выбранной иконке: градиент,
+                          // стеклянный блик сверху и пульсирующее свечение.
+                          AnimatedPositioned(
+                            duration: const Duration(milliseconds: 320),
+                            // Без overshoot: подсветка встаёт точно в слот,
+                            // не «переезжая» соседнюю иконку.
+                            curve: Curves.easeOutCubic,
+                            left:
+                                (selIndex < 0 ? 0 : selIndex) *
+                                    _kFeatureSlotWidth +
+                                (_kFeatureSlotWidth - _kFeatureGlowWidth) / 2,
+                            // -2: рамка капсулы (1px сверху и снизу) съедает
+                            // высоту Stack — иначе подсветка смещена вниз на 1px.
+                            top:
+                                (_kFeaturePanelHeight -
+                                    2 -
+                                    _kFeatureGlowHeight) /
+                                2,
+                            width: _kFeatureGlowWidth,
+                            height: _kFeatureGlowHeight,
+                            child: AnimatedOpacity(
+                              duration: const Duration(milliseconds: 200),
+                              opacity: selIndex < 0 ? 0 : 1,
+                              child: AnimatedBuilder(
+                                animation: _selectorPulseCtrl,
+                                builder: (context, _) {
+                                  final pulse = Curves.easeInOut.transform(
+                                    _selectorPulseCtrl.value,
+                                  );
+                                  return DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(
+                                        _kFeatureGlowRadius,
+                                      ),
+                                      gradient: const LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          Color(0xFF3FC0FF),
+                                          Color(0xFF1687D5),
+                                          Color(0xFF0F5FA8),
+                                        ],
+                                      ),
+                                      border: Border.all(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.35,
+                                        ),
+                                        width: 1.4,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFF2CA5E0)
+                                              .withValues(
+                                                alpha: 0.40 + pulse * 0.30,
+                                              ),
+                                          blurRadius: 12 + pulse * 10,
+                                          spreadRadius: 1 + pulse * 1.5,
+                                        ),
+                                      ],
+                                    ),
+                                    // Блик-линза: светлое пятно сверху-слева.
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(
+                                          _kFeatureGlowRadius,
+                                        ),
+                                        gradient: const RadialGradient(
+                                          center: Alignment(-0.5, -0.6),
+                                          radius: 1.1,
+                                          colors: [
+                                            Color(0x59FFFFFF),
+                                            Color(0x00FFFFFF),
+                                          ],
+                                          stops: [0.0, 0.55],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              for (var i = 0; i < _features.length; i++)
+                                buildItem(i),
+                            ],
+                          ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -3776,9 +3839,8 @@ class _CameraScreenState extends State<CameraScreen>
                       // Верхний предел — под верхней панелью (Авто/Ручн.):
                       // статус-карточка временная и места не резервирует.
                       const double topLimit = 120;
-                      final double bottomLimit = h -
-                          MediaQuery.of(context).padding.bottom -
-                          274;
+                      final double bottomLimit =
+                          h - MediaQuery.of(context).padding.bottom - 274;
                       if (rect.top < topLimit) {
                         rect = rect.shift(Offset(0, topLimit - rect.top));
                       }
@@ -3835,8 +3897,7 @@ class _CameraScreenState extends State<CameraScreen>
                                   child: Icon(
                                     icon,
                                     size: r.height * 0.42,
-                                    color:
-                                        Colors.white.withValues(alpha: 0.14),
+                                    color: Colors.white.withValues(alpha: 0.14),
                                   ),
                                 ),
                               ),
@@ -3847,8 +3908,7 @@ class _CameraScreenState extends State<CameraScreen>
                                 top: r.bottom + 14,
                                 child: Center(
                                   child: AnimatedSwitcher(
-                                    duration:
-                                        const Duration(milliseconds: 200),
+                                    duration: const Duration(milliseconds: 200),
                                     child: Container(
                                       key: ValueKey<String>(hintText),
                                       padding: const EdgeInsets.symmetric(
@@ -3856,10 +3916,10 @@ class _CameraScreenState extends State<CameraScreen>
                                         vertical: 7,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.black
-                                            .withValues(alpha: 0.45),
-                                        borderRadius:
-                                            BorderRadius.circular(20),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.45,
+                                        ),
+                                        borderRadius: BorderRadius.circular(20),
                                       ),
                                       child: Text(
                                         hintText,
@@ -3867,8 +3927,9 @@ class _CameraScreenState extends State<CameraScreen>
                                         style: TextStyle(
                                           color: detected
                                               ? const Color(0xFF35D07F)
-                                              : Colors.white
-                                                  .withValues(alpha: 0.9),
+                                              : Colors.white.withValues(
+                                                  alpha: 0.9,
+                                                ),
                                           fontSize: 13,
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -3980,17 +4041,20 @@ class _CameraBootSplashState extends State<_CameraBootSplash>
                   height: 84,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: const Color(0xFF2CA5E0)
-                        .withValues(alpha: 0.10 + t * 0.08),
+                    color: const Color(
+                      0xFF2CA5E0,
+                    ).withValues(alpha: 0.10 + t * 0.08),
                     border: Border.all(
-                      color: const Color(0xFF2CA5E0)
-                          .withValues(alpha: 0.35 + t * 0.25),
+                      color: const Color(
+                        0xFF2CA5E0,
+                      ).withValues(alpha: 0.35 + t * 0.25),
                       width: 1.4,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF2CA5E0)
-                            .withValues(alpha: 0.18 + t * 0.22),
+                        color: const Color(
+                          0xFF2CA5E0,
+                        ).withValues(alpha: 0.18 + t * 0.22),
                         blurRadius: 24 + t * 14,
                         spreadRadius: 2 + t * 3,
                       ),
