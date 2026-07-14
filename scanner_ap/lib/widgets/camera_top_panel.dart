@@ -99,39 +99,34 @@ class _CameraFlashButtonState extends State<CameraFlashButton> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTapDown: (_) => setState(() => _pressed = true),
       onTapUp: (_) => setState(() => _pressed = false),
       onTapCancel: () => setState(() => _pressed = false),
       onTap: _toggle,
+      // В покое — обычная белая иконка, как остальные элементы панели
+      // (без плашки). «Кнопочность» видна только в момент нажатия
+      // (проседание) и во включённом состоянии (тёплое свечение).
       child: AnimatedScale(
-        scale: _pressed ? 0.82 : 1.0,
+        scale: _pressed ? 0.78 : 1.0,
         duration: const Duration(milliseconds: 130),
         curve: Curves.easeOut,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 260),
+          duration: const Duration(milliseconds: 280),
           curve: Curves.easeOut,
           width: 42,
           height: 42,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            gradient: _on
-                ? const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFFFFD54F), Color(0xFFFFA726)],
-                  )
-                : null,
-            color: _on ? null : Colors.white.withValues(alpha: 0.12),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: _on ? 0.55 : 0.20),
-              width: 1.1,
-            ),
+            color: _on
+                ? const Color(0xFFFFC107).withValues(alpha: 0.16)
+                : Colors.transparent,
             boxShadow: _on
                 ? [
                     BoxShadow(
-                      color: const Color(0xFFFFC107).withValues(alpha: 0.55),
-                      blurRadius: 16,
-                      spreadRadius: 1,
+                      color: const Color(0xFFFFC107).withValues(alpha: 0.45),
+                      blurRadius: 18,
+                      spreadRadius: 2,
                     ),
                   ]
                 : null,
@@ -140,13 +135,16 @@ class _CameraFlashButtonState extends State<CameraFlashButton> {
             duration: const Duration(milliseconds: 240),
             transitionBuilder: (child, animation) => RotationTransition(
               turns: Tween<double>(begin: 0.85, end: 1).animate(animation),
-              child: FadeTransition(opacity: animation, child: child),
+              child: ScaleTransition(
+                scale: animation,
+                child: FadeTransition(opacity: animation, child: child),
+              ),
             ),
             child: Icon(
               _on ? Icons.flash_on_rounded : Icons.flash_off_rounded,
               key: ValueKey<bool>(_on),
-              color: _on ? const Color(0xFF4A3200) : Colors.white,
-              size: 21,
+              color: _on ? const Color(0xFFFFD54F) : Colors.white,
+              size: 26,
             ),
           ),
         ),
