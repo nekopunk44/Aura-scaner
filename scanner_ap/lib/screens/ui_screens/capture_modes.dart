@@ -379,11 +379,86 @@ class CaptureModeController {
                 );
               },
               child: visible
-                  ? overlayCard
+                  ? _AutoHideCard(
+                      key: const ValueKey('overlay-card'),
+                      signature: '$title|$subtitle',
+                      pinned: isScanning || detectionWarning != null,
+                      child: overlayCard,
+                    )
                   : const SizedBox.shrink(key: ValueKey('overlay-hidden')),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Автоскрытие статус-карточки: появляется при смене содержимого (режим,
+/// номер страницы, «Контур найден») и через пару секунд плавно уезжает
+/// вверх, освобождая место рамке. Во время сканирования и при
+/// предупреждениях остаётся видимой.
+class _AutoHideCard extends StatefulWidget {
+  const _AutoHideCard({
+    super.key,
+    required this.signature,
+    required this.pinned,
+    required this.child,
+  });
+
+  final String signature;
+  final bool pinned;
+  final Widget child;
+
+  @override
+  State<_AutoHideCard> createState() => _AutoHideCardState();
+}
+
+class _AutoHideCardState extends State<_AutoHideCard> {
+  Timer? _timer;
+  bool _shown = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _arm();
+  }
+
+  @override
+  void didUpdateWidget(_AutoHideCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.signature != widget.signature ||
+        oldWidget.pinned != widget.pinned) {
+      if (!_shown) setState(() => _shown = true);
+      _arm();
+    }
+  }
+
+  void _arm() {
+    _timer?.cancel();
+    if (widget.pinned) return;
+    _timer = Timer(const Duration(milliseconds: 2600), () {
+      if (mounted) setState(() => _shown = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = widget.pinned || _shown;
+    return AnimatedSlide(
+      offset: visible ? Offset.zero : const Offset(0, -0.3),
+      duration: const Duration(milliseconds: 380),
+      curve: Curves.easeInCubic,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: const Duration(milliseconds: 380),
+        child: widget.child,
       ),
     );
   }

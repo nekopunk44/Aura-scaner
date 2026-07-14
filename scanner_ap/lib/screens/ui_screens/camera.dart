@@ -149,13 +149,15 @@ class _CameraScreenState extends State<CameraScreen>
   static const Map<String, _CutoutSpec> _cutoutSpecs = {
     Feat.passport: _CutoutSpec(1.42, 0.85, -0.25),
     Feat.idCard: _CutoutSpec(1.586, 0.85, -0.25),
-    Feat.document: _CutoutSpec(0.71, 0.72, -0.22),
-    Feat.plus10Pages: _CutoutSpec(0.71, 0.72, -0.22),
-    Feat.restorePhoto: _CutoutSpec(0.75, 0.72, -0.22),
-    Feat.eco: _CutoutSpec(0.75, 0.72, -0.22),
-    Feat.removeWatermark: _CutoutSpec(0.75, 0.72, -0.22),
-    Feat.removeSpots: _CutoutSpec(0.75, 0.72, -0.22),
-    Feat.ocr: _CutoutSpec(0.95, 0.78, -0.22),
+    // Рамки крупные: статус-карточка сверху показывается временно
+    // (автоскрытие) и не резервирует место постоянно.
+    Feat.document: _CutoutSpec(0.71, 0.80, -0.35),
+    Feat.plus10Pages: _CutoutSpec(0.71, 0.80, -0.35),
+    Feat.restorePhoto: _CutoutSpec(0.75, 0.78, -0.30),
+    Feat.eco: _CutoutSpec(0.75, 0.78, -0.30),
+    Feat.removeWatermark: _CutoutSpec(0.75, 0.78, -0.30),
+    Feat.removeSpots: _CutoutSpec(0.75, 0.78, -0.30),
+    Feat.ocr: _CutoutSpec(0.95, 0.80, -0.30),
     Feat.translate: _CutoutSpec(1.42, 0.85, -0.25),
     Feat.qrScanner: _CutoutSpec(1.0, 0.66, -0.25, brackets: false),
   };
@@ -1463,12 +1465,12 @@ class _CameraScreenState extends State<CameraScreen>
         ];
       case Feat.document:
       case Feat.plus10Pages:
-        // Рамка листа (widthFactor 0.66, alignment -0.22):
-        // верх ~0.23 H, низ ~0.65 H.
+        // Рамка листа (widthFactor 0.80, alignment -0.35):
+        // верх ~0.15 H, низ ~0.69 H.
         return const [
-          _DocumentFrameSpec(left: 0.17, right: 0.83, top: 0.23, bottom: 0.65),
-          _DocumentFrameSpec(left: 0.13, right: 0.87, top: 0.18, bottom: 0.70),
-          _DocumentFrameSpec(left: 0.20, right: 0.80, top: 0.28, bottom: 0.60),
+          _DocumentFrameSpec(left: 0.10, right: 0.90, top: 0.15, bottom: 0.69),
+          _DocumentFrameSpec(left: 0.07, right: 0.93, top: 0.10, bottom: 0.75),
+          _DocumentFrameSpec(left: 0.13, right: 0.87, top: 0.20, bottom: 0.63),
         ];
       case Feat.passport:
       default:
@@ -3813,7 +3815,9 @@ class _CameraScreenState extends State<CameraScreen>
                     // сохраняется). QR не трогаем — его рамка рисуется в
                     // собственном оверлее по своей формуле.
                     if (spec.brackets) {
-                      const double topLimit = 196;
+                      // Верхний предел — под верхней панелью (Авто/Ручн.):
+                      // статус-карточка временная и места не резервирует.
+                      const double topLimit = 120;
                       final double bottomLimit = h -
                           MediaQuery.of(context).padding.bottom -
                           274;
