@@ -3528,25 +3528,9 @@ class _CameraScreenState extends State<CameraScreen>
       }
     });
 
-    if (!_isCameraInitialized && _selectedFeature != Feat.translate) {
-      return const Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(color: Colors.white),
-              SizedBox(height: 16),
-              Text(
-                'Инициализация камеры...',
-                style: TextStyle(color: Colors.white),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
+    // Ранней ветки с лоадером больше нет: сплеш инициализации рисуется
+    // ПОВЕРХ основного стека и плавно тает, когда превью готово (см. ниже) —
+    // без резкой смены экранов.
     final Map<String, Widget Function()> featureViews = {
       Feat.passport: () => PassportCameraView(
         cameraController: _cameraController,
@@ -3908,7 +3892,110 @@ class _CameraScreenState extends State<CameraScreen>
             right: 0,
             child: _buildFeatureSelector(),
           ),
+          // Сплеш инициализации камеры: лежит поверх всего и плавно
+          // растворяется, когда превью готово — вместо резкой смены
+          // «лоадер → камера».
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: _isCameraInitialized,
+              child: AnimatedOpacity(
+                opacity: _isCameraInitialized ? 0 : 1,
+                duration: const Duration(milliseconds: 450),
+                curve: Curves.easeOut,
+                child: const _CameraBootSplash(),
+              ),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// Экран запуска камеры: фирменный тёмный градиент и пульсирующая иконка
+/// со свечением вместо голого белого спиннера.
+class _CameraBootSplash extends StatefulWidget {
+  const _CameraBootSplash();
+
+  @override
+  State<_CameraBootSplash> createState() => _CameraBootSplashState();
+}
+
+class _CameraBootSplashState extends State<_CameraBootSplash>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0F1923), Color(0xFF13253A), Color(0xFF0D2137)],
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedBuilder(
+              animation: _pulse,
+              builder: (context, _) {
+                final t = Curves.easeInOut.transform(_pulse.value);
+                return Container(
+                  width: 84,
+                  height: 84,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF2CA5E0)
+                        .withValues(alpha: 0.10 + t * 0.08),
+                    border: Border.all(
+                      color: const Color(0xFF2CA5E0)
+                          .withValues(alpha: 0.35 + t * 0.25),
+                      width: 1.4,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF2CA5E0)
+                            .withValues(alpha: 0.18 + t * 0.22),
+                        blurRadius: 24 + t * 14,
+                        spreadRadius: 2 + t * 3,
+                      ),
+                    ],
+                  ),
+                  child: Transform.scale(
+                    scale: 0.94 + t * 0.12,
+                    child: const Icon(
+                      Icons.photo_camera_rounded,
+                      color: Colors.white,
+                      size: 34,
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 22),
+            Text(
+              l10n.camStarting,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

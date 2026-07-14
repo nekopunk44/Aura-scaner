@@ -219,16 +219,30 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
 
   void _navigateToCameraScreen() async {
     setState(() => _isScanning = true);
-    await Future.delayed(const Duration(milliseconds: 100));
-    if (!mounted) {
-      setState(() => _isScanning = false);
-      return;
-    }
 
+    // Плавный переход: fade + лёгкий zoom вместо дёрганого системного
+    // slide (и без искусственной задержки перед пушем).
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => CameraScreen(onScanCompleted: _onDocumentScanned),
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 380),
+        reverseTransitionDuration: const Duration(milliseconds: 280),
+        pageBuilder: (_, __, ___) =>
+            CameraScreen(onScanCompleted: _onDocumentScanned),
+        transitionsBuilder: (_, animation, __, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 1.05, end: 1).animate(curved),
+              child: child,
+            ),
+          );
+        },
       ),
     );
 

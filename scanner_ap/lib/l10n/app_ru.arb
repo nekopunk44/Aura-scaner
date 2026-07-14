@@ -931,6 +931,7 @@
   "@camPassportNextPage": {"placeholders": {"ordinal": {"type": "String"}}},
   "camFitDocInFrame": "Поместите документ в рамку",
   "camFitPhotoInFrame": "Поместите фото в рамку",
+  "camStarting": "Запускаем камеру…",
   "camFitPackagingInFrame": "Поместите упаковку в рамку",
   "translateManualHint": "Сфотографируйте текст в рамке — перевод появится снизу",
   "settingsTranslateModels": "Языки перевода",
