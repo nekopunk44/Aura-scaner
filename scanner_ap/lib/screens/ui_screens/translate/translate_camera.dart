@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import '../../../l10n/app_localizations.dart';
 import '../../../widgets/camera_capture_button.dart';
 import '../../../widgets/camera_controls_bar.dart';
+import '../../../widgets/camera_top_panel.dart';
 import '../../../widgets/camera_mode_switch.dart';
 
 import 'apis/recognition_api.dart';
@@ -93,7 +94,6 @@ class _TranslateCameraState extends State<TranslateCamera> {
   String? _translatorKey;
 
   String _targetLang = 'ru';
-  bool _flashOn = false;
 
   static const _orientations = {
     DeviceOrientation.portraitUp: 0,
@@ -479,18 +479,6 @@ class _TranslateCameraState extends State<TranslateCamera> {
   // UI-управление
   // ------------------------------------------------------------------
 
-  Future<void> _toggleFlash() async {
-    final controller = widget.cameraController;
-    if (controller == null || !controller.value.isInitialized) return;
-    try {
-      final on = controller.value.flashMode == FlashMode.torch;
-      await controller.setFlashMode(on ? FlashMode.off : FlashMode.torch);
-      if (mounted) setState(() => _flashOn = !on);
-    } catch (e) {
-      debugPrint('Ошибка фонарика (перевод): $e');
-    }
-  }
-
   void _showLanguagePicker() {
     showModalBottomSheet<void>(
       context: context,
@@ -792,45 +780,10 @@ class _TranslateCameraState extends State<TranslateCamera> {
   }
 
   Widget _buildTopPanel(AppLocalizations l10n) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            GestureDetector(
-              onTap: () => widget.onBack(),
-              child: const Icon(
-                Icons.arrow_back,
-                color: Colors.white,
-                size: 28,
-              ),
-            ),
-            _buildModeSwitch(l10n),
-            Row(
-              children: [
-                GestureDetector(
-                  onTap: _toggleFlash,
-                  child: Icon(
-                    _flashOn ? Icons.flash_on : Icons.flash_off,
-                    color: Colors.white,
-                    size: 26,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                GestureDetector(
-                  onTap: () => widget.onSettings(),
-                  child: const Icon(
-                    Icons.settings,
-                    color: Colors.white,
-                    size: 26,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+    return CameraTopPanel(
+      onBack: () => widget.onBack(),
+      cameraController: widget.cameraController,
+      modeSwitch: _buildModeSwitch(l10n),
     );
   }
 

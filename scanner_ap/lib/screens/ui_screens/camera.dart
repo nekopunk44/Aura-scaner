@@ -49,6 +49,7 @@ import 'ocr/ocr_camera_view.dart';
 import 'remove_spots_camera_view.dart';
 import 'remove_watermark_camera_view.dart';
 import '../../widgets/document_guide_frame.dart' show CornerBracketsPainter;
+import '../../widgets/camera_top_panel.dart';
 import 'restore_photo_camera_view.dart';
 import 'restore_photo_screen.dart';
 import 'signature/home_screen.dart' as sig;
@@ -239,7 +240,6 @@ class _CameraScreenState extends State<CameraScreen>
   final List<String> _qrHistory = [];
   static const _qrHistoryKey = 'qr_scan_history';
   static const _qrHistoryMax = 30;
-  bool _qrFlashOn = false;
   bool _isQrStreaming = false; // активен ли image-stream сканирования
   bool _isBarcodeBusy = false; // обрабатывается ли текущий кадр
   bool _qrCooldown = false; // пауза после успешного скана (3 с)
@@ -2649,19 +2649,6 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  /// Фонарик в режиме QR теперь использует общий CameraController.
-  Future<void> _toggleQrFlash() async {
-    final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized) return;
-    try {
-      final on = controller.value.flashMode == FlashMode.torch;
-      await controller.setFlashMode(on ? FlashMode.off : FlashMode.torch);
-      if (mounted) setState(() => _qrFlashOn = !on);
-    } catch (e) {
-      debugPrint('Ошибка переключения фонарика QR: $e');
-    }
-  }
-
   /// Запускает image-stream и распознавание штрихкодов на общей камере.
   Future<void> _startBarcodeScanning() async {
     final controller = _cameraController;
@@ -3095,49 +3082,14 @@ class _CameraScreenState extends State<CameraScreen>
           ),
         ),
 
-        // Верхняя панель: назад, фонарик, настройки.
+        // Верхняя панель: назад + фонарик (единая с остальными режимами).
         Positioned(
           top: 0,
           left: 0,
           right: 0,
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: const Icon(
-                      Icons.arrow_back,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: _toggleQrFlash,
-                        child: Icon(
-                          _qrFlashOn ? Icons.flash_on : Icons.flash_off,
-                          color: Colors.white,
-                          size: 26,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      GestureDetector(
-                        onTap: _openSettings,
-                        child: const Icon(
-                          Icons.settings,
-                          color: Colors.white,
-                          size: 26,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+          child: CameraTopPanel(
+            onBack: () => Navigator.pop(context),
+            cameraController: _cameraController,
           ),
         ),
 

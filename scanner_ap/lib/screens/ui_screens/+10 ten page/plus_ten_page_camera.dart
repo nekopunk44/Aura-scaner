@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../capture_modes.dart';
 import '../../../widgets/camera_controls_bar.dart';
+import '../../../widgets/camera_top_panel.dart';
 import '../../../widgets/camera_mode_switch.dart';
 import '../../../l10n/app_localizations.dart';
 
@@ -46,68 +47,15 @@ class UnlimitedDocumentView extends StatelessWidget {
 
 
   Widget _buildTopPanel(AppLocalizations l10n) {
-    final String currentMode = captureModeController.captureMode as String;
-
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            // Кнопка назад
-            GestureDetector(
-              onTap: onBack,
-              child: const Icon(
-                Icons.arrow_back,
-                color: Colors.white,
-                size: 28,
-              ),
-            ),
-
-            // кнопка режимов (Авто/Ручн.)
-            CameraModeSwitch(
-              autoLabel: l10n.camAutoLabel,
-              manualLabel: l10n.camManualLabel,
-              isAuto: currentMode == "Автоматически",
-              onAuto: setCaptureModeAuto,
-              onManual: setCaptureModeManual,
-            ),
-
-            // Фонарик + настройки
-            Row(
-              children: [
-                // Иконка фонарика
-                GestureDetector(
-                  onTap: () async {
-                    if (cameraController != null) {
-                      bool flashOn =
-                          cameraController!.value.flashMode == FlashMode.torch;
-                      await cameraController!.setFlashMode(
-                        flashOn ? FlashMode.off : FlashMode.torch,
-                      );
-                    }
-                  },
-                  child: Icon(
-                    cameraController?.value.flashMode == FlashMode.torch
-                        ? Icons.flash_on
-                        : Icons.flash_off,
-                    color: Colors.white,
-                    size: 26,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                GestureDetector(
-                  onTap: onSettings,
-                  child: const Icon(
-                    Icons.settings,
-                    color: Colors.white,
-                    size: 26,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+    return CameraTopPanel(
+      onBack: onBack,
+      cameraController: cameraController,
+      modeSwitch: CameraModeSwitch(
+        autoLabel: l10n.camAutoLabel,
+        manualLabel: l10n.camManualLabel,
+        isAuto: captureModeController.captureMode == 'Автоматически',
+        onAuto: setCaptureModeAuto,
+        onManual: setCaptureModeManual,
       ),
     );
   }

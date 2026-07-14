@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 
 import '../../../widgets/camera_controls_bar.dart';
+import '../../../widgets/camera_top_panel.dart';
 
 /// Камера режима OCR. Структура повторяет экран Паспорт: верхняя панель
 /// (назад / фонарик / настройки), рамка-видоискатель по центру и нижний
@@ -28,20 +29,7 @@ class OcrCameraView extends StatefulWidget {
 }
 
 class _OcrCameraViewState extends State<OcrCameraView> {
-  bool _flashOn = false;
   bool _busy = false;
-
-  Future<void> _toggleFlash() async {
-    final controller = widget.cameraController;
-    if (controller == null || !controller.value.isInitialized) return;
-    try {
-      final on = controller.value.flashMode == FlashMode.torch;
-      await controller.setFlashMode(on ? FlashMode.off : FlashMode.torch);
-      if (mounted) setState(() => _flashOn = !on);
-    } catch (e) {
-      debugPrint('Ошибка фонарика (OCR): $e');
-    }
-  }
 
   Future<void> _guard(Future<void> Function() action) async {
     if (_busy) return;
@@ -54,36 +42,9 @@ class _OcrCameraViewState extends State<OcrCameraView> {
   }
 
   Widget _buildTopPanel() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            GestureDetector(
-              onTap: widget.onBack,
-              child: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-            ),
-            Row(
-              children: [
-                GestureDetector(
-                  onTap: _toggleFlash,
-                  child: Icon(
-                    _flashOn ? Icons.flash_on : Icons.flash_off,
-                    color: Colors.white,
-                    size: 26,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                GestureDetector(
-                  onTap: widget.onSettings,
-                  child: const Icon(Icons.settings, color: Colors.white, size: 26),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+    return CameraTopPanel(
+      onBack: widget.onBack,
+      cameraController: widget.cameraController,
     );
   }
 
