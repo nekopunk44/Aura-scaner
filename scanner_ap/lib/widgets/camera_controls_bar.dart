@@ -9,7 +9,7 @@ import 'camera_capture_button.dart';
 /// Сама панель тянется до низа экрана и сама добавляет SafeArea.bottom
 /// в padding, чтобы под жест-баром не было ни видимого зазора, ни
 /// перекрытия кнопок системными жестами.
-class CameraControlsBar extends StatelessWidget {
+class CameraControlsBar extends StatefulWidget {
   final List<Widget> leftActions;
   final List<Widget> rightActions;
   final VoidCallback? onCapture;
@@ -24,6 +24,50 @@ class CameraControlsBar extends StatelessWidget {
     this.isBusy = false,
     this.captureLabel,
   });
+
+  /// Registers the translation bar, which has its own language control but
+  /// shares the gallery action with the standard camera bar. Returns the
+  /// gallery slot used by the preceding filter so translation can animate it.
+  static int registerGalleryOnlyLayout() {
+    final previousGallery = _CameraControlsBarState._previousLeftIds.indexOf(
+      'gallery',
+    );
+    _CameraControlsBarState._previousLeftIds = const ['gallery'];
+    _CameraControlsBarState._previousRightIds = const [];
+    return previousGallery;
+  }
+
+  @override
+  State<CameraControlsBar> createState() => _CameraControlsBarState();
+}
+
+class _CameraControlsBarState extends State<CameraControlsBar>
+    with SingleTickerProviderStateMixin {
+  static List<String> _previousLeftIds = const [];
+  static List<String> _previousRightIds = const [];
+
+  late final AnimationController _transition = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 340),
+  );
+  late final List<String> _fromLeftIds;
+  late final List<String> _fromRightIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _fromLeftIds = List<String>.from(_previousLeftIds);
+    _fromRightIds = List<String>.from(_previousRightIds);
+    _previousLeftIds = widget.leftActions.map(_actionId).toList();
+    _previousRightIds = widget.rightActions.map(_actionId).toList();
+    _transition.forward();
+  }
+
+  @override
+  void dispose() {
+    _transition.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,8 +92,7 @@ class CameraControlsBar extends StatelessWidget {
                 Colors.black.withValues(alpha: 0.55),
               ],
             ),
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(28)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
             border: Border.all(
               color: Colors.white.withValues(alpha: 0.10),
               width: 1,
@@ -64,20 +107,28 @@ class CameraControlsBar extends StatelessWidget {
                   alignment: Alignment.centerLeft,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: _interleaveWithGaps(leftActions),
+                    children: _animatedActions(
+                      widget.leftActions,
+                      _fromLeftIds,
+                      fromRight: false,
+                    ),
                   ),
                 ),
                 Align(
                   alignment: Alignment.centerRight,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: _interleaveWithGaps(rightActions),
+                    children: _animatedActions(
+                      widget.rightActions,
+                      _fromRightIds,
+                      fromRight: true,
+                    ),
                   ),
                 ),
                 CameraCaptureButton(
-                  onTap: onCapture,
-                  isBusy: isBusy,
-                  label: captureLabel,
+                  onTap: widget.onCapture,
+                  isBusy: widget.isBusy,
+                  label: widget.captureLabel,
                 ),
               ],
             ),
@@ -87,16 +138,62 @@ class CameraControlsBar extends StatelessWidget {
     );
   }
 
-  List<Widget> _interleaveWithGaps(List<Widget> items) {
+  List<Widget> _animatedActions(
+    List<Widget> items,
+    List<String> previousIds, {
+    required bool fromRight,
+  }) {
     if (items.isEmpty) return const [];
     final out = <Widget>[];
     for (int i = 0; i < items.length; i++) {
-      out.add(items[i]);
+      final child = items[i];
+      final id = _actionId(child);
+      final previousIndex = previousIds.indexOf(id);
+      final isExisting = previousIndex >= 0;
+      final slotDelta = isExisting ? previousIndex - i : 0;
+      out.add(
+        AnimatedBuilder(
+          animation: _transition,
+          child: child,
+          builder: (context, child) {
+            final t = Curves.easeInOutCubic.transform(_transition.value);
+            final direction = fromRight ? -1.0 : 1.0;
+            final dx = slotDelta * 64.0 * direction * (1 - t);
+            final opacity = isExisting ? 1.0 : t;
+            final scale = isExisting ? 1.0 : 0.82 + 0.18 * t;
+            return Opacity(
+              opacity: opacity,
+              child: Transform.translate(
+                offset: Offset(dx, 0),
+                child: Transform.scale(scale: scale, child: child),
+              ),
+            );
+          },
+        ),
+      );
       if (i != items.length - 1) {
         out.add(const SizedBox(width: 18));
       }
     }
     return out;
+  }
+
+  static String _actionId(Widget action) {
+    if (action is CameraActionIcon) {
+      final icon = action.icon;
+      if (icon == Icons.photo_library ||
+          icon == Icons.photo_library_outlined ||
+          icon == Icons.photo_outlined) {
+        return 'gallery';
+      }
+      if (icon == Icons.delete || icon == Icons.delete_outline) {
+        return 'delete';
+      }
+      return 'icon:${icon.codePoint}';
+    }
+    if (action is CameraFinishButton) return 'finish';
+    if (action is CameraActionPill) return 'pill:${action.label}';
+    return '${action.runtimeType}:${action.key}';
   }
 }
 
@@ -122,21 +219,13 @@ class CameraGalleryBar extends StatelessWidget {
         child: Center(
           child: GestureDetector(
             onTap: onGallery,
-            child: Container(
+            child: SizedBox(
               width: 52,
               height: 52,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: enabled ? Colors.white : Colors.white38,
-                  width: 2,
-                ),
-              ),
               child: Icon(
-                Icons.photo_library,
+                Icons.photo_outlined,
                 color: enabled ? Colors.white : Colors.white38,
-                size: 26,
+                size: 30,
               ),
             ),
           ),
@@ -164,23 +253,20 @@ class CameraActionIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onTap != null;
+    final displayIcon = icon == Icons.photo_library
+        ? Icons.photo_outlined
+        : icon;
     return GestureDetector(
       onTap: onTap,
-      child: Container(
+      child: SizedBox(
         width: size,
         height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: enabled ? 0.14 : 0.07),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: enabled ? 0.22 : 0.10),
-            width: 1.1,
-          ),
-        ),
         child: Icon(
-          icon,
-          color: enabled ? Colors.white : Colors.white38,
-          size: 22,
+          displayIcon,
+          color: enabled
+              ? Colors.white.withValues(alpha: 0.92)
+              : Colors.white30,
+          size: 28,
         ),
       ),
     );
@@ -209,39 +295,15 @@ class CameraFinishButton extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOut,
+          SizedBox(
             width: 46,
             height: 46,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: enabled
-                  ? const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFF35D07F), Color(0xFF1FA463)],
-                    )
-                  : null,
-              color: enabled ? null : Colors.white.withValues(alpha: 0.07),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: enabled ? 0.30 : 0.10),
-                width: 1.1,
-              ),
-              boxShadow: enabled
-                  ? [
-                      BoxShadow(
-                        color: const Color(0xFF26C060).withValues(alpha: 0.45),
-                        blurRadius: 14,
-                        spreadRadius: 1,
-                      ),
-                    ]
-                  : null,
-            ),
             child: Icon(
               Icons.check_rounded,
-              color: enabled ? Colors.white : Colors.white38,
-              size: 24,
+              color: enabled
+                  ? Colors.white.withValues(alpha: 0.92)
+                  : Colors.white30,
+              size: 28,
             ),
           ),
           if (count > 0)
@@ -280,11 +342,7 @@ class CameraActionPill extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
 
-  const CameraActionPill({
-    super.key,
-    required this.label,
-    required this.onTap,
-  });
+  const CameraActionPill({super.key, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {

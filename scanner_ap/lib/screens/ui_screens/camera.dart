@@ -21,6 +21,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -40,7 +41,6 @@ import 'passport/passport_camera.dart';
 import 'id_card/id_card_camera.dart';
 import 'documents/documents_camera.dart';
 import 'documents/documents_photo_preview.dart';
-import 'documents/save_options_document.dart';
 import 'translate/translate_camera.dart';
 import '+10 ten page/plus_ten_page_camera.dart';
 import 'importDocument/document_importer.dart';
@@ -139,6 +139,102 @@ class _CutoutScrimPainter extends CustomPainter {
       oldDelegate.cutout != cutout;
 }
 
+double _manualRotationFitScale(
+  Rect cutout,
+  double angle, {
+  required bool compactLandscape,
+}) {
+  final cosine = math.cos(angle).abs();
+  final sine = math.sin(angle).abs();
+  final rotatedWidth = cutout.width * cosine + cutout.height * sine;
+  final rotatedHeight = cutout.width * sine + cutout.height * cosine;
+  final maxSide = math.max(cutout.width, cutout.height);
+  if (rotatedWidth <= 0 || rotatedHeight <= 0) return 1;
+  final fit = math.min(
+    1,
+    math.min(maxSide / rotatedWidth, maxSide / rotatedHeight),
+  );
+  // У высоких рамок фото/документа их высота после поворота становится
+  // шириной и почти упирается в края экрана. Уменьшаем только горизонтальное
+  // положение; вертикальная рамка сохраняет исходный размер.
+  final landscapeProgress = math.sin(angle).abs();
+  final landscapeScale = compactLandscape ? 1 - 0.22 * landscapeProgress : 1.0;
+  return fit * landscapeScale;
+}
+
+class _RotatedPassportFramePainter extends CustomPainter {
+  const _RotatedPassportFramePainter({
+    required this.cutout,
+    required this.angle,
+    required this.color,
+    required this.compactLandscape,
+  });
+
+  final Rect cutout;
+  final double angle;
+  final Color color;
+  final bool compactLandscape;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = cutout.center;
+    final cosine = math.cos(angle);
+    final sine = math.sin(angle);
+    final scale = _manualRotationFitScale(
+      cutout,
+      angle,
+      compactLandscape: compactLandscape,
+    );
+    final transform = Float64List.fromList([
+      cosine * scale,
+      sine * scale,
+      0,
+      0,
+      -sine * scale,
+      cosine * scale,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      center.dx - cosine * scale * center.dx + sine * scale * center.dy,
+      center.dy - sine * scale * center.dx - cosine * scale * center.dy,
+      0,
+      1,
+    ]);
+    final rotatedCutout =
+        (Path()..addRRect(
+              RRect.fromRectAndRadius(cutout, const Radius.circular(14)),
+            ))
+            .transform(transform);
+    final scrim = Path.combine(
+      PathOperation.difference,
+      Path()..addRect(Offset.zero & size),
+      rotatedCutout,
+    );
+    canvas.drawPath(
+      scrim,
+      Paint()..color = Colors.black.withValues(alpha: 0.32 + 0.13 * scale),
+    );
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(angle);
+    canvas.scale(scale);
+    canvas.translate(-center.dx, -center.dy);
+    CornerBracketsPainter(cutout: cutout, color: color).paint(canvas, size);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _RotatedPassportFramePainter oldDelegate) =>
+      oldDelegate.cutout != cutout ||
+      oldDelegate.angle != angle ||
+      oldDelegate.color != color ||
+      oldDelegate.compactLandscape != compactLandscape;
+}
+
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin {
   static const MethodChannel _nativeBridgeChannel = MethodChannel(
@@ -159,7 +255,7 @@ class _CameraScreenState extends State<CameraScreen>
     Feat.removeWatermark: _CutoutSpec(0.75, 0.78, -0.30),
     Feat.removeSpots: _CutoutSpec(0.75, 0.78, -0.30),
     Feat.ocr: _CutoutSpec(0.95, 0.80, -0.30),
-    Feat.translate: _CutoutSpec(1.42, 0.85, -0.25),
+    Feat.translate: _CutoutSpec(1.18, 0.92, -0.20),
     Feat.qrScanner: _CutoutSpec(1.0, 0.66, -0.25, brackets: false),
   };
 
@@ -229,6 +325,10 @@ class _CameraScreenState extends State<CameraScreen>
   CameraController? _cameraController;
   bool _isCameraInitialized = false;
   bool _isInitializingCamera = false;
+  bool _initialCameraBootShown = false;
+  static const Duration _minimumInitialBootDuration = Duration(
+    milliseconds: 1400,
+  );
   int _cameraSessionId = 0;
 
   // QR/штрихкоды распознаются через ML Kit на ОБЩЕЙ камере (_cameraController),
@@ -254,6 +354,12 @@ class _CameraScreenState extends State<CameraScreen>
   final ValueNotifier<List<Offset>?> _photoQuad = ValueNotifier<List<Offset>?>(
     null,
   );
+  final Map<String, Rect> _autoFrameBounds = <String, Rect>{};
+  Rect? _passportFrameRect;
+  double _passportManualAngle = 0;
+  bool _passportRotationDragActive = false;
+  double _passportRotationStartAngle = 0;
+  double _passportPointerStartAngle = 0;
   Timer? _autoCaptureTimer;
   String? _autoCaptureFeature;
   String? _autoCaptureSide;
@@ -484,6 +590,8 @@ class _CameraScreenState extends State<CameraScreen>
     if (_isInitializingCamera) return;
     _isInitializingCamera = true;
     final sessionId = ++_cameraSessionId;
+    final holdInitialSplash = !_initialCameraBootShown;
+    final bootStartedAt = DateTime.now();
 
     try {
       final previousController = _cameraController;
@@ -523,6 +631,19 @@ class _CameraScreenState extends State<CameraScreen>
       if (!mounted || sessionId != _cameraSessionId) {
         await controller.dispose();
         return;
+      }
+
+      if (holdInitialSplash) {
+        final elapsed = DateTime.now().difference(bootStartedAt);
+        final remaining = _minimumInitialBootDuration - elapsed;
+        if (remaining > Duration.zero) {
+          await Future<void>.delayed(remaining);
+        }
+        if (!mounted || sessionId != _cameraSessionId) {
+          await controller.dispose();
+          return;
+        }
+        _initialCameraBootShown = true;
       }
 
       _cameraController = controller;
@@ -639,6 +760,158 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  void _updateAutoFrame(List<Offset>? quad, String featureName) {
+    if (_selectedFeature != featureName ||
+        !_frameDetectable(featureName) ||
+        !_cutoutSpecs.containsKey(featureName) ||
+        captureModeController.captureMode != 'Автоматически' ||
+        quad == null ||
+        quad.length != 4) {
+      return;
+    }
+
+    final xs = quad.map((point) => point.dx);
+    final ys = quad.map((point) => point.dy);
+    final next = Rect.fromLTRB(
+      xs.reduce(math.min).clamp(0.0, 1.0),
+      ys.reduce(math.min).clamp(0.0, 1.0),
+      xs.reduce(math.max).clamp(0.0, 1.0),
+      ys.reduce(math.max).clamp(0.0, 1.0),
+    );
+    if (next.width < 0.16 || next.height < 0.10) return;
+
+    final previous = _autoFrameBounds[featureName];
+    if (previous != null &&
+        (previous.center - next.center).distance < 0.008 &&
+        (previous.width - next.width).abs() < 0.012 &&
+        (previous.height - next.height).abs() < 0.012) {
+      return;
+    }
+    if (mounted) {
+      setState(() => _autoFrameBounds[featureName] = next);
+    }
+  }
+
+  Rect? _mapAutoFrame(Size size, String featureName) {
+    final bounds = _autoFrameBounds[featureName];
+    final contentAspect = _previewAspect;
+    if (bounds == null || contentAspect == null) return null;
+
+    final boxAspect = size.width / size.height;
+    late final double displayWidth;
+    late final double displayHeight;
+    if (boxAspect > contentAspect) {
+      displayWidth = size.width;
+      displayHeight = size.width / contentAspect;
+    } else {
+      displayHeight = size.height;
+      displayWidth = size.height * contentAspect;
+    }
+    final dx = (size.width - displayWidth) / 2;
+    final dy = (size.height - displayHeight) / 2;
+    return Rect.fromLTRB(
+      dx + bounds.left * displayWidth,
+      dy + bounds.top * displayHeight,
+      dx + bounds.right * displayWidth,
+      dy + bounds.bottom * displayHeight,
+    ).inflate(6);
+  }
+
+  void _startPassportFrameRotation(DragStartDetails details) {
+    final rect = _passportFrameRect;
+    if (rect == null) return;
+    const hitRadius = 38.0;
+    final position = details.localPosition;
+    final scale = _manualRotationFitScale(
+      rect,
+      _passportManualAngle,
+      compactLandscape: _compactLandscapeFrame(_selectedFeature),
+    );
+    Offset rotatePoint(Offset point) {
+      final relative = (point - rect.center) * scale;
+      final cosine = math.cos(_passportManualAngle);
+      final sine = math.sin(_passportManualAngle);
+      return rect.center +
+          Offset(
+            relative.dx * cosine - relative.dy * sine,
+            relative.dx * sine + relative.dy * cosine,
+          );
+    }
+
+    final corners = <Offset>[
+      rect.topLeft,
+      rect.topRight,
+      rect.bottomRight,
+      rect.bottomLeft,
+    ].map(rotatePoint).toList(growable: false);
+    double distanceToSegment(Offset point, Offset start, Offset end) {
+      final segment = end - start;
+      final lengthSquared = segment.dx * segment.dx + segment.dy * segment.dy;
+      if (lengthSquared == 0) return (point - start).distance;
+      final relative = point - start;
+      final t =
+          ((relative.dx * segment.dx + relative.dy * segment.dy) /
+                  lengthSquared)
+              .clamp(0.0, 1.0);
+      final closest = start + segment * t;
+      return (point - closest).distance;
+    }
+
+    _passportRotationDragActive = List<int>.generate(4, (i) => i).any(
+      (i) =>
+          distanceToSegment(position, corners[i], corners[(i + 1) % 4]) <=
+          hitRadius,
+    );
+    if (!_passportRotationDragActive) return;
+    _passportRotationStartAngle = _passportManualAngle;
+    _passportPointerStartAngle = math.atan2(
+      position.dy - rect.center.dy,
+      position.dx - rect.center.dx,
+    );
+  }
+
+  void _updatePassportFrameRotation(DragUpdateDetails details) {
+    if (!_passportRotationDragActive) return;
+    final rect = _passportFrameRect;
+    if (rect == null) return;
+    final pointerAngle = math.atan2(
+      details.localPosition.dy - rect.center.dy,
+      details.localPosition.dx - rect.center.dx,
+    );
+    var delta = pointerAngle - _passportPointerStartAngle;
+    while (delta > math.pi) {
+      delta -= math.pi * 2;
+    }
+    while (delta < -math.pi) {
+      delta += math.pi * 2;
+    }
+    setState(() {
+      _passportManualAngle = (_passportRotationStartAngle + delta).clamp(
+        -math.pi / 2,
+        math.pi / 2,
+      );
+    });
+  }
+
+  void _finishPassportFrameRotation(DragEndDetails _) {
+    if (!_passportRotationDragActive) return;
+    final double snapped;
+    if (_passportManualAngle >= math.pi / 4) {
+      snapped = math.pi / 2;
+    } else if (_passportManualAngle <= -math.pi / 4) {
+      snapped = -math.pi / 2;
+    } else {
+      snapped = 0;
+    }
+    if ((_passportManualAngle - snapped).abs() > 0.01) {
+      HapticFeedback.mediumImpact();
+    }
+    setState(() {
+      _passportManualAngle = snapped;
+      _passportRotationDragActive = false;
+    });
+  }
+
   /// Покадровая стабилизация детекции с гистерезисом: «найден» — только
   /// после [_kQuadStable] устойчивых кадров подряд, «потерян» — после
   /// [_kQuadLost]. Между порогами держим текущее состояние.
@@ -677,17 +950,38 @@ class _CameraScreenState extends State<CameraScreen>
       final quadFound = _updatePhotoQuad(image, featureName);
       final bool detected;
       if (_isRestorePhotoFeature(featureName) ||
+          _isRemoveSpotsFeature(featureName) ||
           _isRemoveWatermarkFeature(featureName) ||
           _isEcoFeature(featureName)) {
-        // Фоторежимы (вкл. эко-упаковку): только реальный четырёхугольник —
-        // без ложных автоснимков эвристики на фактурном фоне (ковёр/стол).
-        detected = quadFound;
+        // Тот же двухступенчатый путь, что у паспорта: если замкнутый
+        // контур не найден, ищем четыре стороны в зоне рамки. Важно:
+        // этот поиск возвращает сам quad, поэтому UI может показать
+        // детекцию и плавно подстроить рамку.
+        final searchQuad = quadFound
+            ? null
+            : _findFramedDocumentBySearch(image, featureName);
+        if (searchQuad != null) {
+          _photoQuad.value = searchQuad;
+          _updateAutoFrame(searchQuad, featureName);
+        }
+        final framedDocument = quadFound || searchQuad != null
+            ? false
+            : _detectDocumentContour(image, featureName: featureName);
+        detected = _stabilizedDetection(
+          quadFound || searchQuad != null || framedDocument,
+        );
       } else if (_isDocumentSheetFeature(featureName)) {
-        // Документ: только реальный четырёхугольник (без ложной эвристики на
-        // фактурном фоне/экране) + стабилизация по кадрам и гистерезис — лист
-        // считается «найден» лишь после нескольких устойчивых кадров, а теряется
-        // тоже не мгновенно. Это убирает дрожь и ранние/ложные автоснимки.
-        detected = _stabilizedDetection(quadFound);
+        // Один проверенный quad управляет и состоянием детекции, и рамкой.
+        // Булевую эвристику поверхности здесь не используем: она принимала
+        // границу ковра/пола за документ и запускала ложный автоснимок.
+        final searchQuad = quadFound
+            ? null
+            : _findFramedDocumentBySearch(image, featureName);
+        if (searchQuad != null) {
+          _photoQuad.value = searchQuad;
+          _updateAutoFrame(searchQuad, featureName);
+        }
+        detected = _stabilizedDetection(quadFound || searchQuad != null);
       } else if (_isIdOrPassportFeature(featureName)) {
         // Паспорт/ID: два независимых сигнала через ИЛИ, оба с геометрической
         // валидацией (аспект/позиция/размер) + покадровая стабилизация:
@@ -698,14 +992,26 @@ class _CameraScreenState extends State<CameraScreen>
         //     сливается с линиями пола).
         // Старая эвристика фиксированных линий не используется: она давала
         // ложные срабатывания на ковре и не находила вертикальную страницу.
-        final match =
-            quadFound || _detectFramedDocumentBySearch(image, featureName);
+        final searchQuad = quadFound
+            ? null
+            : _findFramedDocumentBySearch(image, featureName);
+        if (searchQuad != null && _isIdOrPassportFeature(featureName)) {
+          _photoQuad.value = searchQuad;
+          _updateAutoFrame(searchQuad, featureName);
+        }
+        final match = quadFound || searchQuad != null;
         detected = _stabilizedDetection(match);
       } else {
         detected = _detectDocumentContour(image, featureName: featureName);
       }
       if (!mounted || !_isDocumentDetectionStreaming) return;
-      if (detected == _isDocumentDetected) return;
+      if (detected == _isDocumentDetected) {
+        if (!detected && _quadLostFrames >= _kQuadLost) {
+          _photoQuad.value = null;
+          _autoFrameBounds.remove(featureName);
+        }
+        return;
+      }
 
       captureModeController.isDocumentDetected = detected;
       captureModeController.detectionWarning = null;
@@ -716,6 +1022,8 @@ class _CameraScreenState extends State<CameraScreen>
           _scheduleAutoCapture();
         }
       } else {
+        _photoQuad.value = null;
+        _autoFrameBounds.remove(featureName);
         // Карта пропала из кадра — можно снимать следующую сторону.
         _awaitDocumentExit = false;
         _cancelAutoCapture();
@@ -748,6 +1056,7 @@ class _CameraScreenState extends State<CameraScreen>
   /// рисуется живой контур.
   bool _updatePhotoQuad(CameraImage image, String featureName) {
     if (!_isRestorePhotoFeature(featureName) &&
+        !_isRemoveSpotsFeature(featureName) &&
         !_isRemoveWatermarkFeature(featureName) &&
         !_isEcoFeature(featureName) &&
         !_isDocumentSheetFeature(featureName) &&
@@ -761,7 +1070,12 @@ class _CameraScreenState extends State<CameraScreen>
     // рамку-трафарет и его края должны регистрироваться надёжно.
     final bool isDoc = _isDocumentSheetFeature(featureName);
     final bool isIdPass = _isIdOrPassportFeature(featureName);
-    final int targetWidth = (isDoc || isIdPass) ? 300 : 180;
+    final bool isPhotoFilter =
+        _isRestorePhotoFeature(featureName) ||
+        _isRemoveSpotsFeature(featureName) ||
+        _isRemoveWatermarkFeature(featureName) ||
+        _isEcoFeature(featureName);
+    final int targetWidth = (isDoc || isIdPass || isPhotoFilter) ? 300 : 180;
     final int targetHeight = ((targetWidth * image.width) / image.height)
         .round()
         .clamp(160, 540);
@@ -776,16 +1090,50 @@ class _CameraScreenState extends State<CameraScreen>
     // Документ идёт по тому же строгому пути, что и паспорт/ID: рамочные
     // проверки + фильтр сквозных линий убирают «странные» автоснимки.
     List<Offset>? quad;
-    if (isIdPass || isDoc) {
+    if (isIdPass || isDoc || isPhotoFilter) {
+      List<Offset>? passportFallbackQuad;
+      List<Offset>? photoFallbackQuad;
       final candidates = detectPhotoQuads(
         gray,
         targetWidth,
         targetHeight,
         lowContrast: true,
       );
+      if (isDoc) {
+        final spread = _mergeDocumentSpreadCandidates(candidates, image);
+        if (spread != null) {
+          final xs = spread.map((point) => point.dx * targetWidth);
+          final ys = spread.map((point) => point.dy * targetHeight);
+          final left = xs.reduce(math.min).round();
+          final right = xs.reduce(math.max).round();
+          final top = ys.reduce(math.min).round();
+          final bottom = ys.reduce(math.max).round();
+          if (!_rectHasThroughEdges(
+            gray,
+            targetWidth,
+            targetHeight,
+            left,
+            top,
+            right,
+            bottom,
+          )) {
+            quad = spread;
+          }
+        }
+      }
       for (final candidate in candidates) {
+        if (quad != null) break;
         if (!_quadLooksLikeFramedDocument(candidate, image, featureName)) {
           continue;
+        }
+        if (featureName == Feat.passport) {
+          passportFallbackQuad ??= candidate;
+        }
+        if (isPhotoFilter) {
+          // У фото край часто соединён с рукой, рамкой снимка или фактурой
+          // стола. Сохраняем геометрически правдоподобный контур до строгой
+          // проверки продолжения линий и используем его после стабилизации.
+          photoFallbackQuad ??= candidate;
         }
         // Bounding box кандидата: края документа должны заканчиваться на
         // углах, сквозные линии сцены (ковёр/половицы) отбрасываем.
@@ -795,7 +1143,10 @@ class _CameraScreenState extends State<CameraScreen>
         final bboxRight = xs.reduce(math.max).round();
         final bboxTop = ys.reduce(math.min).round();
         final bboxBottom = ys.reduce(math.max).round();
-        if (_rectHasThroughEdges(
+        final candidateArea =
+            ((bboxRight - bboxLeft) / targetWidth) *
+            ((bboxBottom - bboxTop) / targetHeight);
+        final hasThroughEdges = _rectHasThroughEdges(
           gray,
           targetWidth,
           targetHeight,
@@ -803,12 +1154,17 @@ class _CameraScreenState extends State<CameraScreen>
           bboxTop,
           bboxRight,
           bboxBottom,
-        )) {
+        );
+        // У страницы раскрытого документа верхняя и нижняя кромки могут
+        // продолжаться на соседнюю страницу. Большой контур при этом валиден;
+        // небольшие полосы текста уже отсечены геометрией выше.
+        if (hasThroughEdges && !(isDoc && candidateArea >= 0.28)) {
           continue;
         }
         quad = candidate;
         break;
       }
+      quad ??= passportFallbackQuad ?? photoFallbackQuad;
     } else {
       quad = detectPhotoQuad(
         gray,
@@ -827,7 +1183,6 @@ class _CameraScreenState extends State<CameraScreen>
     }
 
     if (quad == null) {
-      _photoQuad.value = null;
       return false;
     }
     // Локальная non-null копия: промоушен nullable-переменной не действует
@@ -848,7 +1203,151 @@ class _CameraScreenState extends State<CameraScreen>
     } else {
       _photoQuad.value = resolvedQuad;
     }
+    _updateAutoFrame(_photoQuad.value, featureName);
     return true;
+  }
+
+  /// Объединяет две соседние страницы раскрытого документа в один внешний
+  /// четырехугольник. Контурный детектор часто видит сгиб как границу и
+  /// возвращает левую и правую страницы по отдельности.
+  List<Offset>? _mergeDocumentSpreadCandidates(
+    List<List<Offset>> candidates,
+    CameraImage image,
+  ) {
+    if (candidates.length < 2) return null;
+
+    Rect boundsOf(List<Offset> quad) {
+      final xs = quad.map((point) => point.dx);
+      final ys = quad.map((point) => point.dy);
+      return Rect.fromLTRB(
+        xs.reduce(math.min),
+        ys.reduce(math.min),
+        xs.reduce(math.max),
+        ys.reduce(math.max),
+      );
+    }
+
+    final frameWOverH = image.height / image.width;
+
+    // Горизонтальный разворот: страницы бок о бок (сгиб вертикальный).
+    List<Offset>? tryMergeHorizontal(
+      List<Offset> first,
+      Rect firstBounds,
+      List<Offset> second,
+      Rect secondBounds,
+    ) {
+      final left = firstBounds.center.dx <= secondBounds.center.dx
+          ? first
+          : second;
+      final right = identical(left, first) ? second : first;
+      final leftBounds = identical(left, first) ? firstBounds : secondBounds;
+      final rightBounds = identical(left, first) ? secondBounds : firstBounds;
+
+      final minHeight = math.min(leftBounds.height, rightBounds.height);
+      final maxHeight = math.max(leftBounds.height, rightBounds.height);
+      if (maxHeight / minHeight > 1.65) return null;
+
+      final verticalOverlap = math.max(
+        0.0,
+        math.min(leftBounds.bottom, rightBounds.bottom) -
+            math.max(leftBounds.top, rightBounds.top),
+      );
+      if (verticalOverlap / minHeight < 0.72) return null;
+
+      // Страницы могут слегка перекрываться у сгиба, но одна не должна
+      // находиться внутри другой (текстовые блоки и фотографии отсекаются).
+      final gap = rightBounds.left - leftBounds.right;
+      final minWidth = math.min(leftBounds.width, rightBounds.width);
+      if (gap < -minWidth * 0.18 || gap > minWidth * 0.42) return null;
+
+      final merged = <Offset>[left[0], right[1], right[2], left[3]];
+      final mergedBounds = boundsOf(merged);
+      if (mergedBounds.width < 0.58 || mergedBounds.width > 0.98) return null;
+      if (mergedBounds.height < 0.20 || mergedBounds.height > 0.62) {
+        return null;
+      }
+
+      final physicalAspect =
+          (mergedBounds.width * frameWOverH) / mergedBounds.height;
+      if (physicalAspect < 0.90 || physicalAspect > 2.35) return null;
+      return merged;
+    }
+
+    // Вертикальный разворот: паспорт лежит боком, страницы одна над другой
+    // (сгиб горизонтальный) — зеркальные условия по осям.
+    List<Offset>? tryMergeVertical(
+      List<Offset> first,
+      Rect firstBounds,
+      List<Offset> second,
+      Rect secondBounds,
+    ) {
+      final top = firstBounds.center.dy <= secondBounds.center.dy
+          ? first
+          : second;
+      final bottom = identical(top, first) ? second : first;
+      final topBounds = identical(top, first) ? firstBounds : secondBounds;
+      final bottomBounds = identical(top, first) ? secondBounds : firstBounds;
+
+      final minWidth = math.min(topBounds.width, bottomBounds.width);
+      final maxWidth = math.max(topBounds.width, bottomBounds.width);
+      if (maxWidth / minWidth > 1.65) return null;
+
+      final horizontalOverlap = math.max(
+        0.0,
+        math.min(topBounds.right, bottomBounds.right) -
+            math.max(topBounds.left, bottomBounds.left),
+      );
+      if (horizontalOverlap / minWidth < 0.72) return null;
+
+      final gap = bottomBounds.top - topBounds.bottom;
+      final minHeight = math.min(topBounds.height, bottomBounds.height);
+      if (gap < -minHeight * 0.18 || gap > minHeight * 0.42) return null;
+
+      final merged = <Offset>[top[0], top[1], bottom[2], bottom[3]];
+      final mergedBounds = boundsOf(merged);
+      if (mergedBounds.width < 0.25 || mergedBounds.width > 0.92) return null;
+      if (mergedBounds.height < 0.28 || mergedBounds.height > 0.66) {
+        return null;
+      }
+
+      final physicalAspect =
+          (mergedBounds.width * frameWOverH) / mergedBounds.height;
+      if (physicalAspect < 0.40 || physicalAspect > 1.15) return null;
+      return merged;
+    }
+
+    List<Offset>? best;
+    double bestArea = 0;
+    final limit = math.min(candidates.length, 8);
+    for (var i = 0; i < limit; i++) {
+      final first = candidates[i];
+      if (first.length != 4) continue;
+      final firstBounds = boundsOf(first);
+      if (firstBounds.width < 0.16 || firstBounds.height < 0.16) continue;
+
+      for (var j = i + 1; j < limit; j++) {
+        final second = candidates[j];
+        if (second.length != 4) continue;
+        final secondBounds = boundsOf(second);
+        if (secondBounds.width < 0.16 || secondBounds.height < 0.16) continue;
+
+        final merged =
+            tryMergeHorizontal(first, firstBounds, second, secondBounds) ??
+            tryMergeVertical(first, firstBounds, second, secondBounds);
+        if (merged == null) continue;
+        if (!_quadLooksLikeFramedDocument(merged, image, Feat.document)) {
+          continue;
+        }
+
+        final mergedBounds = boundsOf(merged);
+        final area = mergedBounds.width * mergedBounds.height;
+        if (area > bestArea) {
+          bestArea = area;
+          best = merged;
+        }
+      }
+    }
+    return best;
   }
 
   /// true, если какая-то сторона прямоугольника — «сквозная» линия сцены:
@@ -889,13 +1388,14 @@ class _CameraScreenState extends State<CameraScreen>
       return cont > edgeScore * 0.75;
     }
 
+    var throughEdgeCount = 0;
     // Вертикальные края: есть ли продолжение выше top / ниже bottom.
     for (final x in [left, right]) {
       if (x < 3 || x > w - 4) continue;
       final edge = vScore(x, top + 2, bottom - 2);
       final above = vScore(x, math.max(3, top - extV), top - 3);
       final below = vScore(x, bottom + 3, math.min(h - 4, bottom + extV));
-      if (through(edge, above, below)) return true;
+      if (through(edge, above, below)) throughEdgeCount++;
     }
     // Горизонтальные края: есть ли продолжение левее left / правее right.
     for (final y in [top, bottom]) {
@@ -903,9 +1403,11 @@ class _CameraScreenState extends State<CameraScreen>
       final edge = hScore(y, left + 2, right - 2);
       final contLeft = hScore(y, math.max(3, left - extH), left - 3);
       final contRight = hScore(y, right + 3, math.min(w - 4, right + extH));
-      if (through(edge, contLeft, contRight)) return true;
+      if (through(edge, contLeft, contRight)) throughEdgeCount++;
     }
-    return false;
+    // Одна сторона документа может соприкасаться с рукой, сгибом или краем
+    // стола. Две продолжающиеся стороны уже характерны для линий сцены.
+    return throughEdgeCount >= 2;
   }
 
   /// Поиск документа в зоне рамки сканированием краёв: для каждой из четырёх
@@ -914,7 +1416,10 @@ class _CameraScreenState extends State<CameraScreen>
   /// строго по периметру рамки). Затем валидируем прямоугольник геометрически.
   /// Работает, когда контурный детектор не замыкает четырёхугольник (края
   /// страницы сливаются с линиями пола).
-  bool _detectFramedDocumentBySearch(CameraImage image, String featureName) {
+  List<Offset>? _findFramedDocumentBySearch(
+    CameraImage image,
+    String featureName,
+  ) {
     const int targetWidth = 120;
     final int targetHeight = ((targetWidth * image.width) / image.height)
         .round()
@@ -925,17 +1430,23 @@ class _CameraScreenState extends State<CameraScreen>
       targetHeight: targetHeight,
     );
     final globalEdge = _globalEdgeMean(gray, targetWidth, targetHeight);
-    if (globalEdge <= 0.4) return false;
+    if (globalEdge <= 0.4) return null;
 
     // Рамки паспорта и ID-карты сидят одинаково (verticalAlignment -0.25),
     // паспортная чуть выше из-за большей высоты (aspect 1.42 против 1.586).
     final bool isPassport = featureName == Feat.passport;
-    final double zoneTopF = isPassport ? 0.16 : 0.16;
-    final double zoneBottomF = isPassport ? 0.68 : 0.66;
+    final bool isPhotoFilter =
+        _isRestorePhotoFeature(featureName) ||
+        _isRemoveSpotsFeature(featureName) ||
+        _isRemoveWatermarkFeature(featureName) ||
+        _isEcoFeature(featureName);
+    final bool isDocumentSheet = _isDocumentSheetFeature(featureName);
+    final double zoneTopF = isPassport ? 0.08 : 0.16;
+    final double zoneBottomF = isPassport ? 0.80 : 0.66;
     final int zoneTop = (zoneTopF * targetHeight).round();
     final int zoneBottom = (zoneBottomF * targetHeight).round();
     final int zoneH = zoneBottom - zoneTop;
-    if (zoneH < 20) return false;
+    if (zoneH < 20) return null;
 
     (int, double) bestHorizontal(int from, int to, int x0, int x1) {
       int bestY = -1;
@@ -994,7 +1505,7 @@ class _CameraScreenState extends State<CameraScreen>
       midX0,
       midX1,
     );
-    if (topY < 0 || bottomY < 0 || bottomY - topY < zoneH * 0.35) return false;
+    if (topY < 0 || bottomY < 0 || bottomY - topY < zoneH * 0.25) return null;
 
     // Боковые края — между найденными верхом и низом; полосы поиска широкие,
     // чтобы находить и узкую вертикальную страницу, и разворот во всю рамку.
@@ -1010,43 +1521,75 @@ class _CameraScreenState extends State<CameraScreen>
       topY + 2,
       bottomY - 2,
     );
-    if (leftX < 0 || rightX < 0) return false;
+    if (leftX < 0 || rightX < 0) return null;
 
     // Все четыре края должны быть выраженными и заметно сильнее среднего
     // градиента сцены (на фактурном ковре globalEdge высокий — порог растёт).
-    final double minScore = math.max(globalEdge * 1.7, 11.0);
-    if (topScore < minScore ||
-        bottomScore < minScore ||
-        leftScore < minScore ||
-        rightScore < minScore) {
-      return false;
+    final double minScore = (isPassport || isPhotoFilter || isDocumentSheet)
+        ? math.max(globalEdge * 1.25, 8.0)
+        : math.max(globalEdge * 1.7, 11.0);
+    final edgeScores = [topScore, bottomScore, leftScore, rightScore];
+    final strongEdgeCount = edgeScores
+        .where((score) => score >= minScore)
+        .length;
+    // Закрытый документ должен дать четыре стороны; у открытой страницы или
+    // сгиба допускается одна потерянная сторона, но не две.
+    final requiredEdges = isDocumentSheet ? 3 : 4;
+    if (strongEdgeCount < requiredEdges) {
+      return null;
     }
 
     // Геометрия: размеры и аспект документа (px квадратные — сэмплер
     // сохраняет пропорции кадра), центр в зоне рамки.
-    final double w = (rightX - leftX).toDouble();
-    final double h = (bottomY - topY).toDouble();
-    if (w < targetWidth * 0.30 || h < targetHeight * 0.12) return false;
-    final double aspect = w / h;
-    if (aspect < 0.5 || aspect > 2.4) return false;
-    final double centerY = (topY + bottomY) / 2 / targetHeight;
-    if (centerY < zoneTopF || centerY > zoneBottomF) return false;
+    final resolvedLeftX = leftX;
+    final resolvedRightX = rightX;
+    final resolvedTopY = topY;
+    final resolvedBottomY = bottomY;
 
+    final double w = (resolvedRightX - resolvedLeftX).toDouble();
+    final double h = (resolvedBottomY - resolvedTopY).toDouble();
+    if (w < targetWidth * 0.24 || h < targetHeight * 0.12) return null;
+    if (isDocumentSheet &&
+        (w < targetWidth * 0.56 ||
+            h < targetHeight * 0.28 ||
+            w * h < targetWidth * targetHeight * 0.20)) {
+      return null;
+    }
+    final double aspect = w / h;
+    if (aspect < 0.42 || aspect > 2.6) return null;
+    final double centerY = (resolvedTopY + resolvedBottomY) / 2 / targetHeight;
+    if (centerY < zoneTopF || centerY > zoneBottomF) return null;
+
+    final candidateQuad = <Offset>[
+      Offset(resolvedLeftX / targetWidth, resolvedTopY / targetHeight),
+      Offset(resolvedRightX / targetWidth, resolvedTopY / targetHeight),
+      Offset(resolvedRightX / targetWidth, resolvedBottomY / targetHeight),
+      Offset(resolvedLeftX / targetWidth, resolvedBottomY / targetHeight),
+    ];
     // Края документа должны заканчиваться на углах: сквозные линии сцены
     // (граница ковра, стык половиц) — не документ.
     if (_rectHasThroughEdges(
       gray,
       targetWidth,
       targetHeight,
-      leftX,
-      topY,
-      rightX,
-      bottomY,
+      resolvedLeftX,
+      resolvedTopY,
+      resolvedRightX,
+      resolvedBottomY,
     )) {
-      return false;
+      return null;
     }
 
-    return true;
+    // Обновляем видимую рамку только после всех проверок. Раньше даже
+    // отклонённый кандидат успевал стянуть её к внутреннему блоку текста.
+    if (_isIdOrPassportFeature(featureName) ||
+        isPhotoFilter ||
+        isDocumentSheet) {
+      _photoQuad.value = candidateQuad;
+      _updateAutoFrame(candidateQuad, featureName);
+    }
+
+    return candidateQuad;
   }
 
   /// Проверяет, что найденный квад геометрически похож на паспорт/ID-карту,
@@ -1099,8 +1642,15 @@ class _CameraScreenState extends State<CameraScreen>
     if (centerY < zoneTop || centerY > zoneBottom) return false;
 
     // Размер: документ занимает заметную часть рамки, но не весь экран.
+    final widthNorm = (topLen + bottomLen) / 2;
     final heightNorm = (leftLen + rightLen) / 2;
     if (heightNorm < 0.08 || heightNorm > 0.58) return false;
+    if (_isDocumentSheetFeature(featureName)) {
+      // Полосы текста, MRZ и крупные внутренние блоки часто образуют хороший
+      // прямоугольник, но они заметно ниже и меньше самой страницы.
+      if (widthNorm < 0.56 || heightNorm < 0.28) return false;
+      if (widthNorm * heightNorm < 0.20) return false;
+    }
 
     return true;
   }
@@ -1413,8 +1963,8 @@ class _CameraScreenState extends State<CameraScreen>
 
     final bool isDocumentSheet =
         featureName == Feat.document || featureName == Feat.plus10Pages;
-    final minVertical = globalEdge * (isDocumentSheet ? 1.62 : 1.45);
-    final minHorizontal = globalEdge * (isDocumentSheet ? 1.52 : 1.35);
+    final minVertical = globalEdge * (isDocumentSheet ? 1.10 : 1.45);
+    final minHorizontal = globalEdge * (isDocumentSheet ? 1.08 : 1.35);
     final frameScores = [leftScore, rightScore, topScore, bottomScore];
     final strongLineCount = [
       leftScore > minVertical,
@@ -1426,7 +1976,7 @@ class _CameraScreenState extends State<CameraScreen>
         frameScores.fold<double>(0, (sum, value) => sum + value) /
         frameScores.length;
     final hasStrongLines = isDocumentSheet
-        ? strongLineCount >= 4 && averageFrameScore > globalEdge * 1.58
+        ? strongLineCount >= 2 && averageFrameScore > globalEdge * 1.12
         : strongLineCount >= 3 && averageFrameScore > globalEdge * 1.45;
     final areaRatio =
         ((right - left) * (bottom - top)) / (targetWidth * targetHeight);
@@ -1434,13 +1984,16 @@ class _CameraScreenState extends State<CameraScreen>
         (innerVariance < 1500 && innerMean > 118) ||
         (innerMean > 92 && innerMean - outerMean > 16);
     final hasDetailedDocumentSurface = innerMean > 122 && innerVariance < 5200;
-    final hasDocumentSurface =
-        hasPlainDocumentSurface || hasDetailedDocumentSurface;
+    final hasDocumentSurface = isDocumentSheet
+        ? innerMean > 32 && innerVariance < 9000
+        : hasPlainDocumentSurface || hasDetailedDocumentSurface;
 
     // Карта всегда заметно ЯРЧЕ окружения (карта светлая, рука/стол/ковёр
     // темнее). Без этого условия детектор ложно срабатывал на однородном
     // ярком фоне и снимал «документ», когда карты в кадре нет.
-    final hasContrast = innerMean - outerMean > (isDocumentSheet ? 18 : 14);
+    final hasContrast = isDocumentSheet
+        ? (innerMean - outerMean).abs() > 7
+        : innerMean - outerMean > 14;
 
     return hasStrongLines &&
         areaRatio > (isDocumentSheet ? 0.24 : 0.18) &&
@@ -1471,6 +2024,16 @@ class _CameraScreenState extends State<CameraScreen>
           _DocumentFrameSpec(left: 0.10, right: 0.90, top: 0.15, bottom: 0.69),
           _DocumentFrameSpec(left: 0.07, right: 0.93, top: 0.10, bottom: 0.75),
           _DocumentFrameSpec(left: 0.13, right: 0.87, top: 0.20, bottom: 0.63),
+        ];
+      case Feat.restorePhoto:
+      case Feat.removeSpots:
+      case Feat.removeWatermark:
+      case Feat.eco:
+        // Высокая рамка фото-фильтров (aspect 0.75, alignment -0.30).
+        return const [
+          _DocumentFrameSpec(left: 0.11, right: 0.89, top: 0.18, bottom: 0.66),
+          _DocumentFrameSpec(left: 0.07, right: 0.93, top: 0.13, bottom: 0.72),
+          _DocumentFrameSpec(left: 0.15, right: 0.85, top: 0.22, bottom: 0.62),
         ];
       case Feat.passport:
       default:
@@ -1677,16 +2240,17 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
 
-    // «Готово» ведёт сразу к выбору формата (минуя превью и экран правки).
-    // Страницы уже авто-обрезаны при захвате → editStates не нужны (null =
-    // берём файлы как есть). На успешном сохранении success-экран сам сносит
-    // стек камеры; на отмене — возвращаемся сюда, батч сохраняется.
+    final previewFiles = List<XFile>.from(_multiPageBatch);
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => SaveOptionsScreen(
-          sourceFilePaths: _multiPageBatch.map((f) => f.path).toList(),
-          editStates: null,
+        builder: (_) => MultiPageDocumentPreviewScreen(
+          imageFiles: previewFiles,
+          onRetakeAll: () {
+            Navigator.pop(context);
+            setState(_resetMultiPageState);
+            _startDocumentDetectionStream();
+          },
         ),
       ),
     );
@@ -2162,10 +2726,17 @@ class _CameraScreenState extends State<CameraScreen>
       if (_isEcoFeature(_selectedFeature)) {
         // Снимок упаковки → эко-анализ. Камера остаётся открытой: после
         // возврата с экрана отчёта перезапускаем детекцию.
+        final useAutoCrop =
+            captureModeController.captureMode == 'Автоматически';
+        final ecoImage = useAutoCrop
+            ? await _autoCropDocumentXFile(file)
+            : file;
+        if (!mounted) return;
         await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => EcoPackagingScreen(initialImage: File(file.path)),
+            builder: (_) =>
+                EcoPackagingScreen(initialImage: File(ecoImage.path)),
           ),
         );
         if (!mounted) return;
@@ -2564,20 +3135,6 @@ class _CameraScreenState extends State<CameraScreen>
     final index = _features.indexWhere((f) => f['name'] == _selectedFeature);
     if (index == -1) return;
 
-    // Пилюли разной ширины (выбранная раскрыта с названием), поэтому
-    // центрируем через ensureVisible по ключу тайла, а не расчётом offset'а.
-    final tileContext = _featureKeys[index].currentContext;
-    if (tileContext != null) {
-      Scrollable.ensureVisible(
-        tileContext,
-        alignment: 0.5,
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeOutCubic,
-      );
-      _isInitialScrollDone = true;
-      return;
-    }
-
     if (!_featureScrollController.hasClients) {
       Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted && _featureScrollController.hasClients) {
@@ -2587,22 +3144,23 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
 
-    // Тайл ещё не смонтирован (первый кадр): прыжок по фиксированной ширине
-    // слота, затем точная центровка через ensureVisible на следующем кадре.
-    const double leadingPadding = 2.0;
-    final double viewportWidth =
-        _featureScrollController.position.viewportDimension;
-    final double itemCenter =
-        leadingPadding + index * _kFeatureSlotWidth + _kFeatureSlotWidth / 2;
-    final double targetOffset = itemCenter - (viewportWidth / 2);
-
-    final maxOffset = _featureScrollController.position.maxScrollExtent;
-    final minOffset = _featureScrollController.position.minScrollExtent;
-    _featureScrollController.jumpTo(targetOffset.clamp(minOffset, maxOffset));
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _scrollToSelectedFeature(attempt + 1);
-    });
+    // Слоты одинаковой ширины (1/6 капсулы): центрируем выбранного
+    // арифметикой, округляя к сетке слотов — по краям не остаётся
+    // обрезанных иконок.
+    final pos = _featureScrollController.position;
+    final double slot = _featureSlotWidth;
+    final double raw = index * slot + slot / 2 - pos.viewportDimension / 2;
+    final double snapped = (raw / slot).roundToDouble() * slot;
+    final double target = snapped.clamp(
+      pos.minScrollExtent,
+      pos.maxScrollExtent,
+    );
+    _isInitialScrollDone = true;
+    _featureScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Future<void> _launchInBrowser(String string) async {
@@ -2870,6 +3428,21 @@ class _CameraScreenState extends State<CameraScreen>
 
   bool _isDocumentSheetFeature(String featureName) {
     return featureName == Feat.document || featureName == Feat.plus10Pages;
+  }
+
+  bool _manualFrameRotationEnabled(String featureName) {
+    return featureName == Feat.passport ||
+        featureName == Feat.restorePhoto ||
+        featureName == Feat.removeSpots ||
+        featureName == Feat.removeWatermark ||
+        featureName == Feat.eco ||
+        featureName == Feat.document ||
+        featureName == Feat.plus10Pages;
+  }
+
+  bool _compactLandscapeFrame(String featureName) {
+    return featureName != Feat.passport &&
+        _manualFrameRotationEnabled(featureName);
   }
 
   bool _isIdOrPassportFeature(String featureName) {
@@ -3171,40 +3744,30 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  // Ширина слота иконки в стеклянной панели (фиксированная — по ней же
-  // считается позиция скользящей подсветки и центрирование скролла).
-  static const double _kFeatureSlotWidth = 64;
   static const double _kFeaturePanelHeight = 64;
-  // Подсветка почти заполняет слот, отступы РАВНЫЕ со всех сторон (5px с
-  // учётом рамки капсулы): вертикально (64 - 2 рамка - 52)/2 = 5; сбоку у
-  // крайнего слота — паддинг ленты 2 + внутрислотовый отступ 3 = 5.
-  // Радиус концентричен скруглению панели (32 - 5 отступ ≈ 26).
-  static const double _kFeatureGlowWidth = 58;
-  static const double _kFeatureGlowHeight = 52;
-  static const double _kFeatureGlowRadius = 26;
+  static const double _kFeaturePanelRadius = 32;
+  static const double _kFeatureHorizontalInset = 6;
+  static const double _kFeatureGlowWidth = 60;
+  static const double _kFeatureGlowHeight = 50;
+  static const double _kFeatureGlowRadius = 32;
+
+  /// Ширина слота иконки: ровно 1/6 внутренней ширины капсулы — в панели
+  /// видно ШЕСТЬ целых иконок, по краям нет обрезков. Обновляется в build
+  /// (LayoutBuilder), используется снапом и центрированием.
+  double _featureSlotWidth = 64;
 
   /// Идёт ли программная докрутка ленты (защита от повторного снапа).
   bool _isSnapAnimating = false;
 
-  /// «Магнит»: после отпускания ленты докручивает её так, чтобы ближайший
-  /// к центру слот встал ровно по центру вьюпорта.
+  /// «Магнит»: после отпускания лента докручивается к сетке слотов —
+  /// в видимой области остаются только целые иконки.
   void _snapFeatureScroll() {
     if (_isSnapAnimating || !_featureScrollController.hasClients) return;
     final pos = _featureScrollController.position;
-    final double viewport = pos.viewportDimension;
-    const double pad = 2.0; // горизонтальный паддинг ленты
     final double current = pos.pixels;
 
-    final double centerOffset = current + viewport / 2 - pad;
-    int index = ((centerOffset - _kFeatureSlotWidth / 2) / _kFeatureSlotWidth)
-        .round();
-    index = index.clamp(0, _features.length - 1);
-
     final double target =
-        (pad +
-                index * _kFeatureSlotWidth +
-                _kFeatureSlotWidth / 2 -
-                viewport / 2)
+        ((current / _featureSlotWidth).roundToDouble() * _featureSlotWidth)
             .clamp(pos.minScrollExtent, pos.maxScrollExtent);
     if ((target - current).abs() < 1) return;
 
@@ -3221,6 +3784,21 @@ class _CameraScreenState extends State<CameraScreen>
   Widget _buildFeatureSelector() {
     final l10n = AppLocalizations.of(context);
     final selIndex = _features.indexWhere((f) => f['name'] == _selectedFeature);
+
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          _buildFeatureSelectorBody(l10n, selIndex, constraints.maxWidth),
+    );
+  }
+
+  Widget _buildFeatureSelectorBody(
+    AppLocalizations l10n,
+    int selIndex,
+    double totalWidth,
+  ) {
+    // Слот = 1/6 внутренней ширины капсулы (общая ширина минус боковые
+    // отступы 16+16 и рамка 1+1): в панели видно ровно шесть целых иконок.
+    _featureSlotWidth = (totalWidth - 34 - _kFeatureHorizontalInset * 2) / 5;
 
     Widget buildItem(int index) {
       final feature = _features[index];
@@ -3330,7 +3908,7 @@ class _CameraScreenState extends State<CameraScreen>
         },
         child: SizedBox(
           key: _featureKeys[index],
-          width: _kFeatureSlotWidth,
+          width: _featureSlotWidth,
           height: _kFeaturePanelHeight,
           child: Stack(
             clipBehavior: Clip.none,
@@ -3345,7 +3923,7 @@ class _CameraScreenState extends State<CameraScreen>
                     opacity: isSelected ? 1.0 : 0.78,
                     child: Icon(
                       feature['icon'] as IconData? ?? Icons.circle,
-                      size: 27,
+                      size: 28,
                       color: Colors.white,
                     ),
                   ),
@@ -3431,7 +4009,7 @@ class _CameraScreenState extends State<CameraScreen>
           // капсула заметнее отделяется от превью.
           child: Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(32),
+              borderRadius: BorderRadius.circular(_kFeaturePanelRadius),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.35),
@@ -3441,7 +4019,7 @@ class _CameraScreenState extends State<CameraScreen>
               ],
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(32),
+              borderRadius: BorderRadius.circular(_kFeaturePanelRadius),
               child: BackdropFilter(
                 // Sigma умеренная: blur считается на каждом кадре превью,
                 // высокие значения дают заметный лаг камеры на слабых GPU.
@@ -3450,7 +4028,7 @@ class _CameraScreenState extends State<CameraScreen>
                   height: _kFeaturePanelHeight,
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.45),
-                    borderRadius: BorderRadius.circular(32),
+                    borderRadius: BorderRadius.circular(_kFeaturePanelRadius),
                     border: Border.all(
                       color: Colors.white.withValues(alpha: 0.26),
                     ),
@@ -3470,7 +4048,9 @@ class _CameraScreenState extends State<CameraScreen>
                     child: SingleChildScrollView(
                       controller: _featureScrollController,
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: _kFeatureHorizontalInset,
+                      ),
                       child: Stack(
                         children: [
                           // Подсветка «перетекает» к выбранной иконке: градиент,
@@ -3482,8 +4062,8 @@ class _CameraScreenState extends State<CameraScreen>
                             curve: Curves.easeOutCubic,
                             left:
                                 (selIndex < 0 ? 0 : selIndex) *
-                                    _kFeatureSlotWidth +
-                                (_kFeatureSlotWidth - _kFeatureGlowWidth) / 2,
+                                    _featureSlotWidth +
+                                (_featureSlotWidth - _kFeatureGlowWidth) / 2,
                             // -2: рамка капсулы (1px сверху и снизу) съедает
                             // высоту Stack — иначе подсветка смещена вниз на 1px.
                             top:
@@ -3511,25 +4091,25 @@ class _CameraScreenState extends State<CameraScreen>
                                         begin: Alignment.topLeft,
                                         end: Alignment.bottomRight,
                                         colors: [
-                                          Color(0xFF3FC0FF),
-                                          Color(0xFF1687D5),
-                                          Color(0xFF0F5FA8),
+                                          Color(0x263FC0FF),
+                                          Color(0x1F1687D5),
+                                          Color(0x120F5FA8),
                                         ],
                                       ),
                                       border: Border.all(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.35,
-                                        ),
-                                        width: 1.4,
+                                        color: const Color(
+                                          0xFF54C7FF,
+                                        ).withValues(alpha: 0.85),
+                                        width: 1.6,
                                       ),
                                       boxShadow: [
                                         BoxShadow(
                                           color: const Color(0xFF2CA5E0)
                                               .withValues(
-                                                alpha: 0.40 + pulse * 0.30,
+                                                alpha: 0.18 + pulse * 0.12,
                                               ),
-                                          blurRadius: 12 + pulse * 10,
-                                          spreadRadius: 1 + pulse * 1.5,
+                                          blurRadius: 10 + pulse * 6,
+                                          spreadRadius: pulse,
                                         ),
                                       ],
                                     ),
@@ -3543,7 +4123,7 @@ class _CameraScreenState extends State<CameraScreen>
                                           center: Alignment(-0.5, -0.6),
                                           radius: 1.1,
                                           colors: [
-                                            Color(0x59FFFFFF),
+                                            Color(0x24FFFFFF),
                                             Color(0x00FFFFFF),
                                           ],
                                           stops: [0.0, 0.55],
@@ -3631,7 +4211,10 @@ class _CameraScreenState extends State<CameraScreen>
         capturedCount: _passportBatch.length,
         takePicture: _takePicture,
         onFinishBatch: _finishPassportBatch,
-        resetTwoPageState: _resetTwoPageState,
+        resetTwoPageState: () {
+          setState(_resetTwoPageState);
+          _startDocumentDetectionStream();
+        },
         pickImageFromGallery: _pickImageFromGallery,
         setCaptureModeAuto: _setCaptureModeAutoInline,
         setCaptureModeManual: _setCaptureModeManual,
@@ -3788,7 +4371,6 @@ class _CameraScreenState extends State<CameraScreen>
     final bool showPersistentPreview =
         _isCameraInitialized && _cameraController != null;
     final bool isQrSelected = _selectedFeature == Feat.qrScanner;
-    final bool isTranslateSelected = _selectedFeature == Feat.translate;
     // В QR нет нижнего бара с затвором — лента фильтров плавно съезжает
     // вниз (над историей сканов, если она есть) и так же плавно
     // возвращается при выборе другого режима.
@@ -3817,7 +4399,23 @@ class _CameraScreenState extends State<CameraScreen>
           // в форму другого, и рассинхрон затемнения с уголками невозможен.
           if (_cutoutSpecs.containsKey(_selectedFeature))
             Positioned.fill(
-              child: IgnorePointer(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onPanStart:
+                    captureModeController.captureMode == 'Вручную' &&
+                        _manualFrameRotationEnabled(_selectedFeature)
+                    ? _startPassportFrameRotation
+                    : null,
+                onPanUpdate:
+                    captureModeController.captureMode == 'Вручную' &&
+                        _manualFrameRotationEnabled(_selectedFeature)
+                    ? _updatePassportFrameRotation
+                    : null,
+                onPanEnd:
+                    captureModeController.captureMode == 'Вручную' &&
+                        _manualFrameRotationEnabled(_selectedFeature)
+                    ? _finishPassportFrameRotation
+                    : null,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final l10n = AppLocalizations.of(context);
@@ -3825,8 +4423,21 @@ class _CameraScreenState extends State<CameraScreen>
                     final spec = _cutoutSpecs[feature]!;
                     final w = constraints.maxWidth;
                     final h = constraints.maxHeight;
-                    final frameW = w * spec.widthFactor;
-                    final frameH = frameW / spec.aspect;
+                    final isPassport = feature == Feat.passport;
+                    final isManualFrame =
+                        captureModeController.captureMode == 'Вручную';
+                    final isRotatableManualFrame =
+                        isManualFrame && _manualFrameRotationEnabled(feature);
+                    final compactLandscape = _compactLandscapeFrame(feature);
+                    final effectiveAspect = spec.aspect;
+                    final effectiveWidthFactor = isRotatableManualFrame
+                        ? spec.widthFactor +
+                              (compactLandscape
+                                  ? 0
+                                  : 0.09 * math.sin(_passportManualAngle).abs())
+                        : spec.widthFactor;
+                    final frameW = w * effectiveWidthFactor;
+                    final frameH = frameW / effectiveAspect;
                     final centerY =
                         h / 2 + spec.verticalAlignment * (h / 2 - frameH / 2);
                     Rect rect = Rect.fromCenter(
@@ -3834,6 +4445,26 @@ class _CameraScreenState extends State<CameraScreen>
                       width: frameW,
                       height: frameH,
                     );
+                    if (isPassport && !isManualFrame) {
+                      rect = _mapAutoFrame(Size(w, h), feature) ?? rect;
+                      rect = Rect.fromLTRB(
+                        rect.left.clamp(12.0, w - 12.0),
+                        rect.top,
+                        rect.right.clamp(12.0, w - 12.0),
+                        rect.bottom,
+                      );
+                    }
+                    if (!isPassport &&
+                        _frameDetectable(feature) &&
+                        captureModeController.captureMode == 'Автоматически') {
+                      rect = _mapAutoFrame(Size(w, h), feature) ?? rect;
+                      rect = Rect.fromLTRB(
+                        rect.left.clamp(12.0, w - 12.0),
+                        rect.top,
+                        rect.right.clamp(12.0, w - 12.0),
+                        rect.bottom,
+                      );
+                    }
                     // На компактных экранах рамка может налезать на
                     // статус-карточку сверху или прижимать подпись к ленте
                     // фильтров снизу. Зажимаем её в доступную зону: сначала
@@ -3852,9 +4483,10 @@ class _CameraScreenState extends State<CameraScreen>
                       if (rect.bottom > bottomLimit) {
                         final double maxH = bottomLimit - topLimit;
                         if (rect.height > maxH && maxH > 40) {
+                          final rectAspect = rect.width / rect.height;
                           rect = Rect.fromCenter(
-                            center: Offset(w / 2, topLimit + maxH / 2),
-                            width: maxH * spec.aspect,
+                            center: Offset(rect.center.dx, topLimit + maxH / 2),
+                            width: maxH * rectAspect,
                             height: maxH,
                           );
                         } else {
@@ -3863,7 +4495,24 @@ class _CameraScreenState extends State<CameraScreen>
                           );
                         }
                       }
+                      if (isRotatableManualFrame) {
+                        final sine = math.sin(_passportManualAngle).abs();
+                        final cosine = math.cos(_passportManualAngle).abs();
+                        final rotatedHalfHeight =
+                            (rect.width * sine + rect.height * cosine) / 2;
+                        final rotatedTop = rect.center.dy - rotatedHalfHeight;
+                        final rotatedBottom =
+                            rect.center.dy + rotatedHalfHeight;
+                        if (rotatedTop < topLimit) {
+                          rect = rect.shift(Offset(0, topLimit - rotatedTop));
+                        } else if (rotatedBottom > bottomLimit) {
+                          rect = rect.shift(
+                            Offset(0, bottomLimit - rotatedBottom),
+                          );
+                        }
+                      }
                     }
+                    if (isRotatableManualFrame) _passportFrameRect = rect;
                     final detected =
                         _frameDetectable(feature) && _isDocumentDetected;
                     final accent = detected
@@ -3879,14 +4528,54 @@ class _CameraScreenState extends State<CameraScreen>
                       curve: Curves.easeOutCubic,
                       builder: (context, animated, _) {
                         final r = animated ?? rect;
+                        final rotationDuration = _passportRotationDragActive
+                            ? Duration.zero
+                            : const Duration(milliseconds: 280);
+                        final rotationScale = _manualRotationFitScale(
+                          r,
+                          _passportManualAngle,
+                          compactLandscape: compactLandscape,
+                        );
+                        final rotatedFrameBottom = isRotatableManualFrame
+                            ? r.center.dy +
+                                  rotationScale *
+                                      (r.width *
+                                              math
+                                                  .sin(_passportManualAngle)
+                                                  .abs() +
+                                          r.height *
+                                              math
+                                                  .cos(_passportManualAngle)
+                                                  .abs()) /
+                                      2
+                            : r.bottom;
                         return Stack(
                           children: [
-                            Positioned.fill(
-                              child: CustomPaint(
-                                painter: _CutoutScrimPainter(cutout: r),
+                            if (isRotatableManualFrame)
+                              Positioned.fill(
+                                child: TweenAnimationBuilder<double>(
+                                  tween: Tween<double>(
+                                    end: _passportManualAngle,
+                                  ),
+                                  duration: rotationDuration,
+                                  curve: Curves.easeOutCubic,
+                                  builder: (context, angle, _) => CustomPaint(
+                                    painter: _RotatedPassportFramePainter(
+                                      cutout: r,
+                                      angle: angle,
+                                      color: accent,
+                                      compactLandscape: compactLandscape,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            else
+                              Positioned.fill(
+                                child: CustomPaint(
+                                  painter: _CutoutScrimPainter(cutout: r),
+                                ),
                               ),
-                            ),
-                            if (spec.brackets)
+                            if (spec.brackets && !isRotatableManualFrame)
                               Positioned.fill(
                                 child: CustomPaint(
                                   painter: CornerBracketsPainter(
@@ -3910,7 +4599,7 @@ class _CameraScreenState extends State<CameraScreen>
                               Positioned(
                                 left: 24,
                                 right: 24,
-                                top: r.bottom + 14,
+                                top: rotatedFrameBottom + 14,
                                 child: Center(
                                   child: AnimatedSwitcher(
                                     duration: const Duration(milliseconds: 200),
@@ -3951,23 +4640,11 @@ class _CameraScreenState extends State<CameraScreen>
                 ),
               ),
             ),
-          // Оверлей режима меняется ЛИНЕЙНЫМ кроссфейдом без сдвига:
-          // альфы исходящего и входящего слоёв в сумме дают 1, поэтому
-          // одинаковые части интерфейса (верхняя панель, нижний бар)
-          // во время перехода выглядят неподвижными — «экран не мигает»,
-          // плавно меняется только то, что реально отличается между
-          // режимами (рамка, подписи, правые кнопки).
-          Positioned.fill(
-            child: isTranslateSelected
-                ? currentCameraView
-                : AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    child: KeyedSubtree(
-                      key: ValueKey<String>(_selectedFeature),
-                      child: currentCameraView,
-                    ),
-                  ),
-          ),
+          // Общие фоновые слои фильтров не пропускаем через AnimatedSwitcher:
+          // два BackdropFilter при кроссфейде на мгновение меняли плотность и
+          // резкость нижней подложки. Кнопки анимируются внутри
+          // CameraControlsBar, а затемнённый фон остаётся визуально статичным.
+          Positioned.fill(child: currentCameraView),
           AnimatedPositioned(
             // CameraControlsBar (child-view bottom-bar) уже включает
             // SafeArea и сам встаёт на bottom:0. Стеклянная панель висит над
@@ -4013,8 +4690,8 @@ class _CameraBootSplashState extends State<_CameraBootSplash>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulse = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1400),
-  )..repeat(reverse: true);
+    duration: const Duration(milliseconds: 1800),
+  )..repeat();
 
   @override
   void dispose() {
@@ -4025,69 +4702,77 @@ class _CameraBootSplashState extends State<_CameraBootSplash>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF0F1923), Color(0xFF13253A), Color(0xFF0D2137)],
-        ),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedBuilder(
-              animation: _pulse,
-              builder: (context, _) {
-                final t = Curves.easeInOut.transform(_pulse.value);
-                return Container(
-                  width: 84,
-                  height: 84,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(
-                      0xFF2CA5E0,
-                    ).withValues(alpha: 0.10 + t * 0.08),
-                    border: Border.all(
-                      color: const Color(
-                        0xFF2CA5E0,
-                      ).withValues(alpha: 0.35 + t * 0.25),
-                      width: 1.4,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, _) {
+        final progress = _pulse.value;
+        final breathe = (math.sin(progress * math.pi * 2) + 1) / 2;
+        return DecoratedBox(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF0D1B2A), Color(0xFF10263B)],
+            ),
+          ),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Transform.scale(
+                  scale: 0.98 + breathe * 0.035,
+                  child: Container(
+                    width: 116,
+                    height: 116,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFF172D41),
+                      border: Border.all(
                         color: const Color(
-                          0xFF2CA5E0,
-                        ).withValues(alpha: 0.18 + t * 0.22),
-                        blurRadius: 24 + t * 14,
-                        spreadRadius: 2 + t * 3,
+                          0xFF35BDF8,
+                        ).withValues(alpha: 0.55 + breathe * 0.25),
+                        width: 2,
                       ),
-                    ],
-                  ),
-                  child: Transform.scale(
-                    scale: 0.94 + t * 0.12,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(
+                            0xFF20AEEF,
+                          ).withValues(alpha: 0.12 + breathe * 0.10),
+                          blurRadius: 26 + breathe * 8,
+                        ),
+                      ],
+                    ),
                     child: const Icon(
                       Icons.photo_camera_rounded,
                       color: Colors.white,
-                      size: 34,
+                      size: 56,
                     ),
                   ),
-                );
-              },
+                ),
+                const SizedBox(height: 28),
+                Text(
+                  l10n.camStarting,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.82),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: 120,
+                  child: LinearProgressIndicator(
+                    minHeight: 3,
+                    borderRadius: BorderRadius.circular(99),
+                    backgroundColor: Colors.white.withValues(alpha: 0.10),
+                    color: const Color(0xFF35BDF8),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 22),
-            Text(
-              l10n.camStarting,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.55),
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

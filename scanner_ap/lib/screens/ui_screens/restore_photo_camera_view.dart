@@ -47,8 +47,6 @@ class RestorePhotoCameraView extends StatelessWidget {
   final String? featureSubtitle;
   final CaptureStatusOverlayKind overlayKind;
 
-
-
   Widget _buildTopPanel(AppLocalizations l10n) {
     return CameraTopPanel(
       onBack: onBack,
@@ -59,32 +57,6 @@ class RestorePhotoCameraView extends StatelessWidget {
         isAuto: captureModeController.captureMode == 'Автоматически',
         onAuto: setCaptureModeAuto,
         onManual: setCaptureModeManual,
-      ),
-    );
-  }
-
-  Widget _buildPhotoFrameOverlay() {
-    final quadListenable = photoQuad;
-    final aspect = previewAspect;
-    // Нет данных для живого контура — рамка-трафарет как у паспорта.
-    if (quadListenable == null || aspect == null) {
-      return const SizedBox.shrink();
-    }
-    return Positioned.fill(
-      child: ValueListenableBuilder<List<Offset>?>(
-        valueListenable: quadListenable,
-        builder: (context, quad, _) {
-          if (quad == null || quad.length != 4) {
-            return const SizedBox.shrink();
-          }
-          return CustomPaint(
-            painter: _PhotoQuadPainter(
-              quad: quad,
-              contentAspect: aspect,
-              active: isDocumentDetected,
-            ),
-          );
-        },
       ),
     );
   }
@@ -114,13 +86,11 @@ class RestorePhotoCameraView extends StatelessWidget {
     }
 
     final l10n = AppLocalizations.of(context);
-    final isAutoMode = captureModeController.captureMode == 'Автоматически';
-
     return Stack(
       children: [
-        // Рамку-трафарет рисует общий слой камеры; здесь — только
-        // живой контур фото в авто-режиме.
-        if (isAutoMode) _buildPhotoFrameOverlay(),
+        // Найденный quad используется логикой камеры для плавной подстройки
+        // общей белой рамки. Отдельный синий контур с точками здесь не рисуем:
+        // это выглядело как ручная сетка редактирования в автоматическом режиме.
         Positioned.fill(
           child: captureModeController.buildStatusOverlay(
             isDocumentMode: true,
@@ -140,74 +110,4 @@ class RestorePhotoCameraView extends StatelessWidget {
       ],
     );
   }
-}
-
-/// Рисует живой контур фотографии поверх превью: затемнение вне рамки,
-/// саму рамку и угловые точки. Координаты углов — нормализованные (0..1) в
-/// пространстве сенсора; здесь они переводятся в экранные с учётом того, что
-/// превью рисуется через FittedBox(cover) (кадр обрезан по краям).
-class _PhotoQuadPainter extends CustomPainter {
-  final List<Offset> quad; // tl, tr, br, bl
-  final double contentAspect; // портретное w/h превью
-  final bool active;
-
-  const _PhotoQuadPainter({
-    required this.quad,
-    required this.contentAspect,
-    required this.active,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double boxAspect = size.width / size.height;
-    double dispW, dispH;
-    if (boxAspect > contentAspect) {
-      dispW = size.width;
-      dispH = size.width / contentAspect;
-    } else {
-      dispH = size.height;
-      dispW = size.height * contentAspect;
-    }
-    final double dx = (size.width - dispW) / 2;
-    final double dy = (size.height - dispH) / 2;
-    Offset mapPoint(Offset n) => Offset(dx + n.dx * dispW, dy + n.dy * dispH);
-
-    final points = quad.map(mapPoint).toList(growable: false);
-    final path = Path()..addPolygon(points, true);
-
-    // Затемнение всего, кроме контура фото.
-    final outside = Path.combine(
-      PathOperation.difference,
-      Path()..addRect(Offset.zero & size),
-      path,
-    );
-    canvas.drawPath(
-      outside,
-      // Мягче прежнего (0.35): базовое затемнение уже даёт общий слой.
-      Paint()..color = Colors.black.withValues(alpha: 0.18),
-    );
-
-    final Color color = active
-        ? const Color(0xFF22C55E)
-        : const Color(0xFF2CA5E0);
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
-        ..strokeJoin = StrokeJoin.round
-        ..color = color,
-    );
-
-    final dot = Paint()..color = color;
-    for (final p in points) {
-      canvas.drawCircle(p, 6, dot);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _PhotoQuadPainter old) =>
-      old.active != active ||
-      old.contentAspect != contentAspect ||
-      !identical(old.quad, quad);
 }

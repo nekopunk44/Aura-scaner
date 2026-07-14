@@ -10,7 +10,6 @@ import 'dart:math' as math;
 import 'save_options_id_card.dart';
 import '../../../l10n/app_localizations.dart';
 
-
 class EditState {
   XFile originalFile;
   String currentPath;
@@ -85,9 +84,15 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
   @override
   void initState() {
     super.initState();
-    _frontState = EditState(originalFile: widget.frontImage, currentPath: widget.frontImage.path);
-    _backState = EditState(originalFile: widget.backImage, currentPath: widget.backImage.path);
-    _currentState = _frontState; 
+    _frontState = EditState(
+      originalFile: widget.frontImage,
+      currentPath: widget.frontImage.path,
+    );
+    _backState = EditState(
+      originalFile: widget.backImage,
+      currentPath: widget.backImage.path,
+    );
+    _currentState = _frontState;
   }
 
   // --- ЛОГИКА ПЕРЕКЛЮЧЕНИЯ ---
@@ -106,7 +111,6 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
   }
 
   void _applyFilter() {
-
     setState(() {
       _currentState = _currentState.copyWith(
         isGrayscale: !_currentState.isGrayscale,
@@ -155,8 +159,10 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
   /// Включает встроенную обрезку: запекает текущий поворот в файл и показывает
   /// рамку прямо поверх превью (без перехода на внешний экран UCrop).
   Future<void> _startCrop() async {
-    final baked =
-        await _bakeRotation(_currentState.currentPath, _currentState.rotation);
+    final baked = await _bakeRotation(
+      _currentState.currentPath,
+      _currentState.rotation,
+    );
     final size = await _imageSizeOf(baked);
     if (!mounted || size == null) return;
     setState(() {
@@ -189,8 +195,7 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
       final int y = (norm.top * h).round().clamp(0, h - 1);
       final int cw = (norm.width * w).round().clamp(1, w - x);
       final int ch = (norm.height * h).round().clamp(1, h - y);
-      final cropped =
-          img.copyCrop(image, x: x, y: y, width: cw, height: ch);
+      final cropped = img.copyCrop(image, x: x, y: y, width: cw, height: ch);
       final tempDir = await getTemporaryDirectory();
       final out =
           '${tempDir.path}/idcrop_${DateTime.now().microsecondsSinceEpoch}.jpg';
@@ -208,10 +213,7 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
 
   void _autoEnhance() {
     setState(() {
-      _currentState = _currentState.copyWith(
-        brightness: 0.1,
-        contrast: 0.2,
-      );
+      _currentState = _currentState.copyWith(brightness: 0.1, contrast: 0.2);
     });
   }
 
@@ -240,7 +242,9 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
     var image = img.decodeImage(bytes);
     if (image == null) return state.currentPath;
 
-    if (state.rotation == 90 || state.rotation == 180 || state.rotation == 270) {
+    if (state.rotation == 90 ||
+        state.rotation == 180 ||
+        state.rotation == 270) {
       image = img.copyRotate(image, angle: state.rotation);
     }
     if (state.isGrayscale) {
@@ -260,7 +264,8 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
     }
 
     final tempDir = await getTemporaryDirectory();
-    final outputPath = '${tempDir.path}/id_card_${name}_${DateTime.now().microsecondsSinceEpoch}.jpg';
+    final outputPath =
+        '${tempDir.path}/id_card_${name}_${DateTime.now().microsecondsSinceEpoch}.jpg';
     await File(outputPath).writeAsBytes(img.encodeJpg(image, quality: 95));
     return outputPath;
   }
@@ -281,9 +286,7 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => SaveOptionsIdCardScreen(
-          sourceFilePaths: finalPaths,
-        ),
+        builder: (_) => SaveOptionsIdCardScreen(sourceFilePaths: finalPaths),
       ),
     );
   }
@@ -293,24 +296,56 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
     // контраст вокруг середины 127.5, яркость — аддитивный сдвиг. Яркость/
     // контраст применяются и поверх Ч-Б (раньше Ч-Б их «съедал» в превью).
     final double c = 1.0 + _currentState.contrast;
-    final double off = -127.5 * _currentState.contrast +
-        255.0 * _currentState.brightness;
+    final double off =
+        -127.5 * _currentState.contrast + 255.0 * _currentState.brightness;
 
     if (_currentState.isGrayscale) {
       final double lr = 0.2126 * c, lg = 0.7152 * c, lb = 0.0722 * c;
       return ColorFilter.matrix([
-        lr, lg, lb, 0, off,
-        lr, lg, lb, 0, off,
-        lr, lg, lb, 0, off,
-        0, 0, 0, 1, 0,
+        lr,
+        lg,
+        lb,
+        0,
+        off,
+        lr,
+        lg,
+        lb,
+        0,
+        off,
+        lr,
+        lg,
+        lb,
+        0,
+        off,
+        0,
+        0,
+        0,
+        1,
+        0,
       ]);
     }
 
     return ColorFilter.matrix([
-      c, 0, 0, 0, off,
-      0, c, 0, 0, off,
-      0, 0, c, 0, off,
-      0, 0, 0, 1, 0,
+      c,
+      0,
+      0,
+      0,
+      off,
+      0,
+      c,
+      0,
+      0,
+      off,
+      0,
+      0,
+      c,
+      0,
+      off,
+      0,
+      0,
+      0,
+      1,
+      0,
     ]);
   }
 
@@ -328,7 +363,7 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(10.0),
           child: Transform.rotate(
-            angle: _currentState.rotation * (3.1415926535 / 180), 
+            angle: _currentState.rotation * (3.1415926535 / 180),
             child: ColorFiltered(
               colorFilter: _getColorFilter(),
               child: Image.file(
@@ -360,10 +395,16 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
             onPressed: () {
               setState(() {
                 if (_isEditingFront) {
-                  _frontState = EditState(originalFile: widget.frontImage, currentPath: widget.frontImage.path);
+                  _frontState = EditState(
+                    originalFile: widget.frontImage,
+                    currentPath: widget.frontImage.path,
+                  );
                   _currentState = _frontState;
                 } else {
-                  _backState = EditState(originalFile: widget.backImage, currentPath: widget.backImage.path);
+                  _backState = EditState(
+                    originalFile: widget.backImage,
+                    currentPath: widget.backImage.path,
+                  );
                   _currentState = _backState;
                 }
               });
@@ -371,77 +412,83 @@ class _IdCardPhotoEditScreenState extends State<IdCardPhotoEditScreen> {
           ),
         ],
       ),
-      body: _isCropping ? _buildCropMode(l10n) : Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+      body: _isCropping
+          ? _buildCropMode(l10n)
+          : Column(
               children: [
-                _SideButton(
-                  label: l10n.frontSide,
-                  isSelected: _isEditingFront,
-                  onPressed: () => _toggleSide(true),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _SideButton(
+                        label: l10n.frontSide,
+                        isSelected: _isEditingFront,
+                        onPressed: () => _toggleSide(true),
+                      ),
+                      const SizedBox(width: 8),
+                      _SideButton(
+                        label: l10n.backSide,
+                        isSelected: !_isEditingFront,
+                        onPressed: () => _toggleSide(false),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 8),
-                _SideButton(
-                  label: l10n.backSide,
-                  isSelected: !_isEditingFront,
-                  onPressed: () => _toggleSide(false),
-                ),
-              ],
-            ),
-          ),
 
-          Expanded(
-            child: Center(
-              child: _buildEditableImagePreview(),
-            ),
-          ),
+                Expanded(child: Center(child: _buildEditableImagePreview())),
 
-          // Панель управления: инструменты + слайдеры + сохранение в одном
-          // сгруппированном блоке (раньше иконки висели голыми на фоне).
-          Container(
-            width: double.infinity,
-            decoration: const BoxDecoration(
-              color: Color(0xFF141E2B),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-            ),
-            padding: EdgeInsets.fromLTRB(
-              16, 18, 16, 16 + MediaQuery.of(context).padding.bottom,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Ползунок выбранной настройки — появляется над инструментами
-                // только когда выбрана Яркость или Контраст.
-                _buildActiveControl(l10n),
-                _buildToolRow(l10n),
-                const SizedBox(height: 16),
-                SizedBox(
+                // Панель управления: инструменты + слайдеры + сохранение в одном
+                // сгруппированном блоке (раньше иконки висели голыми на фоне).
+                Container(
                   width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: _saveAndNavigate,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF22C55E),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF141E2B),
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(22),
                     ),
-                    child: Text(
-                      l10n.editIdCardSaveBothSides,
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w700),
-                    ),
+                  ),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    18,
+                    16,
+                    16 + MediaQuery.of(context).padding.bottom,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Ползунок выбранной настройки — появляется над инструментами
+                      // только когда выбрана Яркость или Контраст.
+                      _buildActiveControl(l10n),
+                      _buildToolRow(l10n),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: _saveAndNavigate,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF22C55E),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: Text(
+                            l10n.editIdCardSaveBothSides,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -576,8 +623,9 @@ class _SideButton extends StatelessWidget {
     return ElevatedButton(
       onPressed: onPressed,
       style: ElevatedButton.styleFrom(
-        backgroundColor:
-            isSelected ? const Color(0xFF2CA5E0) : const Color(0xFF1E2A3A),
+        backgroundColor: isSelected
+            ? const Color(0xFF2CA5E0)
+            : const Color(0xFF1E2A3A),
         foregroundColor: Colors.white,
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -680,8 +728,10 @@ class _AdjustmentSlider extends StatelessWidget {
         const SizedBox(width: 10),
         SizedBox(
           width: 78,
-          child: Text(label,
-              style: const TextStyle(color: Colors.white, fontSize: 13)),
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
         ),
         Expanded(
           child: Slider(
@@ -809,10 +859,7 @@ class _InlineCropperState extends State<_InlineCropper> {
                   // Изображение в его реальном соотношении сторон.
                   Positioned.fromRect(
                     rect: disp,
-                    child: Image.file(
-                      File(widget.imagePath),
-                      fit: BoxFit.fill,
-                    ),
+                    child: Image.file(File(widget.imagePath), fit: BoxFit.fill),
                   ),
                   // Затемнение вне рамки + сама рамка/сетка/уголки.
                   Positioned.fill(
@@ -845,13 +892,20 @@ class _InlineCropperState extends State<_InlineCropper> {
                   onPressed: widget.onCancel,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white,
-                    side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                    side: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.3),
+                    ),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
-                  child: Text(l10n.actionCancel,
-                      style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w600)),
+                  child: Text(
+                    l10n.actionCancel,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -866,11 +920,16 @@ class _InlineCropperState extends State<_InlineCropper> {
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
-                  child: Text(l10n.wmApply,
-                      style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w700)),
+                  child: Text(
+                    l10n.wmApply,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -948,16 +1007,35 @@ class _CropOverlayPainter extends CustomPainter {
     canvas.drawLine(crop.topLeft, crop.topLeft + const Offset(len, 0), corner);
     canvas.drawLine(crop.topLeft, crop.topLeft + const Offset(0, len), corner);
     canvas.drawLine(
-        crop.topRight, crop.topRight + const Offset(-len, 0), corner);
-    canvas.drawLine(crop.topRight, crop.topRight + const Offset(0, len), corner);
+      crop.topRight,
+      crop.topRight + const Offset(-len, 0),
+      corner,
+    );
     canvas.drawLine(
-        crop.bottomRight, crop.bottomRight + const Offset(-len, 0), corner);
+      crop.topRight,
+      crop.topRight + const Offset(0, len),
+      corner,
+    );
     canvas.drawLine(
-        crop.bottomRight, crop.bottomRight + const Offset(0, -len), corner);
+      crop.bottomRight,
+      crop.bottomRight + const Offset(-len, 0),
+      corner,
+    );
     canvas.drawLine(
-        crop.bottomLeft, crop.bottomLeft + const Offset(len, 0), corner);
+      crop.bottomRight,
+      crop.bottomRight + const Offset(0, -len),
+      corner,
+    );
     canvas.drawLine(
-        crop.bottomLeft, crop.bottomLeft + const Offset(0, -len), corner);
+      crop.bottomLeft,
+      crop.bottomLeft + const Offset(len, 0),
+      corner,
+    );
+    canvas.drawLine(
+      crop.bottomLeft,
+      crop.bottomLeft + const Offset(0, -len),
+      corner,
+    );
   }
 
   @override

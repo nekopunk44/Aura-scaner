@@ -11,18 +11,13 @@ class PhotoEditScreen extends StatefulWidget {
   final List<XFile> imageFiles;
   final Function(List<String>)? onSave;
 
-  const PhotoEditScreen({
-    super.key,
-    required this.imageFiles,
-    this.onSave,
-  });
+  const PhotoEditScreen({super.key, required this.imageFiles, this.onSave});
 
   @override
   State<PhotoEditScreen> createState() => _PhotoEditScreenState();
 }
 
 class _PhotoEditScreenState extends State<PhotoEditScreen> {
-
   late List<String> _editedPaths;
   late List<double> _rotations;
   late List<double> _brightnessValues;
@@ -33,6 +28,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
   double _contrast = 1.0;
   bool _isGrayScale = false;
   int _currentPageIndex = 0;
+  String? _activeAdjust;
 
   @override
   void initState() {
@@ -85,6 +81,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
 
   void _resetFilters() {
     setState(() {
+      _activeAdjust = null;
       _rotation = 0.0;
       _brightness = 0.0;
       _contrast = 1.0;
@@ -97,7 +94,9 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
   }
 
   void _switchPage(int index) {
-    if (index >= 0 && index < widget.imageFiles.length && index != _currentPageIndex) {
+    if (index >= 0 &&
+        index < widget.imageFiles.length &&
+        index != _currentPageIndex) {
       setState(() {
         _currentPageIndex = index;
         _rotation = _rotations[index];
@@ -106,6 +105,19 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
         _isGrayScale = _grayscaleValues[index];
       });
     }
+  }
+
+  void _selectAdjust(String which) {
+    setState(() => _activeAdjust = _activeAdjust == which ? null : which);
+  }
+
+  void _autoEnhance() {
+    setState(() {
+      _contrast = 1.2;
+      _brightness = 0.1;
+      _contrastValues[_currentPageIndex] = _contrast;
+      _brightnessValues[_currentPageIndex] = _brightness;
+    });
   }
 
   Future<String> _prepareEditedImage(int index) async {
@@ -129,7 +141,8 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
     }
 
     final tempDir = await getTemporaryDirectory();
-    final outputPath = '${tempDir.path}/passport_page_${index}_${DateTime.now().microsecondsSinceEpoch}.jpg';
+    final outputPath =
+        '${tempDir.path}/passport_page_${index}_${DateTime.now().microsecondsSinceEpoch}.jpg';
     await File(outputPath).writeAsBytes(img.encodeJpg(image, quality: 95));
     return outputPath;
   }
@@ -148,9 +161,7 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => SaveOptionsScreen(
-          sourceFilePaths: pathsToSave,
-        ),
+        builder: (_) => SaveOptionsScreen(sourceFilePaths: pathsToSave),
       ),
     );
   }
@@ -164,21 +175,35 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: List.generate(widget.imageFiles.length, (index) {
           final isSelected = _currentPageIndex == index;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4.0),
-            child: ActionChip(
-              avatar: isSelected
-                  ? const Icon(Icons.check_circle, color: Colors.black, size: 18)
-                  : null,
-              label: Text(l10n.pageLabel(index + 1)),
-              onPressed: () => _switchPage(index),
-              backgroundColor: isSelected ? Colors.amber : Colors.grey.shade800,
-              labelStyle: TextStyle(
-                color: isSelected ? Colors.black : Colors.white,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-              side: BorderSide(
-                color: isSelected ? Colors.amber.shade700 : Colors.white30,
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: ElevatedButton(
+                onPressed: () => _switchPage(index),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isSelected
+                      ? const Color(0xFF2CA5E0)
+                      : const Color(0xFF1E2A3A),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: isSelected
+                          ? const Color(0xFF54C7FF)
+                          : Colors.white24,
+                    ),
+                  ),
+                ),
+                child: Text(
+                  l10n.pageLabel(index + 1),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
               ),
             ),
           );
@@ -187,41 +212,190 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
     );
   }
 
-
   ColorFilter _getColorFilter() {
     if (_isGrayScale) {
       return const ColorFilter.matrix([
-        0.2126, 0.7152, 0.0722, 0, 0,
-        0.2126, 0.7152, 0.0722, 0, 0,
-        0.2126, 0.7152, 0.0722, 0, 0,
-        0,      0,      0,      1, 0,
+        0.2126,
+        0.7152,
+        0.0722,
+        0,
+        0,
+        0.2126,
+        0.7152,
+        0.0722,
+        0,
+        0,
+        0.2126,
+        0.7152,
+        0.0722,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
       ]);
     }
 
     return ColorFilter.matrix([
-      _contrast, 0, 0, 0, _brightness * 255,
-      0, _contrast, 0, 0, _brightness * 255,
-      0, 0, _contrast, 0, _brightness * 255,
-      0, 0, 0, 1, 0,
+      _contrast,
+      0,
+      0,
+      0,
+      _brightness * 255,
+      0,
+      _contrast,
+      0,
+      0,
+      _brightness * 255,
+      0,
+      0,
+      _contrast,
+      0,
+      _brightness * 255,
+      0,
+      0,
+      0,
+      1,
+      0,
     ]);
+  }
+
+  Widget _buildActiveControl(AppLocalizations l10n) {
+    if (_activeAdjust == null) return const SizedBox.shrink();
+    final brightness = _activeAdjust == 'brightness';
+    final value = brightness ? _brightness : _contrast - 1;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Icon(
+            brightness ? Icons.wb_sunny : Icons.contrast,
+            color: Colors.white70,
+            size: 22,
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 78,
+            child: Text(
+              brightness ? l10n.colorBrightness : l10n.colorContrast,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ),
+          Expanded(
+            child: Slider(
+              value: value,
+              min: brightness ? -0.5 : -0.5,
+              max: brightness ? 0.5 : 1.0,
+              divisions: brightness ? 20 : 15,
+              activeColor: const Color(0xFF2CA5E0),
+              inactiveColor: Colors.white24,
+              onChanged: (next) {
+                setState(() {
+                  if (brightness) {
+                    _brightness = next;
+                    _brightnessValues[_currentPageIndex] = next;
+                  } else {
+                    _contrast = 1 + next;
+                    _contrastValues[_currentPageIndex] = _contrast;
+                  }
+                });
+              },
+            ),
+          ),
+          SizedBox(
+            width: 38,
+            child: Text(
+              '${value >= 0 ? '+' : ''}${(value * 100).round()}',
+              textAlign: TextAlign.right,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToolRow(AppLocalizations l10n) {
+    return Row(
+      children: [
+        Expanded(
+          child: _EditToolButton(
+            icon: Icons.rotate_right,
+            label: l10n.toolRotate,
+            onTap: _rotateImage,
+          ),
+        ),
+        Expanded(
+          child: _EditToolButton(
+            icon: Icons.wb_sunny,
+            label: l10n.colorBrightness,
+            isActive: _activeAdjust == 'brightness',
+            onTap: () => _selectAdjust('brightness'),
+          ),
+        ),
+        Expanded(
+          child: _EditToolButton(
+            icon: Icons.contrast,
+            label: l10n.colorContrast,
+            isActive: _activeAdjust == 'contrast',
+            onTap: () => _selectAdjust('contrast'),
+          ),
+        ),
+        Expanded(
+          child: _EditToolButton(
+            icon: Icons.filter_b_and_w,
+            label: l10n.editToolBW,
+            isActive: _isGrayScale,
+            onTap: () {
+              setState(() {
+                _isGrayScale = !_isGrayScale;
+                _grayscaleValues[_currentPageIndex] = _isGrayScale;
+              });
+            },
+          ),
+        ),
+        Expanded(
+          child: _EditToolButton(
+            icon: Icons.crop,
+            label: l10n.editToolCrop,
+            onTap: _cropImage,
+          ),
+        ),
+        Expanded(
+          child: _EditToolButton(
+            icon: Icons.auto_fix_high,
+            label: l10n.editToolEnhance,
+            onTap: _autoEnhance,
+          ),
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF0F1923),
       appBar: AppBar(
-        backgroundColor: Colors.black,
+        backgroundColor: const Color(0xFF141E2B),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           _isMultiPageMode
-              ? l10n.editTitleWithCount(_currentPageIndex + 1, widget.imageFiles.length)
+              ? l10n.editTitleWithCount(
+                  _currentPageIndex + 1,
+                  widget.imageFiles.length,
+                )
               : l10n.editTitle,
-          style: const TextStyle(color: Colors.white),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+          ),
         ),
         actions: [
           IconButton(
@@ -239,16 +413,16 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
             child: Container(
               margin: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.white24, width: 1),
-                borderRadius: BorderRadius.circular(8),
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Transform.rotate(
-                angle: _rotation * 3.1415926535 / 180,
-                child: ColorFiltered(
-                  colorFilter: _getColorFilter(),
-                  child: Image.file(
-                    _getCurrentFile(),
-                    fit: BoxFit.contain,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Transform.rotate(
+                  angle: _rotation * 3.1415926535 / 180,
+                  child: ColorFiltered(
+                    colorFilter: _getColorFilter(),
+                    child: Image.file(_getCurrentFile(), fit: BoxFit.contain),
                   ),
                 ),
               ),
@@ -257,161 +431,51 @@ class _PhotoEditScreenState extends State<PhotoEditScreen> {
 
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.black87,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(20),
-                topRight: Radius.circular(20),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  blurRadius: 10,
-                  spreadRadius: 2,
-                ),
-              ],
+            padding: EdgeInsets.fromLTRB(
+              16,
+              18,
+              16,
+              16 + MediaQuery.paddingOf(context).bottom,
+            ),
+            decoration: const BoxDecoration(
+              color: Color(0xFF141E2B),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SizedBox(
-                  height: 70,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      _EditToolButton(
-                        icon: Icons.rotate_right,
-                        label: l10n.toolRotate,
-                        onTap: _rotateImage,
-                      ),
-                      _EditToolButton(
-                        icon: Icons.filter_b_and_w,
-                        label: l10n.editToolBW,
-                        onTap: () {
-                          setState(() {
-                            _isGrayScale = !_isGrayScale;
-                            _grayscaleValues[_currentPageIndex] = _isGrayScale;
-                          });
-                        },
-                        isActive: _isGrayScale,
-                      ),
-                      _EditToolButton(
-                        icon: Icons.crop,
-                        label: l10n.editToolCrop,
-                        onTap: _cropImage,
-                      ),
-                      _EditToolButton(
-                        icon: Icons.auto_awesome,
-                        label: l10n.editToolEnhance,
-                        onTap: () {
-                          setState(() {
-                            _contrast = 1.2;
-                            _brightness = 0.1;
-                            _contrastValues[_currentPageIndex] = _contrast;
-                            _brightnessValues[_currentPageIndex] = _brightness;
-                          });
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(l10n.editAutoEnhanced)),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  alignment: Alignment.topCenter,
+                  child: _buildActiveControl(l10n),
                 ),
+                _buildToolRow(l10n),
 
-                const SizedBox(height: 12),
-
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.brightness_6, size: 18, color: Colors.white),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Slider(
-                            value: _brightness,
-                            min: -0.5,
-                            max: 0.5,
-                            divisions: 20,
-                            onChanged: (value) {
-                              setState(() {
-                                _brightness = value;
-                                _brightnessValues[_currentPageIndex] = value;
-                              });
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        SizedBox(
-                          width: 60,
-                          child: Text(
-                            l10n.colorBrightness,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    Row(
-                      children: [
-                        const Icon(Icons.contrast, size: 18, color: Colors.white),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Slider(
-                            value: _contrast,
-                            min: 0.5,
-                            max: 2.0,
-                            divisions: 15,
-                            onChanged: (value) {
-                              setState(() {
-                                _contrast = value;
-                                _contrastValues[_currentPageIndex] = value;
-                              });
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        SizedBox(
-                          width: 60,
-                          child: Text(
-                            l10n.colorContrast,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
 
                 // Кнопка сохранения
                 SizedBox(
                   width: double.infinity,
+                  height: 52,
                   child: ElevatedButton.icon(
                     onPressed: _saveImage,
-                    icon: const Icon(Icons.save, color: Colors.white, size: 20),
+                    icon: const Icon(Icons.save_rounded, size: 20),
                     label: Text(
                       _isMultiPageMode
                           ? l10n.editSaveAllPages(widget.imageFiles.length)
                           : l10n.editSaveChanges,
-                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green.shade600,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      backgroundColor: const Color(0xFF22C55E),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                       ),
                     ),
                   ),
@@ -440,43 +504,52 @@ class _EditToolButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(right: 12),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: isActive ? Colors.amber.withValues(alpha: 0.2) : Colors.white12,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isActive ? Colors.amber : Colors.white24,
-                width: isActive ? 2 : 1,
+    const accent = Color(0xFF2CA5E0);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isActive
+                    ? accent.withValues(alpha: 0.18)
+                    : Colors.white.withValues(alpha: 0.07),
+                border: Border.all(
+                  color: isActive ? accent : Colors.white24,
+                  width: 1.5,
+                ),
+              ),
+              child: Icon(
+                icon,
+                color: isActive ? accent : Colors.white,
+                size: 22,
               ),
             ),
-            child: IconButton(
-              icon: Icon(icon,
-                  color: isActive ? Colors.amber : Colors.white,
-                  size: 22),
-              onPressed: onTap,
-              padding: EdgeInsets.zero,
+            const SizedBox(height: 5),
+            SizedBox(
+              width: double.infinity,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: isActive ? accent : Colors.white70,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: isActive ? Colors.amber : Colors.white70,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

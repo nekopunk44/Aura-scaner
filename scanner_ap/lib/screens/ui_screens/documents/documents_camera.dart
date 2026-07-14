@@ -55,7 +55,6 @@ class MultiPageDocumentView extends StatelessWidget {
   // Вспомогательные UI методы
   // ------------------------------------------------------------
 
-
   Widget _buildTopPanel(AppLocalizations l10n) {
     return CameraTopPanel(
       onBack: onBack,
@@ -66,32 +65,6 @@ class MultiPageDocumentView extends StatelessWidget {
         isAuto: captureModeController.captureMode == 'Автоматически',
         onAuto: setCaptureModeAuto,
         onManual: setCaptureModeManual,
-      ),
-    );
-  }
-
-  // Живой контур листа в авто-режиме (рамку-трафарет рисует общий слой).
-  Widget _buildDetectionOverlay() {
-    final ql = photoQuad;
-    final aspect = previewAspect;
-    if (ql == null || aspect == null) {
-      return const SizedBox.shrink();
-    }
-    return Positioned.fill(
-      child: ValueListenableBuilder<List<Offset>?>(
-        valueListenable: ql,
-        builder: (context, quad, _) {
-          if (quad == null || quad.length != 4) {
-            return const SizedBox.shrink();
-          }
-          return CustomPaint(
-            painter: _DocQuadPainter(
-              quad: quad,
-              contentAspect: aspect,
-              active: isDocumentDetected,
-            ),
-          );
-        },
       ),
     );
   }
@@ -145,8 +118,6 @@ class MultiPageDocumentView extends StatelessWidget {
 
     final l10n = AppLocalizations.of(context);
 
-    final bool isAutoMode =
-        (captureModeController as dynamic).captureMode == 'Автоматически';
     final String pageStatus = currentBatchPageCount < maxPages
         ? l10n.camPageNofM(currentBatchPageCount + 1, maxPages)
         : l10n.camMaxPagesReached(maxPages);
@@ -155,10 +126,6 @@ class MultiPageDocumentView extends StatelessWidget {
       color: Colors.transparent,
       child: Stack(
         children: [
-          // Рамку-трафарет рисует общий слой камеры; здесь — только
-          // живой контур листа в авто-режиме.
-          if (isAutoMode) _buildDetectionOverlay(),
-
           // Статус-карточка позиционируется от верха экрана (как у паспорта),
           // а не от смещённого бокса — предсказуемо встаёт над рамкой.
           Positioned.fill(
@@ -190,66 +157,3 @@ class MultiPageDocumentView extends StatelessWidget {
 /// Рисует живой контур листа поверх превью (cover-маппинг по previewAspect):
 /// затемнение вне контура, сам контур и угловые точки. Зелёный — когда лист
 /// стабильно распознан (вот-вот автоснимок), синий — пока ловится.
-class _DocQuadPainter extends CustomPainter {
-  final List<Offset> quad; // tl, tr, br, bl (нормализованные 0..1)
-  final double contentAspect; // портретное w/h превью
-  final bool active;
-
-  const _DocQuadPainter({
-    required this.quad,
-    required this.contentAspect,
-    required this.active,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double boxAspect = size.width / size.height;
-    double dispW, dispH;
-    if (boxAspect > contentAspect) {
-      dispW = size.width;
-      dispH = size.width / contentAspect;
-    } else {
-      dispH = size.height;
-      dispW = size.height * contentAspect;
-    }
-    final double dx = (size.width - dispW) / 2;
-    final double dy = (size.height - dispH) / 2;
-    Offset mapPoint(Offset n) => Offset(dx + n.dx * dispW, dy + n.dy * dispH);
-
-    final points = quad.map(mapPoint).toList(growable: false);
-    final path = Path()..addPolygon(points, true);
-
-    final outside = Path.combine(
-      PathOperation.difference,
-      Path()..addRect(Offset.zero & size),
-      path,
-    );
-    canvas.drawPath(
-      outside,
-      Paint()..color = Colors.black.withValues(alpha: 0.18),
-    );
-
-    final Color color = active
-        ? const Color(0xFF22C55E)
-        : const Color(0xFF2CA5E0);
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
-        ..strokeJoin = StrokeJoin.round
-        ..color = color,
-    );
-
-    final dot = Paint()..color = color;
-    for (final p in points) {
-      canvas.drawCircle(p, 6, dot);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DocQuadPainter old) =>
-      old.active != active ||
-      old.contentAspect != contentAspect ||
-      !identical(old.quad, quad);
-}

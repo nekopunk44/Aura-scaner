@@ -47,7 +47,6 @@ class PassportCameraView extends StatelessWidget {
   final void Function() onBack;
   final void Function() onSettings;
 
- 
   Widget _buildTopPanel(AppLocalizations l10n) {
     return CameraTopPanel(
       onBack: onBack,
@@ -64,15 +63,16 @@ class PassportCameraView extends StatelessWidget {
 
   Widget _buildBottomBar(BuildContext context) {
     const bool isDocumentMode = true;
-    final bool canSnap =
-        captureModeController.canTakePicture(isDocumentMode: isDocumentMode);
+    final bool canSnap = captureModeController.canTakePicture(
+      isDocumentMode: isDocumentMode,
+    );
 
     return CameraControlsBar(
       onCapture: canSnap ? takePicture : null,
       leftActions: [
         CameraActionIcon(
-          icon: Icons.refresh,
-          onTap: isScanning ? null : setCaptureModeAuto,
+          icon: Icons.delete_outline,
+          onTap: capturedCount > 0 && !isScanning ? resetTwoPageState : null,
         ),
         CameraActionIcon(
           icon: Icons.photo_library_outlined,
@@ -96,7 +96,8 @@ class PassportCameraView extends StatelessWidget {
   Widget build(BuildContext context) {
     if (cameraController == null) {
       return const Center(
-          child: CircularProgressIndicator(color: Colors.white));
+        child: CircularProgressIndicator(color: Colors.white),
+      );
     }
 
     return Stack(

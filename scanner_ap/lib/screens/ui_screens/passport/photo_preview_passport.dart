@@ -1,5 +1,6 @@
 // PhotoPreviewScreen.dart
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -28,8 +29,7 @@ class PhotoPreviewScreen extends StatefulWidget {
 }
 
 class _PhotoPreviewScreenState extends State<PhotoPreviewScreen> {
-  late final PageController _pageCtrl =
-      PageController(viewportFraction: 0.88);
+  late final PageController _pageCtrl = PageController(viewportFraction: 0.88);
   int _currentPage = 0;
 
   @override
@@ -132,16 +132,16 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen> {
                             Positioned.fill(
                               child: Container(
                                 decoration: BoxDecoration(
-                                  color: Colors.black,
+                                  color: const Color(0xFF13253A),
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.14),
+                                    color: Colors.white.withValues(alpha: 0.14),
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black
-                                          .withValues(alpha: 0.45),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.45,
+                                      ),
                                       blurRadius: 24,
                                       offset: const Offset(0, 10),
                                     ),
@@ -149,9 +149,29 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen> {
                                 ),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(19),
-                                  child: Image.file(
-                                    File(files[index].path),
-                                    fit: BoxFit.contain,
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      ImageFiltered(
+                                        imageFilter: ui.ImageFilter.blur(
+                                          sigmaX: 18,
+                                          sigmaY: 18,
+                                        ),
+                                        child: Image.file(
+                                          File(files[index].path),
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                      ColoredBox(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.18,
+                                        ),
+                                      ),
+                                      Image.file(
+                                        File(files[index].path),
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -166,12 +186,10 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen> {
                                   vertical: 5,
                                 ),
                                 decoration: BoxDecoration(
-                                  color:
-                                      Colors.black.withValues(alpha: 0.55),
+                                  color: Colors.black.withValues(alpha: 0.55),
                                   borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.18),
+                                    color: Colors.white.withValues(alpha: 0.18),
                                   ),
                                 ),
                                 child: Text(
@@ -220,76 +238,47 @@ class _PhotoPreviewScreenState extends State<PhotoPreviewScreen> {
               // ── Действия ────────────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 52,
-                        child: OutlinedButton.icon(
-                          onPressed: widget.onRetake,
-                          icon: const Icon(Icons.refresh_rounded, size: 20),
-                          label: Text(l10n.actionRetry),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: BorderSide(
-                              color: Colors.white.withValues(alpha: 0.30),
-                              width: 1.2,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF35D07F), Color(0xFF1FA463)],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(
+                            0xFF26C060,
+                          ).withValues(alpha: 0.38),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: ElevatedButton.icon(
+                      onPressed: _openEditor,
+                      icon: const Icon(Icons.edit_rounded, size: 20),
+                      label: Text(
+                        l10n.actionEdit,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: SizedBox(
-                        height: 52,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [Color(0xFF35D07F), Color(0xFF1FA463)],
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF26C060)
-                                    .withValues(alpha: 0.38),
-                                blurRadius: 16,
-                                offset: const Offset(0, 6),
-                              ),
-                            ],
-                          ),
-                          child: ElevatedButton.icon(
-                            onPressed: _openEditor,
-                            icon: const Icon(Icons.check_circle_rounded,
-                                size: 20),
-                            label: Text(
-                              multi
-                                  ? l10n.editCount(files.length)
-                                  : l10n.passportUseButton,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ],
@@ -311,15 +300,10 @@ class _GlassIconButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
+      child: const SizedBox(
         width: 42,
         height: 42,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: 0.10),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-        ),
-        child: const Icon(Icons.close_rounded, color: Colors.white, size: 22),
+        child: Icon(Icons.close_rounded, color: Colors.white, size: 26),
       ),
     );
   }

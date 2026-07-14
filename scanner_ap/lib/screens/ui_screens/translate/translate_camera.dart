@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
@@ -61,9 +62,14 @@ class TranslateCamera extends StatefulWidget {
 }
 
 class _TranslateCameraState extends State<TranslateCamera> {
+  static const double _frameAspectRatio = 1.18;
+  static const double _frameWidthFactor = 0.92;
+  static const double _frameVerticalAlignment = -0.20;
+
   // --- Разовый перевод из галереи (модальное окно) ---
   String? _shownText;
   bool _isProcessing = false;
+  late final double _galleryEntranceOffset;
 
   // --- Живой перевод ---
   String? _liveTranslation;
@@ -73,6 +79,8 @@ class _TranslateCameraState extends State<TranslateCamera> {
   bool _downloadingModels = false;
   bool _targetInitialized = false;
   bool _manualTranslateMode = false;
+  bool _showTranslateHint = true;
+  Timer? _hintTimer;
   DateTime _lastRun = DateTime.fromMillisecondsSinceEpoch(0);
   String _lastRecognized = '';
 
@@ -132,11 +140,16 @@ class _TranslateCameraState extends State<TranslateCamera> {
   @override
   void initState() {
     super.initState();
+    final previousGallerySlot = CameraControlsBar.registerGalleryOnlyLayout();
+    _galleryEntranceOffset = previousGallerySlot > 0
+        ? previousGallerySlot * 64.0
+        : 0;
     // Старт после первого кадра — чтобы предыдущий стрим (напр. QR) успел
     // остановиться при переключении режима.
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _syncLiveStreamWithMode(),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncLiveStreamWithMode();
+      _scheduleHintDismissal();
+    });
   }
 
   @override
@@ -169,6 +182,7 @@ class _TranslateCameraState extends State<TranslateCamera> {
 
   @override
   void dispose() {
+    _hintTimer?.cancel();
     _stopLiveStream();
     _recognizer.close();
     _langId.close();
@@ -480,65 +494,209 @@ class _TranslateCameraState extends State<TranslateCamera> {
   // ------------------------------------------------------------------
 
   void _showLanguagePicker() {
+    var query = '';
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF1E2A3A),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Text(
-                  AppLocalizations.of(sheetContext).translateTargetTitle,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+        final l10n = AppLocalizations.of(sheetContext);
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final normalizedQuery = query.trim().toLowerCase();
+            final languages = _languages.entries.where((entry) {
+              return normalizedQuery.isEmpty ||
+                  entry.value.toLowerCase().contains(normalizedQuery) ||
+                  entry.key.toLowerCase().contains(normalizedQuery);
+            }).toList();
+
+            return FractionallySizedBox(
+              heightFactor: 0.78,
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Color(0xFF162231),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 10),
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: const Color(
+                                  0xFF2CA5E0,
+                                ).withValues(alpha: 0.14),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.translate_rounded,
+                                color: Color(0xFF54C7FF),
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              l10n.translateTargetTitle,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 21,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                        child: TextField(
+                          onChanged: (value) =>
+                              setSheetState(() => query = value),
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            hintText: l10n.searchHint,
+                            hintStyle: const TextStyle(color: Colors.white38),
+                            prefixIcon: const Icon(
+                              Icons.search_rounded,
+                              color: Colors.white54,
+                            ),
+                            filled: true,
+                            fillColor: Colors.white.withValues(alpha: 0.07),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: languages.isEmpty
+                            ? Center(
+                                child: Text(
+                                  l10n.searchNothingFound,
+                                  style: const TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.fromLTRB(
+                                  10,
+                                  2,
+                                  10,
+                                  16,
+                                ),
+                                itemCount: languages.length,
+                                itemBuilder: (context, index) {
+                                  final entry = languages[index];
+                                  final selected = entry.key == _targetLang;
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 3,
+                                    ),
+                                    child: Material(
+                                      color: selected
+                                          ? const Color(
+                                              0xFF2CA5E0,
+                                            ).withValues(alpha: 0.14)
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: ListTile(
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
+                                        ),
+                                        leading: Container(
+                                          width: 40,
+                                          height: 40,
+                                          alignment: Alignment.center,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(
+                                              alpha: selected ? 0.12 : 0.06,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              13,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            entry.key.toUpperCase(),
+                                            style: TextStyle(
+                                              color: selected
+                                                  ? const Color(0xFF54C7FF)
+                                                  : Colors.white70,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                        title: Text(
+                                          entry.value,
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: selected
+                                                ? FontWeight.w700
+                                                : FontWeight.w500,
+                                          ),
+                                        ),
+                                        trailing: selected
+                                            ? Container(
+                                                width: 28,
+                                                height: 28,
+                                                decoration: const BoxDecoration(
+                                                  color: Color(0xFF2CA5E0),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.check_rounded,
+                                                  color: Colors.white,
+                                                  size: 18,
+                                                ),
+                                              )
+                                            : null,
+                                        onTap: () {
+                                          setState(() {
+                                            _targetLang = entry.key;
+                                            _lastRecognized = '';
+                                            _liveTranslation = null;
+                                            _detectedSourceLang = null;
+                                          });
+                                          Navigator.pop(sheetContext);
+                                        },
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: _languages.entries.map((e) {
-                    final selected = e.key == _targetLang;
-                    return ListTile(
-                      title: Text(
-                        e.value,
-                        style: TextStyle(
-                          color: selected
-                              ? const Color(0xFF2CA5E0)
-                              : Colors.white,
-                          fontWeight: selected
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                        ),
-                      ),
-                      trailing: selected
-                          ? const Icon(Icons.check, color: Color(0xFF2CA5E0))
-                          : null,
-                      onTap: () {
-                        setState(() {
-                          _targetLang = e.key;
-                          // Смена цели — пересоздать переводчик и заново
-                          // перевести текущий текст.
-                          _lastRecognized = '';
-                          _liveTranslation = null;
-                          _detectedSourceLang = null;
-                        });
-                        Navigator.pop(sheetContext);
-                      },
-                    );
-                  }).toList(),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -660,9 +818,9 @@ class _TranslateCameraState extends State<TranslateCamera> {
       if (decoded == null) return file;
 
       final source = img.bakeOrientation(decoded);
-      const aspectRatio = 1.42;
-      const widthFactor = 0.85;
-      const verticalAlignment = -0.25;
+      const aspectRatio = _frameAspectRatio;
+      const widthFactor = _frameWidthFactor;
+      const verticalAlignment = _frameVerticalAlignment;
 
       final cropWidth = (source.width * widthFactor)
           .round()
@@ -722,39 +880,14 @@ class _TranslateCameraState extends State<TranslateCamera> {
           ),
 
           Positioned(
-            top: 108,
+            top: 110,
             left: 0,
             right: 0,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Builder(
-                builder: (context) {
-                  final l10n = AppLocalizations.of(context);
-                  return Column(
-                    children: [
-                      Text(
-                        l10n.translateCameraTitle,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _isAutoMode
-                            ? l10n.translateCameraHint
-                            : l10n.translateManualHint,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  );
-                },
+            child: Center(
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 240),
+                opacity: _showTranslateHint ? 1 : 0,
+                child: _buildTranslateHintCard(AppLocalizations.of(context)),
               ),
             ),
           ),
@@ -787,16 +920,115 @@ class _TranslateCameraState extends State<TranslateCamera> {
     );
   }
 
+  void _scheduleHintDismissal() {
+    _hintTimer?.cancel();
+    _hintTimer = Timer(const Duration(milliseconds: 2600), () {
+      if (mounted) setState(() => _showTranslateHint = false);
+    });
+  }
+
+  Widget _buildTranslateHintCard(AppLocalizations l10n) {
+    const accent = Color(0xFF2CA5E0);
+    final hint = _isAutoMode
+        ? l10n.translateCameraHint
+        : l10n.translateManualHint;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 310),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withValues(alpha: 0.22),
+                Colors.white.withValues(alpha: 0.14),
+                Colors.white.withValues(alpha: 0.08),
+              ],
+              stops: const [0, 0.35, 1],
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: accent.withValues(alpha: 0.16),
+                  border: Border.all(color: accent.withValues(alpha: 0.45)),
+                ),
+                child: const Icon(
+                  Icons.translate_rounded,
+                  color: Colors.white,
+                  size: 17,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Flexible(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l10n.translateCameraTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.78),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.25,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      hint,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.98),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        height: 1.1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _setTranslateAutoMode() {
     if (_isAutoMode) return;
     widget.setCaptureModeAuto();
     setState(() {
       _manualTranslateMode = false;
+      _showTranslateHint = true;
       _lastRecognized = '';
       _liveTranslation = null;
       _detectedSourceLang = null;
       _isProcessing = false;
     });
+    _scheduleHintDismissal();
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _syncLiveStreamWithMode(),
     );
@@ -808,19 +1040,21 @@ class _TranslateCameraState extends State<TranslateCamera> {
     _stopLiveStream();
     setState(() {
       _manualTranslateMode = true;
+      _showTranslateHint = true;
       _lastRecognized = '';
       _liveTranslation = null;
       _detectedSourceLang = null;
       _isProcessing = false;
     });
+    _scheduleHintDismissal();
   }
 
   Widget _buildFrameAndLivePanel() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        const aspectRatio = 1.42;
-        const widthFactor = 0.85;
-        const verticalAlignment = -0.25;
+        const aspectRatio = _frameAspectRatio;
+        const widthFactor = _frameWidthFactor;
+        const verticalAlignment = _frameVerticalAlignment;
 
         final w = constraints.maxWidth;
         final h = constraints.maxHeight;
@@ -880,20 +1114,57 @@ class _TranslateCameraState extends State<TranslateCamera> {
               children: [
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: CameraActionIcon(
-                    icon: Icons.photo_library_outlined,
-                    onTap: _isProcessing ? null : _pickImageAndTranslate,
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: _galleryEntranceOffset, end: 0),
+                    duration: const Duration(milliseconds: 340),
+                    curve: Curves.easeInOutCubic,
+                    builder: (context, offset, child) => Transform.translate(
+                      offset: Offset(offset, 0),
+                      child: child,
+                    ),
+                    child: CameraActionIcon(
+                      icon: Icons.photo_library_outlined,
+                      onTap: _isProcessing ? null : _pickImageAndTranslate,
+                    ),
                   ),
                 ),
-                Align(
-                  alignment: Alignment.centerRight,
+                AnimatedAlign(
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeInOutCubic,
+                  alignment: _isAutoMode
+                      ? Alignment.center
+                      : Alignment.centerRight,
                   child: _buildLanguageButton(),
                 ),
-                if (_isManualMode)
-                  CameraCaptureButton(
-                    onTap: _isProcessing ? null : _captureFrameAndTranslate,
-                    isBusy: _isProcessing,
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 280),
+                  switchInCurve: Curves.easeOutBack,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(
+                      scale: Tween<double>(
+                        begin: 0.78,
+                        end: 1,
+                      ).animate(animation),
+                      child: child,
+                    ),
                   ),
+                  child: _isManualMode
+                      ? CameraCaptureButton(
+                          key: const ValueKey('translate-capture'),
+                          onTap: _isProcessing
+                              ? null
+                              : _captureFrameAndTranslate,
+                          isBusy: _isProcessing,
+                          size: 72,
+                        )
+                      : const SizedBox(
+                          key: ValueKey('translate-capture-hidden'),
+                          width: 72,
+                          height: 72,
+                        ),
+                ),
               ],
             ),
           ),
@@ -906,8 +1177,9 @@ class _TranslateCameraState extends State<TranslateCamera> {
     return GestureDetector(
       onTap: _showLanguagePicker,
       child: Container(
+        width: 140,
         height: 46,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.16),
           borderRadius: BorderRadius.circular(23),
@@ -921,8 +1193,7 @@ class _TranslateCameraState extends State<TranslateCamera> {
           children: [
             const Icon(Icons.language, color: Colors.white, size: 18),
             const SizedBox(width: 6),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 120),
+            Expanded(
               child: Text(
                 _languages[_targetLang] ?? _targetLang,
                 maxLines: 1,

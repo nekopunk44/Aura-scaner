@@ -58,8 +58,11 @@ List<List<Offset>> detectPhotoQuads(
     kernel = cv.getStructuringElement(cv.MORPH_RECT, (9, 9));
     closed = cv.morphologyEx(edges, cv.MORPH_CLOSE, kernel);
 
-    final (cnts, hierarchy) =
-        cv.findContours(closed, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    final (cnts, hierarchy) = cv.findContours(
+      closed,
+      cv.RETR_EXTERNAL,
+      cv.CHAIN_APPROX_SIMPLE,
+    );
     hierarchy.dispose();
     contours = cnts;
 
@@ -105,14 +108,16 @@ List<List<Offset>> detectPhotoQuads(
 
     // Редкая диагностика: видно, находятся ли контуры и почему отбраковка.
     if ((_diagCounter++ % 12) == 0) {
-      debugPrint('detectPhotoQuad: контуров=${contours.length} '
-          'кандидатов=${found.length}');
+      debugPrint(
+        'detectPhotoQuad: контуров=${contours.length} '
+        'кандидатов=${found.length}',
+      );
     }
 
     if (found.isEmpty) return const [];
     found.sort((a, b) => b.$1.compareTo(a.$1));
     return found
-        .take(5)
+        .take(8)
         .map(
           (entry) => _orderCorners(entry.$2)
               .map((p) => Offset(p[0] / width, p[1] / height))
