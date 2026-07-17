@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_subject_segmentation/google_mlkit_subject_segmentation.dart';
+import 'package:image/image.dart' as img;
 import 'package:opencv_core/opencv.dart' as cv;
 import 'package:path_provider/path_provider.dart';
 
@@ -102,8 +103,10 @@ class PassportScanner {
       // склеила страницу с рукой или посчитала «объектом» что-то другое.
       bestQuad ??= _bestQuadByEdges(small, imageArea);
 
-      debugPrint('PassportScanner: маска=${maskFound ? "✓" : "✗"} '
-          'края=${maskFound ? "—" : (bestQuad != null ? "✓" : "✗")}');
+      debugPrint(
+        'PassportScanner: маска=${maskFound ? "✓" : "✗"} '
+        'края=${maskFound ? "—" : (bestQuad != null ? "✓" : "✗")}',
+      );
 
       if (bestQuad == null) {
         debugPrint('PassportScanner: no suitable quad found, fallback');
@@ -147,7 +150,10 @@ class PassportScanner {
         '${DateTime.now().millisecondsSinceEpoch}.jpg',
       );
       await output.writeAsBytes(encoded);
-      return output;
+      // Выровненный кроп мог оказаться целым разворотом — страница и
+      // разворот почти неотличимы по аспекту. Согласуем с live-рамкой:
+      // при непрерывном сгибе через центр отрезаем страницу данных.
+      return _splitSpreadIfNeeded(output);
     } catch (error) {
       debugPrint('PassportScanner: $error');
       return input;
@@ -199,8 +205,9 @@ class PassportScanner {
             area > bestArea) {
           final corners = rect.points;
           bestArea = area;
-          bestQuad =
-              corners.map((p) => [p.x.toDouble(), p.y.toDouble()]).toList();
+          bestQuad = corners
+              .map((p) => [p.x.toDouble(), p.y.toDouble()])
+              .toList();
           corners.dispose();
         }
       }
@@ -294,5 +301,158 @@ class PassportScanner {
     final dx = a[0] - b[0];
     final dy = a[1] - b[1];
     return math.sqrt(dx * dx + dy * dy);
+  }
+
+  /// Выровненный кроп может оказаться целым разворотом: страница (1.42) и
+  /// разворот (1.41) неотличимы по аспекту. Если через центр кропа проходит
+  /// непрерывный сгиб (по любой из осей), отрезаем страницу данных —
+  /// половину с большей плотностью деталей (портрет + MRZ «шумнее»
+  /// соседней визовой страницы). Синхронизировано с live-рамкой камеры.
+  static Future<File> _splitSpreadIfNeeded(File cropped) async {
+    try {
+      final bytes = await cropped.readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return cropped;
+
+      const analysisWidth = 360;
+      final small = img.grayscale(
+        img.copyResize(decoded, width: analysisWidth),
+      );
+      final w = small.width;
+      final h = small.height;
+      final scale = decoded.width / w; // ресайз пропорциональный: общий у осей
+
+      int lumaAt(int x, int y) =>
+          small.getPixel(x.clamp(0, w - 1), y.clamp(0, h - 1)).r.toInt();
+
+      // Лучшая непрерывная линия в центральной полосе (42–58%) вдоль оси.
+      ({int pos, double score})? bestFold({required bool verticalLine}) {
+        final primary = verticalLine ? w : h;
+        final secondary = verticalLine ? h : w;
+        final from = (primary * 0.42).round();
+        final to = (primary * 0.58).round();
+        final s0 = (secondary * 0.08).round();
+        final s1 = (secondary * 0.92).round();
+        ({int pos, double score})? best;
+        for (int p = from; p <= to; p += 2) {
+          var strong = 0;
+          var run = 0;
+          var longestRun = 0;
+          var gap = 0;
+          var samples = 0;
+          for (int s = s0; s <= s1; s += 2) {
+            final a = verticalLine ? lumaAt(p - 2, s) : lumaAt(s, p - 2);
+            final b = verticalLine ? lumaAt(p + 2, s) : lumaAt(s, p + 2);
+            // Перепад между бледными страницами мал — порог низкий.
+            if ((b - a).abs() >= 5) {
+              strong++;
+              run++;
+              gap = 0;
+              longestRun = math.max(longestRun, run);
+            } else if (run > 0 && gap < 2) {
+              run++;
+              gap++;
+            } else {
+              run = 0;
+              gap = 0;
+            }
+            samples++;
+          }
+          if (samples == 0) continue;
+          final coverage = strong / samples;
+          final runRatio = longestRun / samples;
+          if (coverage < 0.30 || runRatio < 0.25) continue;
+          final score = coverage * 0.65 + runRatio * 0.35;
+          if (best == null || score > best.score) {
+            best = (pos: p, score: score);
+          }
+        }
+        return best;
+      }
+
+      final vertical = bestFold(verticalLine: true);
+      final horizontal = bestFold(verticalLine: false);
+      final useVertical =
+          vertical != null &&
+          (horizontal == null || vertical.score >= horizontal.score);
+      final fold = useVertical ? vertical : horizontal;
+      if (fold == null) return cropped;
+
+      double density(int x0, int y0, int x1, int y1) {
+        final xa = x0 + ((x1 - x0) * 0.08).round();
+        final xb = x1 - ((x1 - x0) * 0.08).round();
+        final ya = y0 + ((y1 - y0) * 0.10).round();
+        final yb = y1 - ((y1 - y0) * 0.10).round();
+        if (xb - xa < 8 || yb - ya < 8) return 0;
+        var sum = 0.0;
+        var count = 0;
+        for (int y = ya; y <= yb; y += 3) {
+          for (int x = xa; x <= xb; x += 3) {
+            sum +=
+                (lumaAt(x + 2, y) - lumaAt(x - 2, y)).abs() +
+                (lumaAt(x, y + 2) - lumaAt(x, y - 2)).abs();
+            count++;
+          }
+        }
+        return count == 0 ? 0 : sum / count;
+      }
+
+      // Заход за сгиб на ~1.5%, чтобы не оставлять тёмную полосу шва.
+      final overlap = (useVertical ? w : h) * 0.015;
+      late final img.Image page;
+      if (useVertical) {
+        final firstDenser =
+            density(0, 0, fold.pos, h) > density(fold.pos, 0, w, h);
+        final cut = ((fold.pos + (firstDenser ? overlap : -overlap)) * scale)
+            .round()
+            .clamp(1, decoded.width - 1);
+        page = firstDenser
+            ? img.copyCrop(
+                decoded,
+                x: 0,
+                y: 0,
+                width: cut,
+                height: decoded.height,
+              )
+            : img.copyCrop(
+                decoded,
+                x: cut,
+                y: 0,
+                width: decoded.width - cut,
+                height: decoded.height,
+              );
+      } else {
+        final firstDenser =
+            density(0, 0, w, fold.pos) > density(0, fold.pos, w, h);
+        final cut = ((fold.pos + (firstDenser ? overlap : -overlap)) * scale)
+            .round()
+            .clamp(1, decoded.height - 1);
+        page = firstDenser
+            ? img.copyCrop(
+                decoded,
+                x: 0,
+                y: 0,
+                width: decoded.width,
+                height: cut,
+              )
+            : img.copyCrop(
+                decoded,
+                x: 0,
+                y: cut,
+                width: decoded.width,
+                height: decoded.height - cut,
+              );
+      }
+
+      final out = File(
+        '${cropped.parent.path}/passportpage_'
+        '${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+      await out.writeAsBytes(img.encodeJpg(page, quality: 94));
+      return out;
+    } catch (error) {
+      debugPrint('PassportScanner: ошибка резки разворота: $error');
+      return cropped;
+    }
   }
 }

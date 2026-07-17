@@ -30,8 +30,11 @@ import 'package:flutter_doc_scanner/flutter_doc_scanner.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
+import 'package:scanbot_sdk/document_api.dart' as sb_doc;
+import 'package:scanbot_sdk/scanbot_sdk_ui_v2.dart' as sb;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
+import '../../config/scanbot_config.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'camera_features.dart';
 import 'capture_modes.dart';
@@ -355,6 +358,11 @@ class _CameraScreenState extends State<CameraScreen>
     null,
   );
   final Map<String, Rect> _autoFrameBounds = <String, Rect>{};
+  Rect? _captureFrameBounds;
+  String? _captureFrameFeature;
+  Rect? _previousPassportFallbackBounds;
+  int _passportFallbackStableFrames = 0;
+  Rect? _lastPassportCaptureBounds;
   Rect? _passportFrameRect;
   double _passportManualAngle = 0;
   bool _passportRotationDragActive = false;
@@ -400,13 +408,15 @@ class _CameraScreenState extends State<CameraScreen>
 
   bool _isDocumentDetected = false;
   bool _isScanning = false;
+  bool _isScanbotPassportActive = false;
+  bool _scanbotPassportRetakeRequested = false;
   // Стабилизация детекции документа: считаем подряд кадры с найденным/потерянным
   // контуром, чтобы не реагировать на дрожь и не снимать раньше времени.
   int _quadFoundFrames = 0;
   int _quadLostFrames = 0;
   // Обработка идёт ~6 кадров/сек (каждый 5-й кадр стрима): 3 стабильных
   // кадра ≈ 0.5 с до «найден» — компенсирует более редкую обработку.
-  static const int _kQuadStable = 3; // подряд кадров с контуром → «найден»
+  static const int _kQuadStable = 2; // подряд кадров с контуром → «найден»
   static const int _kQuadLost = 3; // подряд кадров без контура → «потерян»
   // После первого кадра в многошаговом документном потоке ждём, пока
   // документ уберут из кадра, прежде чем авто-снимать следующую сторону
@@ -472,7 +482,8 @@ class _CameraScreenState extends State<CameraScreen>
       });
       // Для «Перевод», «OCR» и «QR» детекция документа не нужна: захват
       // ручной, а активный image-stream помешал бы takePicture().
-      if (_selectedFeature != Feat.translate &&
+      if (_selectedFeature != Feat.passport &&
+          _selectedFeature != Feat.translate &&
           _selectedFeature != Feat.ocr &&
           _selectedFeature != Feat.qrScanner) {
         Future.delayed(
@@ -546,6 +557,7 @@ class _CameraScreenState extends State<CameraScreen>
         unawaited(_disposeCameraController());
       }
     } else if (state == AppLifecycleState.resumed) {
+      if (_isScanbotPassportActive) return;
       // Камера могла быть выгружена, когда системная галерея/share/etc.
       // перевели приложение в фон. На resumed всегда восстанавливаем —
       // и, если активен режим QR, заново запускаем сканирование.
@@ -555,7 +567,8 @@ class _CameraScreenState extends State<CameraScreen>
             if (!mounted) return;
             if (_selectedFeature == Feat.qrScanner) {
               unawaited(_startBarcodeScanning());
-            } else if (_selectedFeature != Feat.translate &&
+            } else if (_selectedFeature != Feat.passport &&
+                _selectedFeature != Feat.translate &&
                 _selectedFeature != Feat.ocr) {
               _startDocumentDetectionStream();
             }
@@ -679,7 +692,10 @@ class _CameraScreenState extends State<CameraScreen>
       captureModeController.isScanning = false;
     });
 
-    if (_selectedFeature != Feat.translate && _selectedFeature != Feat.ocr) {
+    if (_selectedFeature == Feat.passport) {
+      unawaited(_startScanbotPassportScan());
+    } else if (_selectedFeature != Feat.translate &&
+        _selectedFeature != Feat.ocr) {
       _startDocumentDetectionStream();
     } else {
       unawaited(_stopLiveDocumentDetection());
@@ -687,7 +703,13 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   void _startDocumentDetectionStream() {
-    if (_selectedFeature == Feat.qrScanner ||
+    if (!_isScanning) {
+      _captureFrameBounds = null;
+      _captureFrameFeature = null;
+    }
+    if ((_selectedFeature == Feat.passport &&
+            captureModeController.captureMode == 'Автоматически') ||
+        _selectedFeature == Feat.qrScanner ||
         _selectedFeature == Feat.translate ||
         _selectedFeature == Feat.ocr) {
       unawaited(_stopLiveDocumentDetection());
@@ -710,6 +732,8 @@ class _CameraScreenState extends State<CameraScreen>
 
     _quadFoundFrames = 0;
     _quadLostFrames = 0;
+    _previousPassportFallbackBounds = null;
+    _passportFallbackStableFrames = 0;
     captureModeController.startDetectionStream(
       isDocumentMode: isDocumentMode,
       onDetectionChanged: (detected) {
@@ -793,7 +817,9 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Rect? _mapAutoFrame(Size size, String featureName) {
-    final bounds = _autoFrameBounds[featureName];
+    final bounds = _isScanning && _captureFrameFeature == featureName
+        ? _captureFrameBounds
+        : _autoFrameBounds[featureName];
     final contentAspect = _previewAspect;
     if (bounds == null || contentAspect == null) return null;
 
@@ -815,6 +841,62 @@ class _CameraScreenState extends State<CameraScreen>
       dx + bounds.right * displayWidth,
       dy + bounds.bottom * displayHeight,
     ).inflate(6);
+  }
+
+  Rect _quadBounds(List<Offset> quad) {
+    final xs = quad.map((point) => point.dx);
+    final ys = quad.map((point) => point.dy);
+    return Rect.fromLTRB(
+      xs.reduce(math.min),
+      ys.reduce(math.min),
+      xs.reduce(math.max),
+      ys.reduce(math.max),
+    );
+  }
+
+  bool _passportGeometryIsStable(List<Offset> quad) {
+    final next = _quadBounds(quad);
+    final previous = _previousPassportFallbackBounds;
+    if (previous != null &&
+        (previous.center - next.center).distance < 0.018 &&
+        (previous.width - next.width).abs() < 0.035 &&
+        (previous.height - next.height).abs() < 0.035) {
+      _passportFallbackStableFrames++;
+    } else {
+      _passportFallbackStableFrames = 1;
+    }
+    _previousPassportFallbackBounds = next;
+    return _passportFallbackStableFrames >= 3;
+  }
+
+  bool _unlockPassportAfterPageChange(Rect? current) {
+    final previous = _lastPassportCaptureBounds;
+    if (!_awaitDocumentExit || current == null || previous == null) {
+      return false;
+    }
+
+    final intersection = current.intersect(previous);
+    final intersectionArea = intersection.isEmpty
+        ? 0.0
+        : intersection.width * intersection.height;
+    final unionArea =
+        current.width * current.height +
+        previous.width * previous.height -
+        intersectionArea;
+    final iou = unionArea <= 0 ? 0.0 : intersectionArea / unionArea;
+    final currentAspect = current.width / current.height;
+    final previousAspect = previous.width / previous.height;
+    final aspectChange = currentAspect > previousAspect
+        ? currentAspect / previousAspect
+        : previousAspect / currentAspect;
+
+    if (iou < 0.58 ||
+        aspectChange > 1.30 ||
+        (current.center - previous.center).distance > 0.10) {
+      _awaitDocumentExit = false;
+      return true;
+    }
+    return false;
   }
 
   void _startPassportFrameRotation(DragStartDetails details) {
@@ -929,13 +1011,16 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _processDocumentDetectionFrame(CameraImage image) async {
-    if (!_isDocumentDetectionStreaming || _isDocumentFrameBusy || !mounted) {
+    if (!_isDocumentDetectionStreaming ||
+        _isDocumentFrameBusy ||
+        _isScanning ||
+        !mounted) {
       return;
     }
 
-    // Каждый 5-й кадр (~6 обработок/сек при 30 fps): анализ идёт на
+    // Каждый 3-й кадр (~10 обработок/сек при 30 fps): анализ идёт на
     // UI-потоке, и более частая обработка давала заметный лаг превью.
-    _documentFrameCounter = (_documentFrameCounter + 1) % 5;
+    _documentFrameCounter = (_documentFrameCounter + 1) % 3;
     if (_documentFrameCounter != 0) return;
 
     final featureName = _selectedFeature;
@@ -949,6 +1034,7 @@ class _CameraScreenState extends State<CameraScreen>
       // чтобы рамка непрерывно следовала за фотографией.
       final quadFound = _updatePhotoQuad(image, featureName);
       final bool detected;
+      var passportPageChanged = false;
       if (_isRestorePhotoFeature(featureName) ||
           _isRemoveSpotsFeature(featureName) ||
           _isRemoveWatermarkFeature(featureName) ||
@@ -992,20 +1078,46 @@ class _CameraScreenState extends State<CameraScreen>
         //     сливается с линиями пола).
         // Старая эвристика фиксированных линий не используется: она давала
         // ложные срабатывания на ковре и не находила вертикальную страницу.
-        final searchQuad = quadFound
+        final rawSearchQuad = quadFound
             ? null
             : _findFramedDocumentBySearch(image, featureName);
+        List<Offset>? searchQuad = rawSearchQuad;
+        if (featureName == Feat.passport && rawSearchQuad != null) {
+          searchQuad = _passportDataPageFromSpread(rawSearchQuad, image);
+          if (searchQuad != null &&
+              !_quadLooksLikeFramedDocument(searchQuad, image, featureName)) {
+            searchQuad = null;
+          }
+        }
         if (searchQuad != null && _isIdOrPassportFeature(featureName)) {
           _photoQuad.value = searchQuad;
           _updateAutoFrame(searchQuad, featureName);
         }
-        final match = quadFound || searchQuad != null;
+        final hasPassportCandidate = quadFound || searchQuad != null;
+        final passportCandidate = quadFound ? _photoQuad.value : searchQuad;
+        final passportGeometryStable =
+            featureName != Feat.passport ||
+            (passportCandidate != null &&
+                _passportGeometryIsStable(passportCandidate));
+        if (featureName == Feat.passport && !hasPassportCandidate) {
+          _previousPassportFallbackBounds = null;
+          _passportFallbackStableFrames = 0;
+        }
+        final match = hasPassportCandidate && passportGeometryStable;
+        if (featureName == Feat.passport && match) {
+          passportPageChanged = _unlockPassportAfterPageChange(
+            _autoFrameBounds[featureName],
+          );
+        }
         detected = _stabilizedDetection(match);
       } else {
         detected = _detectDocumentContour(image, featureName: featureName);
       }
       if (!mounted || !_isDocumentDetectionStreaming) return;
       if (detected == _isDocumentDetected) {
+        if (detected && passportPageChanged) {
+          _scheduleAutoCapture();
+        }
         if (!detected && _quadLostFrames >= _kQuadLost) {
           _photoQuad.value = null;
           _autoFrameBounds.remove(featureName);
@@ -1121,8 +1233,21 @@ class _CameraScreenState extends State<CameraScreen>
           }
         }
       }
-      for (final candidate in candidates) {
+      for (final rawCandidate in candidates) {
         if (quad != null) break;
+        var candidate = rawCandidate;
+        if (featureName == Feat.passport) {
+          final dataPage = _passportDataPageFromSpread(
+            rawCandidate,
+            image,
+            gray: gray,
+            sampleWidth: targetWidth,
+            sampleHeight: targetHeight,
+          );
+          if (dataPage != null) {
+            candidate = dataPage;
+          }
+        }
         if (!_quadLooksLikeFramedDocument(candidate, image, featureName)) {
           continue;
         }
@@ -1205,6 +1330,436 @@ class _CameraScreenState extends State<CameraScreen>
     }
     _updateAutoFrame(_photoQuad.value, featureName);
     return true;
+  }
+
+  /// If the contour covers an open passport, split it at the horizontal fold
+  /// and return only the lower data page. A single passport page and a full
+  /// two-page spread have almost the same outer aspect ratio, so geometry alone
+  /// cannot distinguish them reliably.
+  List<Offset>? _passportDataPageFromSpread(
+    List<Offset> quad,
+    CameraImage image, {
+    List<int>? gray,
+    int? sampleWidth,
+    int? sampleHeight,
+  }) {
+    if (quad.length != 4) return null;
+    final tl = quad[0];
+    final tr = quad[1];
+    final br = quad[2];
+    final bl = quad[3];
+    final width = ((tr - tl).distance + (br - bl).distance) / 2;
+    final height = ((bl - tl).distance + (br - tr).distance) / 2;
+    if (width < 0.45 || height < 0.34 || width * height < 0.16) {
+      return null;
+    }
+
+    final physicalAspect = width * (image.height / image.width) / height;
+    final foldGray =
+        gray ??
+        _samplePortraitLuma(
+          image,
+          targetWidth: 160,
+          targetHeight: ((160 * image.width) / image.height).round().clamp(
+            180,
+            360,
+          ),
+        );
+    final foldWidth = sampleWidth ?? 160;
+    final foldHeight = sampleHeight ?? (foldGray.length ~/ foldWidth);
+    // A horizontal binding is possible only when the candidate is wider than
+    // a single portrait page. The fold detector itself verifies that the line
+    // is continuous, so a normal text or MRZ row is not enough.
+    final horizontalFoldT = physicalAspect < 1.12
+        ? _passportHorizontalFoldT(quad, foldGray, foldWidth, foldHeight)
+        : null;
+
+    if (horizontalFoldT == null) {
+      // Полный горизонтальный разворот: сгиб проходит через ЦЕНТР кандидата
+      // (боковые полосы поиска биндинга его сознательно не покрывают).
+      // Режем по сгибу и оставляем страницу с большей плотностью деталей —
+      // портрет и MRZ делают страницу данных заметно «шумнее» соседней.
+      if (physicalAspect >= 1.12) {
+        final centerFoldT = _passportCenterFoldT(
+          quad,
+          foldGray,
+          foldWidth,
+          foldHeight,
+        );
+        if (centerFoldT != null) {
+          final clampedT = centerFoldT.clamp(0.38, 0.62);
+          final foldTop = Offset.lerp(tl, tr, clampedT)!;
+          final foldBottom = Offset.lerp(bl, br, clampedT)!;
+          const inset = 0.03;
+          final keepRight = _passportRightHalfDenser(
+            quad,
+            clampedT,
+            foldGray,
+            foldWidth,
+            foldHeight,
+          );
+          if (keepRight) {
+            return <Offset>[
+              Offset.lerp(foldTop, tr, inset)!,
+              tr,
+              br,
+              Offset.lerp(foldBottom, br, inset)!,
+            ];
+          }
+          return <Offset>[
+            tl,
+            Offset.lerp(foldTop, tl, inset)!,
+            Offset.lerp(foldBottom, bl, inset)!,
+            bl,
+          ];
+        }
+      }
+      final bindingSide = _passportVerticalBindingSide(
+        quad,
+        foldGray,
+        foldWidth,
+        foldHeight,
+      );
+      if (bindingSide != 0 && physicalAspect > 0.74) {
+        const targetPortraitAspect = 0.74;
+        final keepWidth = (targetPortraitAspect / physicalAspect).clamp(
+          0.48,
+          1.0,
+        );
+        if (bindingSide < 0) {
+          final leftT = (1.0 - keepWidth + 0.018).clamp(0.0, 0.52);
+          return <Offset>[
+            Offset.lerp(tl, tr, leftT)!,
+            tr,
+            br,
+            Offset.lerp(bl, br, leftT)!,
+          ];
+        }
+        final rightT = (keepWidth - 0.018).clamp(0.48, 1.0);
+        return <Offset>[
+          tl,
+          Offset.lerp(tl, tr, rightT)!,
+          Offset.lerp(bl, br, rightT)!,
+          bl,
+        ];
+      }
+      // A cover or a single portrait/landscape page is already the desired
+      // document when no continuous horizontal binding is present.
+      const sideInset = 0.012;
+      return <Offset>[
+        Offset.lerp(tl, tr, sideInset)!,
+        Offset.lerp(tr, tl, sideInset)!,
+        Offset.lerp(br, bl, sideInset)!,
+        Offset.lerp(bl, br, sideInset)!,
+      ];
+    }
+
+    // Use the fold measured in this frame instead of a fixed midpoint. The
+    // fallback line search frequently picks the MRZ as the bottom edge, so the
+    // lower corners are reconstructed from the standard passport-page aspect
+    // rather than copied from that unreliable edge.
+    final foldT = horizontalFoldT.clamp(0.36, 0.64);
+    const sideInset = 0.018;
+    const landscapePageAspect = 1.42;
+    final rawFoldLeft = Offset.lerp(tl, bl, foldT)!;
+    final rawFoldRight = Offset.lerp(tr, br, foldT)!;
+    final pageFoldWidth = (rawFoldRight - rawFoldLeft).distance;
+    final targetPageHeight =
+        pageFoldWidth * (image.height / image.width) / landscapePageAspect;
+    final leftPageVector = bl - rawFoldLeft;
+    final rightPageVector = br - rawFoldRight;
+    final leftScale = leftPageVector.distance <= 0.001
+        ? 1.0
+        : (targetPageHeight / leftPageVector.distance).clamp(0.80, 1.30);
+    final rightScale = rightPageVector.distance <= 0.001
+        ? 1.0
+        : (targetPageHeight / rightPageVector.distance).clamp(0.80, 1.30);
+    final reconstructedBottomLeft = rawFoldLeft + leftPageVector * leftScale;
+    final reconstructedBottomRight =
+        rawFoldRight + rightPageVector * rightScale;
+    final foldInset = (rawFoldRight - rawFoldLeft) * sideInset;
+    final bottomInset =
+        (reconstructedBottomRight - reconstructedBottomLeft) * sideInset;
+    return <Offset>[
+      rawFoldLeft + foldInset,
+      rawFoldRight - foldInset,
+      reconstructedBottomRight - bottomInset,
+      reconstructedBottomLeft + bottomInset,
+    ];
+  }
+
+  double? _passportHorizontalFoldT(
+    List<Offset> quad,
+    List<int> gray,
+    int width,
+    int height,
+  ) {
+    final bounds = _quadBounds(quad);
+    final left = (bounds.left * width).round().clamp(2, width - 3);
+    final right = (bounds.right * width).round().clamp(2, width - 3);
+    final top = (bounds.top * height).round().clamp(2, height - 3);
+    final bottom = (bounds.bottom * height).round().clamp(2, height - 3);
+    final boxWidth = right - left;
+    final boxHeight = bottom - top;
+    if (boxWidth < 24 || boxHeight < 24) return null;
+
+    final x0 = left + (boxWidth * 0.08).round();
+    final x1 = right - (boxWidth * 0.08).round();
+    final y0 = top + (boxHeight * 0.30).round();
+    final y1 = top + (boxHeight * 0.62).round();
+    // The fold between two pale passport pages is often only a 4-8 luma
+    // transition. A high scene-wide threshold misses it because printed text
+    // and a textured floor make the global edge mean much larger.
+    final gradientThreshold = math.min(
+      8.0,
+      math.max(4.0, _globalEdgeMean(gray, width, height) * 0.55),
+    );
+
+    var bestScore = 0.0;
+    var bestY = -1;
+    for (int y = y0; y <= y1; y += 2) {
+      var strong = 0;
+      var currentRun = 0;
+      var longestRun = 0;
+      var toleratedGap = 0;
+      var samples = 0;
+      for (int x = x0; x <= x1; x += 2) {
+        final above = gray[(y - 2).clamp(0, height - 1) * width + x];
+        final below = gray[(y + 2).clamp(0, height - 1) * width + x];
+        if ((below - above).abs() >= gradientThreshold) {
+          strong++;
+          currentRun++;
+          toleratedGap = 0;
+          longestRun = math.max(longestRun, currentRun);
+        } else if (currentRun > 0 && toleratedGap < 2) {
+          // Stitching, glare and the printed header can interrupt the physical
+          // fold for a few pixels; keep the same long component through them.
+          currentRun++;
+          toleratedGap++;
+        } else {
+          currentRun = 0;
+          toleratedGap = 0;
+        }
+        samples++;
+      }
+      if (samples > 0) {
+        final coverage = strong / samples;
+        final runRatio = longestRun / samples;
+        if (coverage >= 0.30 && runRatio >= 0.22) {
+          final score = coverage * 0.65 + runRatio * 0.35;
+          if (score > bestScore) {
+            bestScore = score;
+            bestY = y;
+          }
+        }
+      }
+    }
+    if (bestY < 0) return null;
+    return ((bestY - top) / boxHeight).clamp(0.0, 1.0);
+  }
+
+  /// Непрерывный вертикальный сгиб в ЦЕНТРАЛЬНОЙ полосе кандидата
+  /// (40–60% ширины) — признак полного горизонтального разворота. Порог
+  /// низкий, как у горизонтального сгиба: перепад между двумя бледными
+  /// страницами составляет всего 4–8 люмы. Возвращает позицию сгиба в
+  /// долях ширины кандидата или null.
+  double? _passportCenterFoldT(
+    List<Offset> quad,
+    List<int> gray,
+    int width,
+    int height,
+  ) {
+    final bounds = _quadBounds(quad);
+    final left = (bounds.left * width).round().clamp(2, width - 3);
+    final right = (bounds.right * width).round().clamp(2, width - 3);
+    final top = (bounds.top * height).round().clamp(2, height - 3);
+    final bottom = (bounds.bottom * height).round().clamp(2, height - 3);
+    final boxWidth = right - left;
+    final boxHeight = bottom - top;
+    if (boxWidth < 24 || boxHeight < 24) return null;
+
+    final y0 = top + (boxHeight * 0.08).round();
+    final y1 = bottom - (boxHeight * 0.08).round();
+    final x0 = left + (boxWidth * 0.40).round();
+    final x1 = left + (boxWidth * 0.60).round();
+    final gradientThreshold = math.min(
+      8.0,
+      math.max(4.0, _globalEdgeMean(gray, width, height) * 0.55),
+    );
+
+    var bestScore = 0.0;
+    var bestX = -1;
+    for (int x = x0; x <= x1; x += 2) {
+      var strong = 0;
+      var currentRun = 0;
+      var longestRun = 0;
+      var toleratedGap = 0;
+      var samples = 0;
+      for (int y = y0; y <= y1; y += 2) {
+        final lumaLeft = gray[y * width + (x - 2).clamp(0, width - 1)];
+        final lumaRight = gray[y * width + (x + 2).clamp(0, width - 1)];
+        if ((lumaRight - lumaLeft).abs() >= gradientThreshold) {
+          strong++;
+          currentRun++;
+          toleratedGap = 0;
+          longestRun = math.max(longestRun, currentRun);
+        } else if (currentRun > 0 && toleratedGap < 2) {
+          // Прошивка и блики прерывают физический сгиб на пару пикселей —
+          // считаем это тем же длинным компонентом.
+          currentRun++;
+          toleratedGap++;
+        } else {
+          currentRun = 0;
+          toleratedGap = 0;
+        }
+        samples++;
+      }
+      if (samples > 0) {
+        final coverage = strong / samples;
+        final runRatio = longestRun / samples;
+        if (coverage >= 0.30 && runRatio >= 0.22) {
+          final score = coverage * 0.65 + runRatio * 0.35;
+          if (score > bestScore) {
+            bestScore = score;
+            bestX = x;
+          }
+        }
+      }
+    }
+    if (bestX < 0) return null;
+    return ((bestX - left) / boxWidth).clamp(0.0, 1.0);
+  }
+
+  /// true — правая (относительно сгиба) половина кандидата содержит больше
+  /// мелких деталей. Портрет, текстовые поля и MRZ делают страницу данных
+  /// заметно «шумнее» соседней визовой страницы.
+  bool _passportRightHalfDenser(
+    List<Offset> quad,
+    double foldT,
+    List<int> gray,
+    int width,
+    int height,
+  ) {
+    final bounds = _quadBounds(quad);
+    final left = (bounds.left * width).round().clamp(2, width - 3);
+    final right = (bounds.right * width).round().clamp(2, width - 3);
+    final top = (bounds.top * height).round().clamp(2, height - 3);
+    final bottom = (bounds.bottom * height).round().clamp(2, height - 3);
+    final foldX = (left + (right - left) * foldT).round();
+
+    double density(int x0, int x1) {
+      final xa = (x0 + (x1 - x0) * 0.08).round();
+      final xb = (x1 - (x1 - x0) * 0.08).round();
+      final ya = (top + (bottom - top) * 0.10).round();
+      final yb = (bottom - (bottom - top) * 0.10).round();
+      if (xb - xa < 8 || yb - ya < 8) return 0;
+      var sum = 0.0;
+      var count = 0;
+      for (int y = ya; y <= yb; y += 3) {
+        for (int x = xa; x <= xb; x += 3) {
+          final horizontal =
+              (gray[y * width + (x + 2).clamp(0, width - 1)] -
+                      gray[y * width + (x - 2).clamp(0, width - 1)])
+                  .abs();
+          final vertical =
+              (gray[(y + 2).clamp(0, height - 1) * width + x] -
+                      gray[(y - 2).clamp(0, height - 1) * width + x])
+                  .abs();
+          sum += horizontal + vertical;
+          count++;
+        }
+      }
+      return count == 0 ? 0 : sum / count;
+    }
+
+    return density(foldX, right) >= density(left, foldX);
+  }
+
+  /// Returns the side of an internal vertical passport binding: -1 for the
+  /// left side, 1 for the right side and 0 when the candidate is already a
+  /// standalone page or a cover. The search deliberately ignores the outer
+  /// 8% of the quad so a normal page edge is not mistaken for a binding.
+  int _passportVerticalBindingSide(
+    List<Offset> quad,
+    List<int> gray,
+    int width,
+    int height,
+  ) {
+    final bounds = _quadBounds(quad);
+    final left = (bounds.left * width).round().clamp(2, width - 3);
+    final right = (bounds.right * width).round().clamp(2, width - 3);
+    final top = (bounds.top * height).round().clamp(2, height - 3);
+    final bottom = (bounds.bottom * height).round().clamp(2, height - 3);
+    final boxWidth = right - left;
+    final boxHeight = bottom - top;
+    if (boxWidth < 24 || boxHeight < 32) return 0;
+
+    final y0 = top + (boxHeight * 0.08).round();
+    final y1 = bottom - (boxHeight * 0.08).round();
+    final gradientThreshold = math.max(
+      12.0,
+      _globalEdgeMean(gray, width, height) * 1.45,
+    );
+
+    ({double coverage, double runRatio, double score}) bestInBand(
+      double fromFraction,
+      double toFraction,
+    ) {
+      var bestCoverage = 0.0;
+      var bestRunRatio = 0.0;
+      var bestScore = 0.0;
+      final x0 = left + (boxWidth * fromFraction).round();
+      final x1 = left + (boxWidth * toFraction).round();
+      for (int x = x0; x <= x1; x += 2) {
+        var strong = 0;
+        var currentRun = 0;
+        var longestRun = 0;
+        var samples = 0;
+        for (int y = y0; y <= y1; y += 2) {
+          final lumaLeft = gray[y * width + (x - 2).clamp(0, width - 1)];
+          final lumaRight = gray[y * width + (x + 2).clamp(0, width - 1)];
+          if ((lumaRight - lumaLeft).abs() >= gradientThreshold) {
+            strong++;
+            currentRun++;
+            longestRun = math.max(longestRun, currentRun);
+          } else {
+            currentRun = 0;
+          }
+          samples++;
+        }
+        if (samples == 0) continue;
+        final coverage = strong / samples;
+        final runRatio = longestRun / samples;
+        // Coverage rejects short text strokes; the uninterrupted component
+        // gives extra weight to the physical seam or stitched binding.
+        final score = coverage * 0.65 + runRatio * 0.35;
+        if (score > bestScore) {
+          bestCoverage = coverage;
+          bestRunRatio = runRatio;
+          bestScore = score;
+        }
+      }
+      return (coverage: bestCoverage, runRatio: bestRunRatio, score: bestScore);
+    }
+
+    final leftBinding = bestInBand(0.08, 0.40);
+    final rightBinding = bestInBand(0.60, 0.92);
+
+    bool isBinding(({double coverage, double runRatio, double score}) value) {
+      return value.coverage >= 0.30 && value.runRatio >= 0.18;
+    }
+
+    final hasLeftBinding = isBinding(leftBinding);
+    final hasRightBinding = isBinding(rightBinding);
+    if (!hasLeftBinding && !hasRightBinding) return 0;
+    if (hasLeftBinding && !hasRightBinding) return -1;
+    if (hasRightBinding && !hasLeftBinding) return 1;
+
+    // Text or a portrait can occasionally create a candidate on both sides;
+    // only choose a direction when one side is materially more continuous.
+    if (leftBinding.score > rightBinding.score * 1.12) return -1;
+    if (rightBinding.score > leftBinding.score * 1.12) return 1;
+    return 0;
   }
 
   /// Объединяет две соседние страницы раскрытого документа в один внешний
@@ -1420,10 +1975,10 @@ class _CameraScreenState extends State<CameraScreen>
     CameraImage image,
     String featureName,
   ) {
-    const int targetWidth = 120;
+    final int targetWidth = featureName == Feat.passport ? 180 : 120;
     final int targetHeight = ((targetWidth * image.width) / image.height)
         .round()
-        .clamp(150, 280);
+        .clamp(150, featureName == Feat.passport ? 420 : 280);
     final gray = _samplePortraitLuma(
       image,
       targetWidth: targetWidth,
@@ -1525,16 +2080,20 @@ class _CameraScreenState extends State<CameraScreen>
 
     // Все четыре края должны быть выраженными и заметно сильнее среднего
     // градиента сцены (на фактурном ковре globalEdge высокий — порог растёт).
-    final double minScore = (isPassport || isPhotoFilter || isDocumentSheet)
+    final double minScore = isPassport
+        ? math.max(globalEdge * 1.10, 6.0)
+        : (isPhotoFilter || isDocumentSheet)
         ? math.max(globalEdge * 1.25, 8.0)
         : math.max(globalEdge * 1.7, 11.0);
     final edgeScores = [topScore, bottomScore, leftScore, rightScore];
+    final hasStrongHorizontal = topScore >= minScore || bottomScore >= minScore;
+    final hasStrongVertical = leftScore >= minScore || rightScore >= minScore;
     final strongEdgeCount = edgeScores
         .where((score) => score >= minScore)
         .length;
     // Закрытый документ должен дать четыре стороны; у открытой страницы или
     // сгиба допускается одна потерянная сторона, но не две.
-    final requiredEdges = isDocumentSheet ? 3 : 4;
+    final requiredEdges = isPassport ? 2 : (isDocumentSheet ? 3 : 4);
     if (strongEdgeCount < requiredEdges) {
       return null;
     }
@@ -1557,6 +2116,24 @@ class _CameraScreenState extends State<CameraScreen>
     }
     final double aspect = w / h;
     if (aspect < 0.42 || aspect > 2.6) return null;
+    if (isPassport && strongEdgeCount == 2) {
+      final candidateArea = w * h / (targetWidth * targetHeight);
+      final averageEdgeScore =
+          edgeScores.fold<double>(0, (sum, score) => sum + score) /
+          edgeScores.length;
+      // The two-edge relaxation is only for a large standalone page whose
+      // low-contrast outer edges blend into the neighbouring paper. Requiring
+      // adjacent directions prevents two text/MRZ rows from triggering the
+      // horizontal fallback early.
+      if (!hasStrongHorizontal ||
+          !hasStrongVertical ||
+          candidateArea < 0.18 ||
+          aspect < 0.55 ||
+          aspect > 1.85 ||
+          averageEdgeScore < minScore * 0.82) {
+        return null;
+      }
+    }
     final double centerY = (resolvedTopY + resolvedBottomY) / 2 / targetHeight;
     if (centerY < zoneTopF || centerY > zoneBottomF) return null;
 
@@ -1582,13 +2159,6 @@ class _CameraScreenState extends State<CameraScreen>
 
     // Обновляем видимую рамку только после всех проверок. Раньше даже
     // отклонённый кандидат успевал стянуть её к внутреннему блоку текста.
-    if (_isIdOrPassportFeature(featureName) ||
-        isPhotoFilter ||
-        isDocumentSheet) {
-      _photoQuad.value = candidateQuad;
-      _updateAutoFrame(candidateQuad, featureName);
-    }
-
     return candidateQuad;
   }
 
@@ -1644,7 +2214,17 @@ class _CameraScreenState extends State<CameraScreen>
     // Размер: документ занимает заметную часть рамки, но не весь экран.
     final widthNorm = (topLen + bottomLen) / 2;
     final heightNorm = (leftLen + rightLen) / 2;
-    if (heightNorm < 0.08 || heightNorm > 0.58) return false;
+    if (heightNorm < 0.08 || heightNorm > (isPassport ? 0.72 : 0.58)) {
+      return false;
+    }
+    if (isPassport) {
+      // The portrait, text fields and MRZ often form a very clean rectangle
+      // inside the data page. It must not drive the frame or auto-capture: a
+      // real passport page occupies a materially larger part of the preview.
+      // Use normalized sensor area so a page remains valid after a 90° turn.
+      final normalizedArea = widthNorm * heightNorm;
+      if (normalizedArea < 0.14) return false;
+    }
     if (_isDocumentSheetFeature(featureName)) {
       // Полосы текста, MRZ и крупные внутренние блоки часто образуют хороший
       // прямоугольник, но они заметно ниже и меньше самой страницы.
@@ -1671,7 +2251,10 @@ class _CameraScreenState extends State<CameraScreen>
     _autoCaptureFeature = _selectedFeature;
     _autoCaptureSide = _currentSide;
     _autoCapturePageMode = _pageMode;
-    _autoCaptureTimer = Timer(const Duration(milliseconds: 950), () {
+    final captureDelay = _selectedFeature == Feat.passport
+        ? const Duration(milliseconds: 850)
+        : const Duration(milliseconds: 550);
+    _autoCaptureTimer = Timer(captureDelay, () {
       unawaited(
         _runAutoCapture(
           feature: _autoCaptureFeature,
@@ -1696,9 +2279,12 @@ class _CameraScreenState extends State<CameraScreen>
     required String? pageMode,
   }) async {
     _autoCaptureTimer = null;
+    final hasConfirmedPassportFrame =
+        feature != Feat.passport || _autoFrameBounds[Feat.passport] != null;
     if (!mounted ||
         _isScanning ||
         !_isDocumentDetected ||
+        !hasConfirmedPassportFrame ||
         captureModeController.detectionWarning != null ||
         captureModeController.captureMode != 'Автоматически' ||
         feature != _selectedFeature ||
@@ -2217,6 +2803,7 @@ class _CameraScreenState extends State<CameraScreen>
     _secondCapturedImage = null;
     _passportBatch = [];
     _awaitDocumentExit = false;
+    _lastPassportCaptureBounds = null;
   }
 
   void _resetIdCardState() {
@@ -2341,6 +2928,200 @@ class _CameraScreenState extends State<CameraScreen>
   /// Пользователь снимает до [_passportMaxPages] страниц, затем жмёт галочку.
   static const int _passportMaxPages = 7;
 
+  sb.DocumentScanningFlow _scanbotPassportConfiguration(int pageLimit) {
+    final configuration = sb.DocumentScanningFlow();
+
+    configuration.palette
+      ..sbColorPrimary = sb.ScanbotColor('#16C784')
+      ..sbColorPositive = sb.ScanbotColor('#16C784')
+      ..sbColorSecondary = sb.ScanbotColor('#DDF8EC')
+      ..sbColorOnSecondary = sb.ScanbotColor('#087A50');
+
+    configuration.outputSettings
+      ..pagesScanLimit = pageLimit
+      ..documentImageSizeLimit = 0;
+
+    final camera = configuration.screens.camera;
+    camera
+      ..autoRotateImages = true
+      ..openReviewAfterEachScan = false;
+    camera.cameraConfiguration
+      ..autoSnappingEnabled = true
+      // Даём контуру стабилизироваться перед автоматическим снимком.
+      ..autoSnappingSensitivity = 0.45
+      ..autoSnappingDelay = 700
+      ..touchToFocusEnabled = true
+      ..captureQualityPrioritization =
+          sb.CapturePhotoQualityPrioritization.QUALITY
+      ..fpsLimit = 20;
+    camera.scannerParameters
+      // Для паспорта важнее принять страницу на комфортном расстоянии,
+      // чем заставлять пользователя доводить её до краёв экрана.
+      ..acceptedSizeScore = 55
+      ..acceptedAngleScore = 65
+      // Паспортные страницы встречаются в обеих ориентациях и пропорциях.
+      ..acceptedAspectRatioScore = 0
+      ..ignoreOrientationMismatch = true;
+    camera.acknowledgement.acknowledgementMode = sb.AcknowledgementMode.ALWAYS;
+    camera.introduction.showAutomatically = false;
+    configuration.screens.review
+      ..enabled = true
+      ..showLastPageWhenAdding = true;
+
+    final text = configuration.localization;
+    text
+      ..cameraTopBarTitle = 'Паспорт'
+      ..cameraTopGuidance = 'Сканируйте страницы паспорта по очереди'
+      ..cameraUserGuidanceStart = 'Наведите камеру на страницу паспорта'
+      ..cameraUserGuidanceNoDocumentFound = 'Страница не найдена'
+      ..cameraUserGuidanceBadAspectRatio = 'Покажите страницу целиком'
+      ..cameraUserGuidanceOrientationMismatch =
+          'Поверните устройство к странице'
+      ..cameraUserGuidanceBadAngles = 'Держите камеру параллельно странице'
+      ..cameraUserGuidanceTooNoisy = 'Используйте более однородный фон'
+      ..cameraUserGuidanceTextHintOffCenter = 'Поместите страницу по центру'
+      ..cameraUserGuidanceTooSmall = 'Поднесите камеру немного ближе'
+      ..cameraUserGuidanceTooDark = 'Добавьте освещение'
+      ..cameraUserGuidanceReadyToCapture = 'Не двигайте устройство'
+      ..cameraUserGuidanceReadyToCaptureManual = 'Страница готова к снимку'
+      ..cameraAutoSnapButtonTitle = 'Авто'
+      ..cameraManualSnapButtonTitle = 'Ручн.'
+      ..cameraPreviewButtonTitle = '%d стр.'
+      ..cameraTopBarCancelButtonTitle = 'Отмена'
+      ..cameraProgressOverlayTitle = 'Обработка…'
+      ..acknowledgementRetakeButtonTitle = 'Переснять'
+      ..acknowledgementAcceptButtonTitle = 'Использовать'
+      ..reviewScreenTitle = 'Предпросмотр (%d)'
+      ..reviewScreenPageCount = 'Страница %d/%d'
+      ..reviewScreenAddButtonTitle = 'Добавить'
+      ..reviewScreenRetakeButtonTitle = 'Переснять'
+      ..reviewScreenCropButtonTitle = 'Обрезать'
+      ..reviewScreenRotateButtonTitle = 'Повернуть'
+      ..reviewScreenDeleteButtonTitle = 'Удалить'
+      ..reviewScreenSubmitButtonTitle = 'Готово'
+      ..cameraCancelAlertTitle = 'Отменить сканирование?'
+      ..cameraCancelNoButtonTitle = 'Нет'
+      ..cameraCancelYesButtonTitle = 'Да, отменить'
+      ..cameraLimitReachedAlertTitle = 'Достигнут лимит страниц'
+      ..cameraLimitReachedOkButtonTitle = 'ОК'
+      ..croppingTopBarConfirmButtonTitle = 'Готово'
+      ..croppingTopBarCancelButtonTitle = 'Отмена';
+
+    return configuration;
+  }
+
+  String _scanbotImagePath(sb_doc.PageData page) {
+    final rawPath =
+        page.documentImageURI ??
+        page.unfilteredDocumentImageURI ??
+        page.originalImageURI;
+    final uri = Uri.tryParse(rawPath);
+    if (uri != null && uri.scheme == 'file') {
+      return uri.toFilePath();
+    }
+    return rawPath;
+  }
+
+  Future<void> _startScanbotPassportScan() async {
+    if (!mounted ||
+        _isScanbotPassportActive ||
+        _selectedFeature != Feat.passport ||
+        captureModeController.captureMode != 'Автоматически') {
+      return;
+    }
+
+    final remaining = _passportMaxPages - _passportBatch.length;
+    if (remaining <= 0) {
+      AppNotification.show(
+        context,
+        message: AppLocalizations.of(context).camMaxPages,
+        type: NotificationType.info,
+      );
+      return;
+    }
+
+    _isScanbotPassportActive = true;
+    _scanbotPassportRetakeRequested = false;
+    _cancelAutoCapture();
+
+    setState(() {
+      _isScanning = true;
+      _isDocumentDetected = false;
+      captureModeController.isScanning = true;
+      captureModeController.isDocumentDetected = false;
+    });
+
+    try {
+      await _stopLiveDocumentDetection();
+      await _disposeCameraController();
+      await ScanbotConfig.ensureInitialized();
+      if (!mounted) return;
+
+      final result = await sb.ScanbotSdkUiV2.startDocumentScanner(
+        _scanbotPassportConfiguration(remaining),
+      );
+      if (!mounted) return;
+
+      if (result.status == sb.OperationStatus.CANCELED) {
+        captureModeController.setCaptureMode('Вручную');
+        return;
+      }
+      if (result.status == sb.OperationStatus.ERROR) {
+        throw StateError(result.errorMessage ?? 'Ошибка Scanbot');
+      }
+
+      final document = result.data;
+      if (document == null) {
+        throw StateError('Scanbot не вернул документ');
+      }
+      final scannedFiles = <XFile>[];
+      for (final page in document.pages.take(remaining)) {
+        final path = _scanbotImagePath(page);
+        if (path.isNotEmpty && await File(path).exists()) {
+          scannedFiles.add(XFile(path));
+        }
+      }
+
+      if (scannedFiles.isEmpty) {
+        throw StateError('Scanbot не вернул обработанные страницы');
+      }
+      if (!mounted) return;
+
+      setState(() => _passportBatch.addAll(scannedFiles));
+      await _finishPassportBatch(scanbotFlow: true);
+    } catch (error) {
+      if (mounted) {
+        captureModeController.setCaptureMode('Вручную');
+        AppNotification.show(
+          context,
+          message: '${AppLocalizations.of(context).commonError}: $error',
+          type: NotificationType.error,
+        );
+      }
+    } finally {
+      final shouldRetake = _scanbotPassportRetakeRequested;
+      _scanbotPassportRetakeRequested = false;
+      _isScanbotPassportActive = false;
+
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+          captureModeController.isScanning = false;
+        });
+
+        if (shouldRetake &&
+            _selectedFeature == Feat.passport &&
+            captureModeController.captureMode == 'Автоматически') {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) unawaited(_startScanbotPassportScan());
+          });
+        } else {
+          await _initializeCamera();
+        }
+      }
+    }
+  }
+
   String _passportOverlayLabel(AppLocalizations l10n) {
     // Подсказка называет СЛЕДУЮЩУЮ страницу по порядку: «Первая страница»,
     // «Вторая страница»… Когда буфер полон — показываем итоговое количество.
@@ -2351,7 +3132,7 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   /// «Готово» в режиме паспорта: открывает превью всех накопленных страниц.
-  Future<void> _finishPassportBatch() async {
+  Future<void> _finishPassportBatch({bool scanbotFlow = false}) async {
     if (_passportBatch.isEmpty || !mounted) return;
     final readyFiles = List<XFile>.from(_passportBatch);
     await _openPreview(
@@ -2359,9 +3140,14 @@ class _CameraScreenState extends State<CameraScreen>
       isTwoPage: readyFiles.length > 1,
       onRetake: () {
         // «Переснять» = начать паспорт заново: чистим буфер и возвращаемся.
+        if (scanbotFlow) {
+          _scanbotPassportRetakeRequested = true;
+        }
         Navigator.pop(context);
         _resetTwoPageState();
-        _startDocumentDetectionStream();
+        if (!scanbotFlow) {
+          _startDocumentDetectionStream();
+        }
       },
       restartDetectionOnReturn: false,
     );
@@ -2371,7 +3157,13 @@ class _CameraScreenState extends State<CameraScreen>
       _isScanning = false;
       captureModeController.isScanning = false;
     });
-    _startDocumentDetectionStream();
+    if (!scanbotFlow) {
+      _startDocumentDetectionStream();
+    } else if (!_scanbotPassportRetakeRequested) {
+      // После закрытия превью ручной режим остаётся рабочим, а повторный
+      // выбор «Авто» снова открывает Scanbot.
+      captureModeController.setCaptureMode('Вручную');
+    }
   }
 
   /// Повторный запуск нативного скана из кнопки «Переснять». Откладываем на
@@ -2658,6 +3450,8 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
 
+    _captureFrameBounds = _autoFrameBounds[_selectedFeature];
+    _captureFrameFeature = _selectedFeature;
     captureModeController.resetDetectionState();
     // Устанавливаем флаг синхронно до первого await, чтобы исключить race condition
     _isScanning = true;
@@ -2851,6 +3645,8 @@ class _CameraScreenState extends State<CameraScreen>
         if (!mounted) return;
         setState(() => _passportBatch.add(passportImage));
 
+        _lastPassportCaptureBounds =
+            _captureFrameBounds ?? _autoFrameBounds[Feat.passport];
         _isScanning = false;
         captureModeController.isScanning = false;
         _awaitDocumentExit = true;
@@ -3888,7 +4684,14 @@ class _CameraScreenState extends State<CameraScreen>
               unawaited(_initializeCamera());
             }
 
-            if (newFeature != Feat.translate && newFeature != Feat.ocr) {
+            if (newFeature == Feat.passport &&
+                captureModeController.captureMode == 'Автоматически') {
+              Future.delayed(const Duration(milliseconds: 350), () {
+                if (mounted && _selectedFeature == Feat.passport) {
+                  unawaited(_startScanbotPassportScan());
+                }
+              });
+            } else if (newFeature != Feat.translate && newFeature != Feat.ocr) {
               Future.delayed(
                 const Duration(milliseconds: 500),
                 _startDocumentDetectionStream,
