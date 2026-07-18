@@ -8,6 +8,19 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Scanbot OCR-бандл и flutter_tesseract_ocr несут ОДИН И ТОТ ЖЕ
+// tesseract4android (java-пакеты com.googlecode.tesseract/leptonica) —
+// dex-дубликат валит сборку. Исключать нужно копию из
+// flutter_tesseract_ocr, а НЕ scanbot-ocr: инициализация Scanbot
+// безусловно обращается к своим OCR-классам (без бандла падает
+// NoClassDefFoundError OcrSettings, и весь Scanbot-поток ломается).
+// Java-обёртка flutter_tesseract_ocr работает через классы Scanbot-бандла,
+// а её нативные библиотеки (libtesseract/libleptonica и др.), которых в
+// Scanbot нет, лежат распакованными в app/src/main/jniLibs.
+configurations.configureEach {
+    exclude(module = "tesseract4android-release")
+}
+
 // Параметры релизного keystore читаются из android/key.properties (в гит
 // не коммитится — см. .gitignore). Если файла нет (CI без секретов, новый
 // разработчик), релиз падает обратно на debug-подпись, и обычные debug-
@@ -56,6 +69,14 @@ android {
     }
 
     buildTypes {
+        // Local debug builds target the physical Android test device. Keeping
+        // debug arm64-only avoids unpacking several copies of large OpenCV and
+        // Scanbot native libraries; release ABI support is unchanged.
+        getByName("debug") {
+            ndk {
+                abiFilters += "arm64-v8a"
+            }
+        }
         release {
             // Реальный upload-ключ, если key.properties есть; иначе debug —
             // чтобы локальный `flutter run --release` не требовал keystore.

@@ -7,6 +7,7 @@ import 'services/premium_service.dart';
 import 'config/sentry_config.dart';
 import 'config/theme_config.dart';
 import 'config/locale_config.dart';
+import 'config/scanbot_config.dart';
 import 'widgets/app_lock_guard.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
@@ -26,6 +27,7 @@ void main() async {
     await ThemeNotifier().load();
     await LocaleNotifier().load();
     await PremiumService().load();
+    await ScanbotConfig.initialize();
     runApp(const ScannerApp());
   });
 }
