@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_subject_segmentation/google_mlkit_subject_segmentation.dart';
@@ -303,6 +304,54 @@ class PassportScanner {
     return math.sqrt(dx * dx + dy * dy);
   }
 
+  /// Кроп по нормализованному прямоугольнику live-рамки (0..1 в портретной
+  /// ориентации кадра). Последний рубеж, когда ни сегментация, ни поиск по
+  /// краям не нашли страницу на снимке: лучше кадр по рамке, чем весь фон.
+  static Future<File> cropByNormalizedRect(File input, Rect bounds) async {
+    try {
+      final bytes = await input.readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return input;
+      final baked = img.bakeOrientation(decoded);
+
+      const margin = 0.04; // небольшой запас вокруг рамки
+      final left = ((bounds.left - margin) * baked.width).round().clamp(
+        0,
+        baked.width - 2,
+      );
+      final top = ((bounds.top - margin) * baked.height).round().clamp(
+        0,
+        baked.height - 2,
+      );
+      final right = ((bounds.right + margin) * baked.width).round().clamp(
+        left + 1,
+        baked.width,
+      );
+      final bottom = ((bounds.bottom + margin) * baked.height).round().clamp(
+        top + 1,
+        baked.height,
+      );
+      if (right - left < 80 || bottom - top < 80) return input;
+
+      final cropped = img.copyCrop(
+        baked,
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+      );
+      final out = File(
+        '${input.parent.path}/passportframe_'
+        '${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+      await out.writeAsBytes(img.encodeJpg(cropped, quality: 94));
+      return out;
+    } catch (error) {
+      debugPrint('PassportScanner: ошибка кропа по рамке: $error');
+      return input;
+    }
+  }
+
   /// Выровненный кроп может оказаться целым разворотом: страница (1.42) и
   /// разворот (1.41) неотличимы по аспекту. Если через центр кропа проходит
   /// непрерывный сгиб (по любой из осей), отрезаем страницу данных —
@@ -397,12 +446,94 @@ class PassportScanner {
         return count == 0 ? 0 : sum / count;
       }
 
+      // Скор MRZ-полосы: строки OCR-B дают плотную равномерную полосу
+      // сильных перепадов почти на всю длину строки. Ориентация текста на
+      // кропе неизвестна — проверяем обе и берём максимум.
+      double mrzScore(int x0, int y0, int x1, int y1) {
+        final xa = x0 + ((x1 - x0) * 0.06).round();
+        final xb = x1 - ((x1 - x0) * 0.06).round();
+        final ya = y0 + ((y1 - y0) * 0.06).round();
+        final yb = y1 - ((y1 - y0) * 0.06).round();
+        if (xb - xa < 16 || yb - ya < 16) return 0;
+        const threshold = 16;
+
+        double lineCoverage(int pos, {required bool verticalText}) {
+          var strong = 0;
+          var samples = 0;
+          if (verticalText) {
+            for (int y = ya; y <= yb; y += 2) {
+              if ((lumaAt(pos, y + 2) - lumaAt(pos, y - 2)).abs() >=
+                  threshold) {
+                strong++;
+              }
+              samples++;
+            }
+          } else {
+            for (int x = xa; x <= xb; x += 2) {
+              if ((lumaAt(x + 2, pos) - lumaAt(x - 2, pos)).abs() >=
+                  threshold) {
+                strong++;
+              }
+              samples++;
+            }
+          }
+          return samples == 0 ? 0 : strong / samples;
+        }
+
+        var best = 0.0;
+        for (int y = ya; y + 4 <= yb; y += 2) {
+          final coverage =
+              (lineCoverage(y, verticalText: false) +
+                  lineCoverage(y + 2, verticalText: false) +
+                  lineCoverage(y + 4, verticalText: false)) /
+              3;
+          if (coverage > best) best = coverage;
+        }
+        for (int x = xa; x + 4 <= xb; x += 2) {
+          final coverage =
+              (lineCoverage(x, verticalText: true) +
+                  lineCoverage(x + 2, verticalText: true) +
+                  lineCoverage(x + 4, verticalText: true)) /
+              3;
+          if (coverage > best) best = coverage;
+        }
+        return best;
+      }
+
+      // Выбор половины: сперва MRZ (есть только на странице данных),
+      // при неубедительности — сравнение плотности деталей.
+      bool firstHalfIsDataPage(
+        int ax0,
+        int ay0,
+        int ax1,
+        int ay1,
+        int bx0,
+        int by0,
+        int bx1,
+        int by1,
+      ) {
+        final mrzA = mrzScore(ax0, ay0, ax1, ay1);
+        final mrzB = mrzScore(bx0, by0, bx1, by1);
+        const mrzMin = 0.40;
+        if (mrzA >= mrzMin && mrzA >= mrzB * 1.25) return true;
+        if (mrzB >= mrzMin && mrzB >= mrzA * 1.25) return false;
+        return density(ax0, ay0, ax1, ay1) > density(bx0, by0, bx1, by1);
+      }
+
       // Заход за сгиб на ~1.5%, чтобы не оставлять тёмную полосу шва.
       final overlap = (useVertical ? w : h) * 0.015;
       late final img.Image page;
       if (useVertical) {
-        final firstDenser =
-            density(0, 0, fold.pos, h) > density(fold.pos, 0, w, h);
+        final firstDenser = firstHalfIsDataPage(
+          0,
+          0,
+          fold.pos,
+          h,
+          fold.pos,
+          0,
+          w,
+          h,
+        );
         final cut = ((fold.pos + (firstDenser ? overlap : -overlap)) * scale)
             .round()
             .clamp(1, decoded.width - 1);
@@ -422,8 +553,16 @@ class PassportScanner {
                 height: decoded.height,
               );
       } else {
-        final firstDenser =
-            density(0, 0, w, fold.pos) > density(0, fold.pos, w, h);
+        final firstDenser = firstHalfIsDataPage(
+          0,
+          0,
+          w,
+          fold.pos,
+          0,
+          fold.pos,
+          w,
+          h,
+        );
         final cut = ((fold.pos + (firstDenser ? overlap : -overlap)) * scale)
             .round()
             .clamp(1, decoded.height - 1);

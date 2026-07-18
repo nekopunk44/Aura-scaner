@@ -1391,7 +1391,7 @@ class _CameraScreenState extends State<CameraScreen>
           final foldTop = Offset.lerp(tl, tr, clampedT)!;
           final foldBottom = Offset.lerp(bl, br, clampedT)!;
           const inset = 0.03;
-          final keepRight = _passportRightHalfDenser(
+          final keepRight = _passportKeepRightOfCenterFold(
             quad,
             clampedT,
             foldGray,
@@ -1463,6 +1463,49 @@ class _CameraScreenState extends State<CameraScreen>
     const landscapePageAspect = 1.42;
     final rawFoldLeft = Offset.lerp(tl, bl, foldT)!;
     final rawFoldRight = Offset.lerp(tr, br, foldT)!;
+    // Обычно страница данных — нижняя, но паспорт держат и «вверх ногами».
+    // MRZ решает: если она убедительно в ВЕРХНЕЙ половине — возвращаем
+    // верхнюю страницу (она видна целиком, реконструкция углов не нужна).
+    {
+      final bounds = _quadBounds(quad);
+      final left = (bounds.left * foldWidth).round().clamp(2, foldWidth - 3);
+      final right = (bounds.right * foldWidth).round().clamp(2, foldWidth - 3);
+      final top = (bounds.top * foldHeight).round().clamp(2, foldHeight - 3);
+      final bottom = (bounds.bottom * foldHeight).round().clamp(
+        2,
+        foldHeight - 3,
+      );
+      final foldY = (top + (bottom - top) * foldT).round();
+      final topMrz = _passportMrzBandScore(
+        foldGray,
+        foldWidth,
+        foldHeight,
+        left,
+        right,
+        top,
+        foldY,
+        verticalText: false,
+      );
+      final bottomMrz = _passportMrzBandScore(
+        foldGray,
+        foldWidth,
+        foldHeight,
+        left,
+        right,
+        foldY,
+        bottom,
+        verticalText: false,
+      );
+      if (topMrz >= 0.40 && topMrz >= bottomMrz * 1.25) {
+        final topFoldInset = (rawFoldRight - rawFoldLeft) * sideInset;
+        return <Offset>[
+          Offset.lerp(tl, tr, sideInset)!,
+          Offset.lerp(tr, tl, sideInset)!,
+          rawFoldRight - topFoldInset,
+          rawFoldLeft + topFoldInset,
+        ];
+      }
+    }
     final pageFoldWidth = (rawFoldRight - rawFoldLeft).distance;
     final targetPageHeight =
         pageFoldWidth * (image.height / image.width) / landscapePageAspect;
@@ -1627,7 +1670,122 @@ class _CameraScreenState extends State<CameraScreen>
       }
     }
     if (bestX < 0) return null;
+
+    // Настоящий сгиб — «жёлоб»: линия темнее ОБЕИХ сторон. Ступенька
+    // (граница тени или освещения) этот профиль не проходит — защита от
+    // ложной резки одиночной страницы по тени.
+    var valley = 0;
+    var valleySamples = 0;
+    for (int y = y0; y <= y1; y += 2) {
+      final center = gray[y * width + bestX];
+      final leftSide = gray[y * width + (bestX - 6).clamp(0, width - 1)];
+      final rightSide = gray[y * width + (bestX + 6).clamp(0, width - 1)];
+      if (center + 3 <= math.min(leftSide, rightSide)) valley++;
+      valleySamples++;
+    }
+    if (valleySamples == 0 || valley / valleySamples < 0.30) return null;
+
     return ((bestX - left) / boxWidth).clamp(0.0, 1.0);
+  }
+
+  /// Скор MRZ-полосы в прямоугольнике: строки OCR-B дают плотную
+  /// равномерную полосу сильных перепадов почти на всю длину строки.
+  /// [verticalText] — текст повёрнут на 90° (паспорт лежит боком): строки
+  /// MRZ идут вертикально, перепады считаются вдоль колонок.
+  double _passportMrzBandScore(
+    List<int> gray,
+    int width,
+    int height,
+    int x0,
+    int x1,
+    int y0,
+    int y1, {
+    required bool verticalText,
+  }) {
+    final xa = (x0 + (x1 - x0) * 0.06).round().clamp(2, width - 3);
+    final xb = (x1 - (x1 - x0) * 0.06).round().clamp(2, width - 3);
+    final ya = (y0 + (y1 - y0) * 0.06).round().clamp(2, height - 3);
+    final yb = (y1 - (y1 - y0) * 0.06).round().clamp(2, height - 3);
+    if (xb - xa < 16 || yb - ya < 16) return 0;
+    const threshold = 16;
+
+    double lineCoverage(int linePos) {
+      var strong = 0;
+      var samples = 0;
+      if (verticalText) {
+        // Линия — колонка x=linePos, перепады вдоль Y.
+        for (int y = ya; y <= yb; y += 2) {
+          final a = gray[(y - 2).clamp(0, height - 1) * width + linePos];
+          final b = gray[(y + 2).clamp(0, height - 1) * width + linePos];
+          if ((b - a).abs() >= threshold) strong++;
+          samples++;
+        }
+      } else {
+        // Линия — строка y=linePos, перепады вдоль X.
+        for (int x = xa; x <= xb; x += 2) {
+          final a = gray[linePos * width + (x - 2).clamp(0, width - 1)];
+          final b = gray[linePos * width + (x + 2).clamp(0, width - 1)];
+          if ((b - a).abs() >= threshold) strong++;
+          samples++;
+        }
+      }
+      return samples == 0 ? 0 : strong / samples;
+    }
+
+    final from = verticalText ? xa : ya;
+    final to = verticalText ? xb : yb;
+    var best = 0.0;
+    for (int p = from; p + 4 <= to; p += 2) {
+      final coverage =
+          (lineCoverage(p) + lineCoverage(p + 2) + lineCoverage(p + 4)) / 3;
+      if (coverage > best) best = coverage;
+    }
+    return best;
+  }
+
+  /// Какую половину горизонтального разворота оставить. Сначала — надёжный
+  /// признак: MRZ есть ТОЛЬКО на странице данных (при боковой укладке её
+  /// строки вертикальны). Если MRZ не убедительна ни с одной стороны —
+  /// фолбэк на сравнение плотности деталей.
+  bool _passportKeepRightOfCenterFold(
+    List<Offset> quad,
+    double foldT,
+    List<int> gray,
+    int width,
+    int height,
+  ) {
+    final bounds = _quadBounds(quad);
+    final left = (bounds.left * width).round().clamp(2, width - 3);
+    final right = (bounds.right * width).round().clamp(2, width - 3);
+    final top = (bounds.top * height).round().clamp(2, height - 3);
+    final bottom = (bounds.bottom * height).round().clamp(2, height - 3);
+    final foldX = (left + (right - left) * foldT).round();
+
+    final leftMrz = _passportMrzBandScore(
+      gray,
+      width,
+      height,
+      left,
+      foldX,
+      top,
+      bottom,
+      verticalText: true,
+    );
+    final rightMrz = _passportMrzBandScore(
+      gray,
+      width,
+      height,
+      foldX,
+      right,
+      top,
+      bottom,
+      verticalText: true,
+    );
+    const mrzMin = 0.40;
+    if (rightMrz >= mrzMin && rightMrz >= leftMrz * 1.25) return true;
+    if (leftMrz >= mrzMin && leftMrz >= rightMrz * 1.25) return false;
+
+    return _passportRightHalfDenser(quad, foldT, gray, width, height);
   }
 
   /// true — правая (относительно сгиба) половина кандидата содержит больше
@@ -2916,7 +3074,17 @@ class _CameraScreenState extends State<CameraScreen>
 
   Future<XFile> _autoCropPassportXFile(XFile file) async {
     final croppedFile = await PassportScanner.autoCrop(File(file.path));
-    return XFile(croppedFile.path);
+    if (croppedFile.path != file.path) return XFile(croppedFile.path);
+    // Сканер не нашёл страницу на снимке (и сегментация, и поиск по краям
+    // промахнулись). Последний рубеж — кроп по live-рамке, зафиксированной
+    // в момент нажатия затвора: лучше кадр по рамке, чем весь фон целиком.
+    final bounds = _captureFrameBounds ?? _autoFrameBounds[Feat.passport];
+    if (bounds == null) return file;
+    final fallback = await PassportScanner.cropByNormalizedRect(
+      File(file.path),
+      bounds,
+    );
+    return XFile(fallback.path);
   }
 
   Future<XFile> _autoCropDocumentXFile(XFile file) async {
