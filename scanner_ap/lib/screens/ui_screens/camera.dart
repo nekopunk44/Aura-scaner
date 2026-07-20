@@ -982,10 +982,79 @@ class _CameraScreenState extends State<CameraScreen>
     _passportFillCalmFrames++;
     if (_passportFillCalmFrames < 3) return null;
 
-    final double l = left / targetWidth;
-    final double r = right / targetWidth;
-    final double t = top / targetHeight;
-    final double b = bottom / targetHeight;
+    // Уточняем границы: страница светлее окружения — берём максимальный
+    // непрерывный блок «бумажных» столбцов и строк внутри выреза, чтобы
+    // рамка обтягивала именно страницу, а не весь вырез.
+    (int, int)? paperRun(int from, int to, double Function(int) share) {
+      var bestStart = -1;
+      var bestLen = 0;
+      var curStart = -1;
+      var curLen = 0;
+      for (int p = from; p <= to; p += 2) {
+        if (share(p) >= 0.55) {
+          if (curStart < 0) curStart = p;
+          curLen += 2;
+          if (curLen > bestLen) {
+            bestLen = curLen;
+            bestStart = curStart;
+          }
+        } else {
+          curStart = -1;
+          curLen = 0;
+        }
+      }
+      if (bestStart < 0 || bestLen < 20) return null;
+      return (bestStart, bestStart + bestLen);
+    }
+
+    double colShare(int x) {
+      var paper = 0;
+      var n = 0;
+      for (int y = top; y <= bottom; y += 2) {
+        if (gray[y * targetWidth + x] >= 120) paper++;
+        n++;
+      }
+      return n == 0 ? 0 : paper / n;
+    }
+
+    final colRun = paperRun(left, right, colShare);
+    int pageLeft = left;
+    int pageRight = right;
+    if (colRun != null) {
+      pageLeft = colRun.$1;
+      pageRight = colRun.$2;
+    }
+
+    double rowShare(int y) {
+      var paper = 0;
+      var n = 0;
+      for (int x = pageLeft; x <= pageRight; x += 2) {
+        if (gray[y * targetWidth + x] >= 120) paper++;
+        n++;
+      }
+      return n == 0 ? 0 : paper / n;
+    }
+
+    final rowRun = paperRun(top, bottom, rowShare);
+    int pageTop = top;
+    int pageBottom = bottom;
+    if (rowRun != null) {
+      pageTop = rowRun.$1;
+      pageBottom = rowRun.$2;
+    }
+    // Слишком узкое уточнение (страница «схлопнулась») — не доверяем ему.
+    if ((pageRight - pageLeft) < (right - left) * 0.45 ||
+        (pageBottom - pageTop) < (bottom - top) * 0.35) {
+      pageLeft = left;
+      pageRight = right;
+      pageTop = top;
+      pageBottom = bottom;
+    }
+
+    final double l = pageLeft / targetWidth;
+    final double r = pageRight / targetWidth;
+    final double t = pageTop / targetHeight;
+    final double b = pageBottom / targetHeight;
     return <Offset>[Offset(l, t), Offset(r, t), Offset(r, b), Offset(l, b)];
   }
 
@@ -1237,6 +1306,14 @@ class _CameraScreenState extends State<CameraScreen>
         if (featureName == Feat.passport && !quadFound && searchQuad == null) {
           fillQuad = _passportFillsFrameQuad(image);
           if (fillQuad != null) {
+            // В вырезе может стоять разворот целиком — режем до ОДНОЙ
+            // страницы данных (по сгибу/MRZ), чтобы рамка обтягивала
+            // только её и кроп снимал только её.
+            final dataPage = _passportDataPageFromSpread(fillQuad, image);
+            if (dataPage != null &&
+                _quadLooksLikeFramedDocument(dataPage, image, featureName)) {
+              fillQuad = dataPage;
+            }
             _photoQuad.value = fillQuad;
             _updateAutoFrame(fillQuad, featureName);
           }
