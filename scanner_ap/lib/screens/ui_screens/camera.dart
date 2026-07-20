@@ -925,6 +925,49 @@ class _CameraScreenState extends State<CameraScreen>
     if (brightShare < 0.45) return null;
     // Слишком гладко — пустой пол/стол; слишком шумно — ковёр/фактура.
     if (textDensity < 5 || textDensity > 70) return null;
+
+    // Разделение «бумага против светлого ковра/ламината» по ячейкам:
+    // у страницы есть КРУПНЫЕ ГЛАДКИЕ области (поля, фон) — у ковра
+    // фактура шумит везде; и есть ТЕКСТОВЫЕ ячейки с умеренным градиентом —
+    // у гладкого ламината их нет. Требуем оба признака одновременно.
+    {
+      const int cellsX = 12;
+      const int cellsY = 8;
+      final double cellW = (ix1 - ix0) / cellsX;
+      final double cellH = (iy1 - iy0) / cellsY;
+      var smoothCells = 0;
+      var textCells = 0;
+      var totalCells = 0;
+      for (int gy = 0; gy < cellsY; gy++) {
+        for (int gx = 0; gx < cellsX; gx++) {
+          final int cx0 = (ix0 + gx * cellW).round();
+          final int cx1 = (ix0 + (gx + 1) * cellW).round();
+          final int cy0 = (iy0 + gy * cellH).round();
+          final int cy1 = (iy0 + (gy + 1) * cellH).round();
+          var cellGradient = 0.0;
+          var cellSamples = 0;
+          for (int y = cy0; y < cy1; y += 2) {
+            for (int x = cx0; x < cx1; x += 2) {
+              final horizontal =
+                  (gray[y * targetWidth + (x + 2).clamp(0, targetWidth - 1)] -
+                          gray[y * targetWidth +
+                              (x - 2).clamp(0, targetWidth - 1)])
+                      .abs();
+              cellGradient += horizontal;
+              cellSamples++;
+            }
+          }
+          if (cellSamples == 0) continue;
+          final double avgGradient = cellGradient / cellSamples;
+          totalCells++;
+          if (avgGradient <= 4.5) smoothCells++;
+          if (avgGradient >= 8 && avgGradient <= 45) textCells++;
+        }
+      }
+      if (totalCells == 0) return null;
+      if (smoothCells / totalCells < 0.30) return null; // ковёр: гладких нет
+      if (textCells / totalCells < 0.06) return null; // ламинат: текста нет
+    }
     if (_rectHasThroughEdges(
       gray,
       targetWidth,
@@ -1686,7 +1729,7 @@ class _CameraScreenState extends State<CameraScreen>
     // fallback line search frequently picks the MRZ as the bottom edge, so the
     // lower corners are reconstructed from the standard passport-page aspect
     // rather than copied from that unreliable edge.
-    final foldT = horizontalFoldT.clamp(0.36, 0.64);
+    final foldT = horizontalFoldT.clamp(0.22, 0.74);
     const sideInset = 0.018;
     const landscapePageAspect = 1.42;
     final rawFoldLeft = Offset.lerp(tl, bl, foldT)!;
@@ -1774,10 +1817,13 @@ class _CameraScreenState extends State<CameraScreen>
     final boxHeight = bottom - top;
     if (boxWidth < 24 || boxHeight < 24) return null;
 
+    // Диапазон поиска сгиба расширен (18–70% высоты): на скринах паспорт
+    // держат так, что видимая часть верхней страницы больше нижней, и сгиб
+    // уходит выше прежнего окна 30–62% — тогда разворот не резался.
     final x0 = left + (boxWidth * 0.08).round();
     final x1 = right - (boxWidth * 0.08).round();
-    final y0 = top + (boxHeight * 0.30).round();
-    final y1 = top + (boxHeight * 0.62).round();
+    final y0 = top + (boxHeight * 0.18).round();
+    final y1 = top + (boxHeight * 0.70).round();
     // The fold between two pale passport pages is often only a 4-8 luma
     // transition. A high scene-wide threshold misses it because printed text
     // and a textured floor make the global edge mean much larger.
