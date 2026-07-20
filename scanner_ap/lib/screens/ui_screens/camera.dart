@@ -843,6 +843,104 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
+  /// Сигнал «страница заполняет рамку»: документ крупнее выреза, его
+  /// боковые края за пределами кадра — и контурный детектор, и поиск
+  /// краёв молчат. Гейты жёсткие, чтобы не вернуть ложные срабатывания
+  /// на полу: светлая «бумажная» поверхность, текстовая фактура в
+  /// умеренном диапазоне и отсутствие сквозных линий сцены в вырезе.
+  /// Возвращает квад рамки (нормализованный) или null.
+  List<Offset>? _passportFillsFrameQuad(CameraImage image) {
+    const int targetWidth = 120;
+    final int targetHeight = ((targetWidth * image.width) / image.height)
+        .round()
+        .clamp(150, 280);
+    final gray = _samplePortraitLuma(
+      image,
+      targetWidth: targetWidth,
+      targetHeight: targetHeight,
+    );
+
+    // Геометрия выреза паспорта — синхронно с _cutoutSpecs[Feat.passport].
+    const double widthFactor = 0.85;
+    const double aspect = 1.42;
+    const double verticalAlignment = -0.25;
+    final double frameW = targetWidth * widthFactor;
+    final double frameH = frameW / aspect;
+    final double centerY =
+        targetHeight / 2 + verticalAlignment * (targetHeight / 2 - frameH / 2);
+    final int left = ((targetWidth - frameW) / 2).round().clamp(
+      2,
+      targetWidth - 3,
+    );
+    final int right = (left + frameW).round().clamp(2, targetWidth - 3);
+    final int top = (centerY - frameH / 2).round().clamp(2, targetHeight - 3);
+    final int bottom = (centerY + frameH / 2).round().clamp(
+      2,
+      targetHeight - 3,
+    );
+    if (right - left < 30 || bottom - top < 20) return null;
+
+    // Метрики по внутренней области (инсет 8% — края выреза не цепляем).
+    final int ix0 = left + ((right - left) * 0.08).round();
+    final int ix1 = right - ((right - left) * 0.08).round();
+    final int iy0 = top + ((bottom - top) * 0.08).round();
+    final int iy1 = bottom - ((bottom - top) * 0.08).round();
+
+    var lumaSum = 0;
+    var bright = 0;
+    var count = 0;
+    var gradientSum = 0.0;
+    var gradientCount = 0;
+    for (int y = iy0; y <= iy1; y += 2) {
+      for (int x = ix0; x <= ix1; x += 2) {
+        final luma = gray[y * targetWidth + x];
+        lumaSum += luma;
+        if (luma >= 140) bright++;
+        count++;
+      }
+    }
+    for (int y = iy0; y <= iy1; y += 3) {
+      for (int x = ix0; x <= ix1; x += 3) {
+        final horizontal =
+            (gray[y * targetWidth + (x + 2).clamp(0, targetWidth - 1)] -
+                    gray[y * targetWidth + (x - 2).clamp(0, targetWidth - 1)])
+                .abs();
+        final vertical =
+            (gray[(y + 2).clamp(0, targetHeight - 1) * targetWidth + x] -
+                    gray[(y - 2).clamp(0, targetHeight - 1) * targetWidth + x])
+                .abs();
+        gradientSum += horizontal + vertical;
+        gradientCount++;
+      }
+    }
+    if (count == 0 || gradientCount == 0) return null;
+
+    final double mean = lumaSum / count;
+    final double brightShare = bright / count;
+    final double textDensity = gradientSum / gradientCount;
+    if (mean < 112) return null;
+    if (brightShare < 0.45) return null;
+    // Слишком гладко — пустой пол/стол; слишком шумно — ковёр/фактура.
+    if (textDensity < 5 || textDensity > 70) return null;
+    if (_rectHasThroughEdges(
+      gray,
+      targetWidth,
+      targetHeight,
+      left,
+      top,
+      right,
+      bottom,
+    )) {
+      return null;
+    }
+
+    final double l = left / targetWidth;
+    final double r = right / targetWidth;
+    final double t = top / targetHeight;
+    final double b = bottom / targetHeight;
+    return <Offset>[Offset(l, t), Offset(r, t), Offset(r, b), Offset(l, b)];
+  }
+
   bool _passportGeometryIsStable(List<Offset> quad) {
     final next = _quadBounds(quad);
     final previous = _previousPassportFallbackBounds;
@@ -1082,8 +1180,24 @@ class _CameraScreenState extends State<CameraScreen>
           _photoQuad.value = searchQuad;
           _updateAutoFrame(searchQuad, featureName);
         }
-        final hasPassportCandidate = quadFound || searchQuad != null;
-        final passportCandidate = quadFound ? _photoQuad.value : searchQuad;
+        //  3) страница КРУПНЕЕ рамки: боковые края за пределами кадра, и
+        //     контур, и поиск краёв молчат. Если вырез рамки заполнен
+        //     светлой «бумагой» с текстовой фактурой и без сквозных линий
+        //     сцены — считаем это страницей и берём рамку как контур
+        //     (снимок кропнется по ней же).
+        List<Offset>? fillQuad;
+        if (featureName == Feat.passport && !quadFound && searchQuad == null) {
+          fillQuad = _passportFillsFrameQuad(image);
+          if (fillQuad != null) {
+            _photoQuad.value = fillQuad;
+            _updateAutoFrame(fillQuad, featureName);
+          }
+        }
+        final hasPassportCandidate =
+            quadFound || searchQuad != null || fillQuad != null;
+        final passportCandidate = quadFound
+            ? _photoQuad.value
+            : (searchQuad ?? fillQuad);
         final passportGeometryStable =
             featureName != Feat.passport ||
             (passportCandidate != null &&
