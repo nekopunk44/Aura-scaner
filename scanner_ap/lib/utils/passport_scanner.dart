@@ -308,48 +308,16 @@ class PassportScanner {
   /// ориентации кадра). Последний рубеж, когда ни сегментация, ни поиск по
   /// краям не нашли страницу на снимке: лучше кадр по рамке, чем весь фон.
   static Future<File> cropByNormalizedRect(File input, Rect bounds) async {
-    try {
-      final bytes = await input.readAsBytes();
-      final decoded = img.decodeImage(bytes);
-      if (decoded == null) return input;
-      final baked = img.bakeOrientation(decoded);
-
-      const margin = 0.04; // небольшой запас вокруг рамки
-      final left = ((bounds.left - margin) * baked.width).round().clamp(
-        0,
-        baked.width - 2,
-      );
-      final top = ((bounds.top - margin) * baked.height).round().clamp(
-        0,
-        baked.height - 2,
-      );
-      final right = ((bounds.right + margin) * baked.width).round().clamp(
-        left + 1,
-        baked.width,
-      );
-      final bottom = ((bounds.bottom + margin) * baked.height).round().clamp(
-        top + 1,
-        baked.height,
-      );
-      if (right - left < 80 || bottom - top < 80) return input;
-
-      final cropped = img.copyCrop(
-        baked,
-        x: left,
-        y: top,
-        width: right - left,
-        height: bottom - top,
-      );
-      final out = File(
-        '${input.parent.path}/passportframe_'
-        '${DateTime.now().millisecondsSinceEpoch}.jpg',
-      );
-      await out.writeAsBytes(img.encodeJpg(cropped, quality: 94));
-      return out;
-    } catch (error) {
-      debugPrint('PassportScanner: ошибка кропа по рамке: $error');
-      return input;
-    }
+    // Декод/кроп/энкод многомегапиксельного JPEG — тяжёлая CPU-работа:
+    // выполняется в фоновом изоляте, чтобы интерфейс не замирал.
+    final resultPath = await compute(_cropByRectWorker, (
+      input.path,
+      bounds.left,
+      bounds.top,
+      bounds.right,
+      bounds.bottom,
+    ));
+    return resultPath == null ? input : File(resultPath);
   }
 
   /// Выровненный кроп может оказаться целым разворотом: страница (1.42) и
@@ -358,240 +326,284 @@ class PassportScanner {
   /// половину с большей плотностью деталей (портрет + MRZ «шумнее»
   /// соседней визовой страницы). Синхронизировано с live-рамкой камеры.
   static Future<File> _splitSpreadIfNeeded(File cropped) async {
-    try {
-      final bytes = await cropped.readAsBytes();
-      final decoded = img.decodeImage(bytes);
-      if (decoded == null) return cropped;
+    // Анализ сгиба и перекодирование — в фоновом изоляте.
+    final resultPath = await compute(_splitSpreadWorker, cropped.path);
+    return resultPath == null ? cropped : File(resultPath);
+  }
+}
 
-      const analysisWidth = 360;
-      final small = img.grayscale(
-        img.copyResize(decoded, width: analysisWidth),
-      );
-      final w = small.width;
-      final h = small.height;
-      final scale = decoded.width / w; // ресайз пропорциональный: общий у осей
+/// Фоновая часть [PassportScanner.cropByNormalizedRect] (изолят).
+String? _cropByRectWorker((String, double, double, double, double) args) {
+  final (path, boundsLeft, boundsTop, boundsRight, boundsBottom) = args;
+  try {
+    final bytes = File(path).readAsBytesSync();
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return null;
+    final baked = img.bakeOrientation(decoded);
 
-      int lumaAt(int x, int y) =>
-          small.getPixel(x.clamp(0, w - 1), y.clamp(0, h - 1)).r.toInt();
+    const margin = 0.04; // небольшой запас вокруг рамки
+    final left = ((boundsLeft - margin) * baked.width).round().clamp(
+      0,
+      baked.width - 2,
+    );
+    final top = ((boundsTop - margin) * baked.height).round().clamp(
+      0,
+      baked.height - 2,
+    );
+    final right = ((boundsRight + margin) * baked.width).round().clamp(
+      left + 1,
+      baked.width,
+    );
+    final bottom = ((boundsBottom + margin) * baked.height).round().clamp(
+      top + 1,
+      baked.height,
+    );
+    if (right - left < 80 || bottom - top < 80) return null;
 
-      // Лучшая непрерывная линия в центральной полосе (42–58%) вдоль оси.
-      ({int pos, double score})? bestFold({required bool verticalLine}) {
-        final primary = verticalLine ? w : h;
-        final secondary = verticalLine ? h : w;
-        final from = (primary * 0.42).round();
-        final to = (primary * 0.58).round();
-        final s0 = (secondary * 0.08).round();
-        final s1 = (secondary * 0.92).round();
-        ({int pos, double score})? best;
-        for (int p = from; p <= to; p += 2) {
-          var strong = 0;
-          var run = 0;
-          var longestRun = 0;
-          var gap = 0;
-          var samples = 0;
-          for (int s = s0; s <= s1; s += 2) {
-            final a = verticalLine ? lumaAt(p - 2, s) : lumaAt(s, p - 2);
-            final b = verticalLine ? lumaAt(p + 2, s) : lumaAt(s, p + 2);
-            // Перепад между бледными страницами мал — порог низкий.
-            if ((b - a).abs() >= 5) {
+    final cropped = img.copyCrop(
+      baked,
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    );
+    final out = File(
+      '${File(path).parent.path}/passportframe_'
+      '${DateTime.now().millisecondsSinceEpoch}.jpg',
+    );
+    out.writeAsBytesSync(img.encodeJpg(cropped, quality: 94));
+    return out.path;
+  } catch (error) {
+    debugPrint('PassportScanner: ошибка кропа по рамке: $error');
+    return null;
+  }
+}
+
+/// Фоновая часть [PassportScanner._splitSpreadIfNeeded] (изолят).
+String? _splitSpreadWorker(String croppedPath) {
+  try {
+    final bytes = File(croppedPath).readAsBytesSync();
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return null;
+
+    const analysisWidth = 360;
+    final small = img.grayscale(img.copyResize(decoded, width: analysisWidth));
+    final w = small.width;
+    final h = small.height;
+    final scale = decoded.width / w; // ресайз пропорциональный: общий у осей
+
+    int lumaAt(int x, int y) =>
+        small.getPixel(x.clamp(0, w - 1), y.clamp(0, h - 1)).r.toInt();
+
+    // Лучшая непрерывная линия в центральной полосе (42–58%) вдоль оси.
+    ({int pos, double score})? bestFold({required bool verticalLine}) {
+      final primary = verticalLine ? w : h;
+      final secondary = verticalLine ? h : w;
+      final from = (primary * 0.42).round();
+      final to = (primary * 0.58).round();
+      final s0 = (secondary * 0.08).round();
+      final s1 = (secondary * 0.92).round();
+      ({int pos, double score})? best;
+      for (int p = from; p <= to; p += 2) {
+        var strong = 0;
+        var run = 0;
+        var longestRun = 0;
+        var gap = 0;
+        var samples = 0;
+        for (int s = s0; s <= s1; s += 2) {
+          final a = verticalLine ? lumaAt(p - 2, s) : lumaAt(s, p - 2);
+          final b = verticalLine ? lumaAt(p + 2, s) : lumaAt(s, p + 2);
+          // Перепад между бледными страницами мал — порог низкий.
+          if ((b - a).abs() >= 5) {
+            strong++;
+            run++;
+            gap = 0;
+            longestRun = math.max(longestRun, run);
+          } else if (run > 0 && gap < 2) {
+            run++;
+            gap++;
+          } else {
+            run = 0;
+            gap = 0;
+          }
+          samples++;
+        }
+        if (samples == 0) continue;
+        final coverage = strong / samples;
+        final runRatio = longestRun / samples;
+        if (coverage < 0.30 || runRatio < 0.25) continue;
+        final score = coverage * 0.65 + runRatio * 0.35;
+        if (best == null || score > best.score) {
+          best = (pos: p, score: score);
+        }
+      }
+      return best;
+    }
+
+    final vertical = bestFold(verticalLine: true);
+    final horizontal = bestFold(verticalLine: false);
+    final useVertical =
+        vertical != null &&
+        (horizontal == null || vertical.score >= horizontal.score);
+    final fold = useVertical ? vertical : horizontal;
+    if (fold == null) return null;
+
+    double density(int x0, int y0, int x1, int y1) {
+      final xa = x0 + ((x1 - x0) * 0.08).round();
+      final xb = x1 - ((x1 - x0) * 0.08).round();
+      final ya = y0 + ((y1 - y0) * 0.10).round();
+      final yb = y1 - ((y1 - y0) * 0.10).round();
+      if (xb - xa < 8 || yb - ya < 8) return 0;
+      var sum = 0.0;
+      var count = 0;
+      for (int y = ya; y <= yb; y += 3) {
+        for (int x = xa; x <= xb; x += 3) {
+          sum +=
+              (lumaAt(x + 2, y) - lumaAt(x - 2, y)).abs() +
+              (lumaAt(x, y + 2) - lumaAt(x, y - 2)).abs();
+          count++;
+        }
+      }
+      return count == 0 ? 0 : sum / count;
+    }
+
+    // Скор MRZ-полосы: строки OCR-B дают плотную равномерную полосу
+    // сильных перепадов почти на всю длину строки. Ориентация текста на
+    // кропе неизвестна — проверяем обе и берём максимум.
+    double mrzScore(int x0, int y0, int x1, int y1) {
+      final xa = x0 + ((x1 - x0) * 0.06).round();
+      final xb = x1 - ((x1 - x0) * 0.06).round();
+      final ya = y0 + ((y1 - y0) * 0.06).round();
+      final yb = y1 - ((y1 - y0) * 0.06).round();
+      if (xb - xa < 16 || yb - ya < 16) return 0;
+      const threshold = 16;
+
+      double lineCoverage(int pos, {required bool verticalText}) {
+        var strong = 0;
+        var samples = 0;
+        if (verticalText) {
+          for (int y = ya; y <= yb; y += 2) {
+            if ((lumaAt(pos, y + 2) - lumaAt(pos, y - 2)).abs() >= threshold) {
               strong++;
-              run++;
-              gap = 0;
-              longestRun = math.max(longestRun, run);
-            } else if (run > 0 && gap < 2) {
-              run++;
-              gap++;
-            } else {
-              run = 0;
-              gap = 0;
             }
             samples++;
           }
-          if (samples == 0) continue;
-          final coverage = strong / samples;
-          final runRatio = longestRun / samples;
-          if (coverage < 0.30 || runRatio < 0.25) continue;
-          final score = coverage * 0.65 + runRatio * 0.35;
-          if (best == null || score > best.score) {
-            best = (pos: p, score: score);
-          }
-        }
-        return best;
-      }
-
-      final vertical = bestFold(verticalLine: true);
-      final horizontal = bestFold(verticalLine: false);
-      final useVertical =
-          vertical != null &&
-          (horizontal == null || vertical.score >= horizontal.score);
-      final fold = useVertical ? vertical : horizontal;
-      if (fold == null) return cropped;
-
-      double density(int x0, int y0, int x1, int y1) {
-        final xa = x0 + ((x1 - x0) * 0.08).round();
-        final xb = x1 - ((x1 - x0) * 0.08).round();
-        final ya = y0 + ((y1 - y0) * 0.10).round();
-        final yb = y1 - ((y1 - y0) * 0.10).round();
-        if (xb - xa < 8 || yb - ya < 8) return 0;
-        var sum = 0.0;
-        var count = 0;
-        for (int y = ya; y <= yb; y += 3) {
-          for (int x = xa; x <= xb; x += 3) {
-            sum +=
-                (lumaAt(x + 2, y) - lumaAt(x - 2, y)).abs() +
-                (lumaAt(x, y + 2) - lumaAt(x, y - 2)).abs();
-            count++;
-          }
-        }
-        return count == 0 ? 0 : sum / count;
-      }
-
-      // Скор MRZ-полосы: строки OCR-B дают плотную равномерную полосу
-      // сильных перепадов почти на всю длину строки. Ориентация текста на
-      // кропе неизвестна — проверяем обе и берём максимум.
-      double mrzScore(int x0, int y0, int x1, int y1) {
-        final xa = x0 + ((x1 - x0) * 0.06).round();
-        final xb = x1 - ((x1 - x0) * 0.06).round();
-        final ya = y0 + ((y1 - y0) * 0.06).round();
-        final yb = y1 - ((y1 - y0) * 0.06).round();
-        if (xb - xa < 16 || yb - ya < 16) return 0;
-        const threshold = 16;
-
-        double lineCoverage(int pos, {required bool verticalText}) {
-          var strong = 0;
-          var samples = 0;
-          if (verticalText) {
-            for (int y = ya; y <= yb; y += 2) {
-              if ((lumaAt(pos, y + 2) - lumaAt(pos, y - 2)).abs() >=
-                  threshold) {
-                strong++;
-              }
-              samples++;
+        } else {
+          for (int x = xa; x <= xb; x += 2) {
+            if ((lumaAt(x + 2, pos) - lumaAt(x - 2, pos)).abs() >= threshold) {
+              strong++;
             }
-          } else {
-            for (int x = xa; x <= xb; x += 2) {
-              if ((lumaAt(x + 2, pos) - lumaAt(x - 2, pos)).abs() >=
-                  threshold) {
-                strong++;
-              }
-              samples++;
-            }
+            samples++;
           }
-          return samples == 0 ? 0 : strong / samples;
         }
-
-        var best = 0.0;
-        for (int y = ya; y + 4 <= yb; y += 2) {
-          final coverage =
-              (lineCoverage(y, verticalText: false) +
-                  lineCoverage(y + 2, verticalText: false) +
-                  lineCoverage(y + 4, verticalText: false)) /
-              3;
-          if (coverage > best) best = coverage;
-        }
-        for (int x = xa; x + 4 <= xb; x += 2) {
-          final coverage =
-              (lineCoverage(x, verticalText: true) +
-                  lineCoverage(x + 2, verticalText: true) +
-                  lineCoverage(x + 4, verticalText: true)) /
-              3;
-          if (coverage > best) best = coverage;
-        }
-        return best;
+        return samples == 0 ? 0 : strong / samples;
       }
 
-      // Выбор половины: сперва MRZ (есть только на странице данных),
-      // при неубедительности — сравнение плотности деталей.
-      bool firstHalfIsDataPage(
-        int ax0,
-        int ay0,
-        int ax1,
-        int ay1,
-        int bx0,
-        int by0,
-        int bx1,
-        int by1,
-      ) {
-        final mrzA = mrzScore(ax0, ay0, ax1, ay1);
-        final mrzB = mrzScore(bx0, by0, bx1, by1);
-        const mrzMin = 0.40;
-        if (mrzA >= mrzMin && mrzA >= mrzB * 1.25) return true;
-        if (mrzB >= mrzMin && mrzB >= mrzA * 1.25) return false;
-        return density(ax0, ay0, ax1, ay1) > density(bx0, by0, bx1, by1);
+      var best = 0.0;
+      for (int y = ya; y + 4 <= yb; y += 2) {
+        final coverage =
+            (lineCoverage(y, verticalText: false) +
+                lineCoverage(y + 2, verticalText: false) +
+                lineCoverage(y + 4, verticalText: false)) /
+            3;
+        if (coverage > best) best = coverage;
       }
-
-      // Заход за сгиб на ~1.5%, чтобы не оставлять тёмную полосу шва.
-      final overlap = (useVertical ? w : h) * 0.015;
-      late final img.Image page;
-      if (useVertical) {
-        final firstDenser = firstHalfIsDataPage(
-          0,
-          0,
-          fold.pos,
-          h,
-          fold.pos,
-          0,
-          w,
-          h,
-        );
-        final cut = ((fold.pos + (firstDenser ? overlap : -overlap)) * scale)
-            .round()
-            .clamp(1, decoded.width - 1);
-        page = firstDenser
-            ? img.copyCrop(
-                decoded,
-                x: 0,
-                y: 0,
-                width: cut,
-                height: decoded.height,
-              )
-            : img.copyCrop(
-                decoded,
-                x: cut,
-                y: 0,
-                width: decoded.width - cut,
-                height: decoded.height,
-              );
-      } else {
-        final firstDenser = firstHalfIsDataPage(
-          0,
-          0,
-          w,
-          fold.pos,
-          0,
-          fold.pos,
-          w,
-          h,
-        );
-        final cut = ((fold.pos + (firstDenser ? overlap : -overlap)) * scale)
-            .round()
-            .clamp(1, decoded.height - 1);
-        page = firstDenser
-            ? img.copyCrop(
-                decoded,
-                x: 0,
-                y: 0,
-                width: decoded.width,
-                height: cut,
-              )
-            : img.copyCrop(
-                decoded,
-                x: 0,
-                y: cut,
-                width: decoded.width,
-                height: decoded.height - cut,
-              );
+      for (int x = xa; x + 4 <= xb; x += 2) {
+        final coverage =
+            (lineCoverage(x, verticalText: true) +
+                lineCoverage(x + 2, verticalText: true) +
+                lineCoverage(x + 4, verticalText: true)) /
+            3;
+        if (coverage > best) best = coverage;
       }
-
-      final out = File(
-        '${cropped.parent.path}/passportpage_'
-        '${DateTime.now().millisecondsSinceEpoch}.jpg',
-      );
-      await out.writeAsBytes(img.encodeJpg(page, quality: 94));
-      return out;
-    } catch (error) {
-      debugPrint('PassportScanner: ошибка резки разворота: $error');
-      return cropped;
+      return best;
     }
+
+    // Выбор половины: сперва MRZ (есть только на странице данных),
+    // при неубедительности — сравнение плотности деталей.
+    bool firstHalfIsDataPage(
+      int ax0,
+      int ay0,
+      int ax1,
+      int ay1,
+      int bx0,
+      int by0,
+      int bx1,
+      int by1,
+    ) {
+      final mrzA = mrzScore(ax0, ay0, ax1, ay1);
+      final mrzB = mrzScore(bx0, by0, bx1, by1);
+      const mrzMin = 0.40;
+      if (mrzA >= mrzMin && mrzA >= mrzB * 1.25) return true;
+      if (mrzB >= mrzMin && mrzB >= mrzA * 1.25) return false;
+      return density(ax0, ay0, ax1, ay1) > density(bx0, by0, bx1, by1);
+    }
+
+    // Заход за сгиб на ~1.5%, чтобы не оставлять тёмную полосу шва.
+    final overlap = (useVertical ? w : h) * 0.015;
+    late final img.Image page;
+    if (useVertical) {
+      final firstDenser = firstHalfIsDataPage(
+        0,
+        0,
+        fold.pos,
+        h,
+        fold.pos,
+        0,
+        w,
+        h,
+      );
+      final cut = ((fold.pos + (firstDenser ? overlap : -overlap)) * scale)
+          .round()
+          .clamp(1, decoded.width - 1);
+      page = firstDenser
+          ? img.copyCrop(
+              decoded,
+              x: 0,
+              y: 0,
+              width: cut,
+              height: decoded.height,
+            )
+          : img.copyCrop(
+              decoded,
+              x: cut,
+              y: 0,
+              width: decoded.width - cut,
+              height: decoded.height,
+            );
+    } else {
+      final firstDenser = firstHalfIsDataPage(
+        0,
+        0,
+        w,
+        fold.pos,
+        0,
+        fold.pos,
+        w,
+        h,
+      );
+      final cut = ((fold.pos + (firstDenser ? overlap : -overlap)) * scale)
+          .round()
+          .clamp(1, decoded.height - 1);
+      page = firstDenser
+          ? img.copyCrop(decoded, x: 0, y: 0, width: decoded.width, height: cut)
+          : img.copyCrop(
+              decoded,
+              x: 0,
+              y: cut,
+              width: decoded.width,
+              height: decoded.height - cut,
+            );
+    }
+
+    final out = File(
+      '${File(croppedPath).parent.path}/passportpage_'
+      '${DateTime.now().millisecondsSinceEpoch}.jpg',
+    );
+    out.writeAsBytesSync(img.encodeJpg(page, quality: 94));
+    return out.path;
+  } catch (error) {
+    debugPrint('PassportScanner: ошибка резки разворота: $error');
+    return null;
   }
 }

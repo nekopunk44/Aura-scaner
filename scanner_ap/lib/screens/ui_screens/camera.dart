@@ -359,6 +359,9 @@ class _CameraScreenState extends State<CameraScreen>
   String? _captureFrameFeature;
   Rect? _previousPassportFallbackBounds;
   int _passportFallbackStableFrames = 0;
+  // Детектор покоя сцены для сигнала «страница заполняет рамку».
+  List<double>? _passportFillPrevGrid;
+  int _passportFillCalmFrames = 0;
   Rect? _lastPassportCaptureBounds;
   Rect? _passportFrameRect;
   double _passportManualAngle = 0;
@@ -933,6 +936,51 @@ class _CameraScreenState extends State<CameraScreen>
     )) {
       return null;
     }
+
+    // Квад этого сигнала — сама рамка, геометрически он «стабилен» всегда,
+    // поэтому обычная проверка стабильности проходит мгновенно, даже пока
+    // паспорт ещё двигают. Снимаем только по НЕПОДВИЖНОЙ сцене: грубая
+    // сетка яркостей выреза сравнивается с прошлым кадром, движение
+    // сбрасывает счётчик покоя.
+    const int gridW = 12;
+    const int gridH = 8;
+    final grid = List<double>.filled(gridW * gridH, 0);
+    final double cellW = (ix1 - ix0) / gridW;
+    final double cellH = (iy1 - iy0) / gridH;
+    for (int gy = 0; gy < gridH; gy++) {
+      for (int gx = 0; gx < gridW; gx++) {
+        var sum = 0;
+        var n = 0;
+        final int cx0 = (ix0 + gx * cellW).round();
+        final int cx1 = (ix0 + (gx + 1) * cellW).round();
+        final int cy0 = (iy0 + gy * cellH).round();
+        final int cy1 = (iy0 + (gy + 1) * cellH).round();
+        for (int y = cy0; y < cy1; y += 2) {
+          for (int x = cx0; x < cx1; x += 2) {
+            sum += gray[y * targetWidth + x];
+            n++;
+          }
+        }
+        grid[gy * gridW + gx] = n == 0 ? 0 : sum / n;
+      }
+    }
+    final prev = _passportFillPrevGrid;
+    _passportFillPrevGrid = grid;
+    if (prev == null) {
+      _passportFillCalmFrames = 0;
+      return null;
+    }
+    var diff = 0.0;
+    for (var i = 0; i < grid.length; i++) {
+      diff += (grid[i] - prev[i]).abs();
+    }
+    diff /= grid.length;
+    if (diff > 5.5) {
+      _passportFillCalmFrames = 0;
+      return null;
+    }
+    _passportFillCalmFrames++;
+    if (_passportFillCalmFrames < 3) return null;
 
     final double l = left / targetWidth;
     final double r = right / targetWidth;
