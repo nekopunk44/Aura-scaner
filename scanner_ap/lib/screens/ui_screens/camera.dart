@@ -30,11 +30,8 @@ import 'package:flutter_doc_scanner/flutter_doc_scanner.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
-import 'package:scanbot_sdk/document_api.dart' as sb_doc;
-import 'package:scanbot_sdk/scanbot_sdk_ui_v2.dart' as sb;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
-import '../../config/scanbot_config.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'camera_features.dart';
 import 'capture_modes.dart';
@@ -408,8 +405,6 @@ class _CameraScreenState extends State<CameraScreen>
 
   bool _isDocumentDetected = false;
   bool _isScanning = false;
-  bool _isScanbotPassportActive = false;
-  bool _scanbotPassportRetakeRequested = false;
   // Стабилизация детекции документа: считаем подряд кадры с найденным/потерянным
   // контуром, чтобы не реагировать на дрожь и не снимать раньше времени.
   int _quadFoundFrames = 0;
@@ -557,7 +552,6 @@ class _CameraScreenState extends State<CameraScreen>
         unawaited(_disposeCameraController());
       }
     } else if (state == AppLifecycleState.resumed) {
-      if (_isScanbotPassportActive) return;
       // Камера могла быть выгружена, когда системная галерея/share/etc.
       // перевели приложение в фон. На resumed всегда восстанавливаем —
       // и, если активен режим QR, заново запускаем сканирование.
@@ -692,10 +686,7 @@ class _CameraScreenState extends State<CameraScreen>
       captureModeController.isScanning = false;
     });
 
-    if (_selectedFeature == Feat.passport) {
-      unawaited(_startScanbotPassportScan());
-    } else if (_selectedFeature != Feat.translate &&
-        _selectedFeature != Feat.ocr) {
+    if (_selectedFeature != Feat.translate && _selectedFeature != Feat.ocr) {
       _startDocumentDetectionStream();
     } else {
       unawaited(_stopLiveDocumentDetection());
@@ -707,9 +698,7 @@ class _CameraScreenState extends State<CameraScreen>
       _captureFrameBounds = null;
       _captureFrameFeature = null;
     }
-    if ((_selectedFeature == Feat.passport &&
-            captureModeController.captureMode == 'Автоматически') ||
-        _selectedFeature == Feat.qrScanner ||
+    if (_selectedFeature == Feat.qrScanner ||
         _selectedFeature == Feat.translate ||
         _selectedFeature == Feat.ocr) {
       unawaited(_stopLiveDocumentDetection());
@@ -3096,200 +3085,6 @@ class _CameraScreenState extends State<CameraScreen>
   /// Пользователь снимает до [_passportMaxPages] страниц, затем жмёт галочку.
   static const int _passportMaxPages = 7;
 
-  sb.DocumentScanningFlow _scanbotPassportConfiguration(int pageLimit) {
-    final configuration = sb.DocumentScanningFlow();
-
-    configuration.palette
-      ..sbColorPrimary = sb.ScanbotColor('#16C784')
-      ..sbColorPositive = sb.ScanbotColor('#16C784')
-      ..sbColorSecondary = sb.ScanbotColor('#DDF8EC')
-      ..sbColorOnSecondary = sb.ScanbotColor('#087A50');
-
-    configuration.outputSettings
-      ..pagesScanLimit = pageLimit
-      ..documentImageSizeLimit = 0;
-
-    final camera = configuration.screens.camera;
-    camera
-      ..autoRotateImages = true
-      ..openReviewAfterEachScan = false;
-    camera.cameraConfiguration
-      ..autoSnappingEnabled = true
-      // Даём контуру стабилизироваться перед автоматическим снимком.
-      ..autoSnappingSensitivity = 0.45
-      ..autoSnappingDelay = 700
-      ..touchToFocusEnabled = true
-      ..captureQualityPrioritization =
-          sb.CapturePhotoQualityPrioritization.QUALITY
-      ..fpsLimit = 20;
-    camera.scannerParameters
-      // Для паспорта важнее принять страницу на комфортном расстоянии,
-      // чем заставлять пользователя доводить её до краёв экрана.
-      ..acceptedSizeScore = 55
-      ..acceptedAngleScore = 65
-      // Паспортные страницы встречаются в обеих ориентациях и пропорциях.
-      ..acceptedAspectRatioScore = 0
-      ..ignoreOrientationMismatch = true;
-    camera.acknowledgement.acknowledgementMode = sb.AcknowledgementMode.ALWAYS;
-    camera.introduction.showAutomatically = false;
-    configuration.screens.review
-      ..enabled = true
-      ..showLastPageWhenAdding = true;
-
-    final text = configuration.localization;
-    text
-      ..cameraTopBarTitle = 'Паспорт'
-      ..cameraTopGuidance = 'Сканируйте страницы паспорта по очереди'
-      ..cameraUserGuidanceStart = 'Наведите камеру на страницу паспорта'
-      ..cameraUserGuidanceNoDocumentFound = 'Страница не найдена'
-      ..cameraUserGuidanceBadAspectRatio = 'Покажите страницу целиком'
-      ..cameraUserGuidanceOrientationMismatch =
-          'Поверните устройство к странице'
-      ..cameraUserGuidanceBadAngles = 'Держите камеру параллельно странице'
-      ..cameraUserGuidanceTooNoisy = 'Используйте более однородный фон'
-      ..cameraUserGuidanceTextHintOffCenter = 'Поместите страницу по центру'
-      ..cameraUserGuidanceTooSmall = 'Поднесите камеру немного ближе'
-      ..cameraUserGuidanceTooDark = 'Добавьте освещение'
-      ..cameraUserGuidanceReadyToCapture = 'Не двигайте устройство'
-      ..cameraUserGuidanceReadyToCaptureManual = 'Страница готова к снимку'
-      ..cameraAutoSnapButtonTitle = 'Авто'
-      ..cameraManualSnapButtonTitle = 'Ручн.'
-      ..cameraPreviewButtonTitle = '%d стр.'
-      ..cameraTopBarCancelButtonTitle = 'Отмена'
-      ..cameraProgressOverlayTitle = 'Обработка…'
-      ..acknowledgementRetakeButtonTitle = 'Переснять'
-      ..acknowledgementAcceptButtonTitle = 'Использовать'
-      ..reviewScreenTitle = 'Предпросмотр (%d)'
-      ..reviewScreenPageCount = 'Страница %d/%d'
-      ..reviewScreenAddButtonTitle = 'Добавить'
-      ..reviewScreenRetakeButtonTitle = 'Переснять'
-      ..reviewScreenCropButtonTitle = 'Обрезать'
-      ..reviewScreenRotateButtonTitle = 'Повернуть'
-      ..reviewScreenDeleteButtonTitle = 'Удалить'
-      ..reviewScreenSubmitButtonTitle = 'Готово'
-      ..cameraCancelAlertTitle = 'Отменить сканирование?'
-      ..cameraCancelNoButtonTitle = 'Нет'
-      ..cameraCancelYesButtonTitle = 'Да, отменить'
-      ..cameraLimitReachedAlertTitle = 'Достигнут лимит страниц'
-      ..cameraLimitReachedOkButtonTitle = 'ОК'
-      ..croppingTopBarConfirmButtonTitle = 'Готово'
-      ..croppingTopBarCancelButtonTitle = 'Отмена';
-
-    return configuration;
-  }
-
-  String _scanbotImagePath(sb_doc.PageData page) {
-    final rawPath =
-        page.documentImageURI ??
-        page.unfilteredDocumentImageURI ??
-        page.originalImageURI;
-    final uri = Uri.tryParse(rawPath);
-    if (uri != null && uri.scheme == 'file') {
-      return uri.toFilePath();
-    }
-    return rawPath;
-  }
-
-  Future<void> _startScanbotPassportScan() async {
-    if (!mounted ||
-        _isScanbotPassportActive ||
-        _selectedFeature != Feat.passport ||
-        captureModeController.captureMode != 'Автоматически') {
-      return;
-    }
-
-    final remaining = _passportMaxPages - _passportBatch.length;
-    if (remaining <= 0) {
-      AppNotification.show(
-        context,
-        message: AppLocalizations.of(context).camMaxPages,
-        type: NotificationType.info,
-      );
-      return;
-    }
-
-    _isScanbotPassportActive = true;
-    _scanbotPassportRetakeRequested = false;
-    _cancelAutoCapture();
-
-    setState(() {
-      _isScanning = true;
-      _isDocumentDetected = false;
-      captureModeController.isScanning = true;
-      captureModeController.isDocumentDetected = false;
-    });
-
-    try {
-      await _stopLiveDocumentDetection();
-      await _disposeCameraController();
-      await ScanbotConfig.ensureInitialized();
-      if (!mounted) return;
-
-      final result = await sb.ScanbotSdkUiV2.startDocumentScanner(
-        _scanbotPassportConfiguration(remaining),
-      );
-      if (!mounted) return;
-
-      if (result.status == sb.OperationStatus.CANCELED) {
-        captureModeController.setCaptureMode('Вручную');
-        return;
-      }
-      if (result.status == sb.OperationStatus.ERROR) {
-        throw StateError(result.errorMessage ?? 'Ошибка Scanbot');
-      }
-
-      final document = result.data;
-      if (document == null) {
-        throw StateError('Scanbot не вернул документ');
-      }
-      final scannedFiles = <XFile>[];
-      for (final page in document.pages.take(remaining)) {
-        final path = _scanbotImagePath(page);
-        if (path.isNotEmpty && await File(path).exists()) {
-          scannedFiles.add(XFile(path));
-        }
-      }
-
-      if (scannedFiles.isEmpty) {
-        throw StateError('Scanbot не вернул обработанные страницы');
-      }
-      if (!mounted) return;
-
-      setState(() => _passportBatch.addAll(scannedFiles));
-      await _finishPassportBatch(scanbotFlow: true);
-    } catch (error) {
-      if (mounted) {
-        captureModeController.setCaptureMode('Вручную');
-        AppNotification.show(
-          context,
-          message: '${AppLocalizations.of(context).commonError}: $error',
-          type: NotificationType.error,
-        );
-      }
-    } finally {
-      final shouldRetake = _scanbotPassportRetakeRequested;
-      _scanbotPassportRetakeRequested = false;
-      _isScanbotPassportActive = false;
-
-      if (mounted) {
-        setState(() {
-          _isScanning = false;
-          captureModeController.isScanning = false;
-        });
-
-        if (shouldRetake &&
-            _selectedFeature == Feat.passport &&
-            captureModeController.captureMode == 'Автоматически') {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) unawaited(_startScanbotPassportScan());
-          });
-        } else {
-          await _initializeCamera();
-        }
-      }
-    }
-  }
-
   String _passportOverlayLabel(AppLocalizations l10n) {
     // Подсказка называет СЛЕДУЮЩУЮ страницу по порядку: «Первая страница»,
     // «Вторая страница»… Когда буфер полон — показываем итоговое количество.
@@ -3300,7 +3095,7 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   /// «Готово» в режиме паспорта: открывает превью всех накопленных страниц.
-  Future<void> _finishPassportBatch({bool scanbotFlow = false}) async {
+  Future<void> _finishPassportBatch() async {
     if (_passportBatch.isEmpty || !mounted) return;
     final readyFiles = List<XFile>.from(_passportBatch);
     await _openPreview(
@@ -3308,14 +3103,9 @@ class _CameraScreenState extends State<CameraScreen>
       isTwoPage: readyFiles.length > 1,
       onRetake: () {
         // «Переснять» = начать паспорт заново: чистим буфер и возвращаемся.
-        if (scanbotFlow) {
-          _scanbotPassportRetakeRequested = true;
-        }
         Navigator.pop(context);
         _resetTwoPageState();
-        if (!scanbotFlow) {
-          _startDocumentDetectionStream();
-        }
+        _startDocumentDetectionStream();
       },
       restartDetectionOnReturn: false,
     );
@@ -3325,13 +3115,7 @@ class _CameraScreenState extends State<CameraScreen>
       _isScanning = false;
       captureModeController.isScanning = false;
     });
-    if (!scanbotFlow) {
-      _startDocumentDetectionStream();
-    } else if (!_scanbotPassportRetakeRequested) {
-      // После закрытия превью ручной режим остаётся рабочим, а повторный
-      // выбор «Авто» снова открывает Scanbot.
-      captureModeController.setCaptureMode('Вручную');
-    }
+    _startDocumentDetectionStream();
   }
 
   /// Повторный запуск нативного скана из кнопки «Переснять». Откладываем на
@@ -4852,14 +4636,7 @@ class _CameraScreenState extends State<CameraScreen>
               unawaited(_initializeCamera());
             }
 
-            if (newFeature == Feat.passport &&
-                captureModeController.captureMode == 'Автоматически') {
-              Future.delayed(const Duration(milliseconds: 350), () {
-                if (mounted && _selectedFeature == Feat.passport) {
-                  unawaited(_startScanbotPassportScan());
-                }
-              });
-            } else if (newFeature != Feat.translate && newFeature != Feat.ocr) {
+            if (newFeature != Feat.translate && newFeature != Feat.ocr) {
               Future.delayed(
                 const Duration(milliseconds: 500),
                 _startDocumentDetectionStream,
